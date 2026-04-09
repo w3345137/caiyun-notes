@@ -1,0 +1,343 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { NodeViewWrapper, useEditor, EditorContent } from '@tiptap/react';
+import { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { Plus } from 'lucide-react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import { Table } from '@tiptap/extension-table';
+import { TableWithDefaultWidth } from '../extensions/TableWithDefaultWidth';
+import TextAlign from '@tiptap/extension-text-align';
+import { TableRowWithTextSelection } from '../extensions/TableRowWithTextSelection';
+import { TableCellWithColor } from '../extensions/TableCellWithColor';
+import { TableHeaderWithColor } from '../extensions/TableHeaderWithColor';
+import { ResizableImage } from '../extensions/ResizableImage';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
+import { setActiveInternalEditor } from '../lib/nodeViewEditorManager';
+
+interface TabGroupViewProps {
+  node: ProseMirrorNode;
+  getPos: () => number;
+  updateAttributes: (attrs: Record<string, any>) => void;
+  deleteNode: () => void;
+  selected: boolean;
+  editor: any;
+}
+
+interface Tab {
+  id: string;
+  title: string;
+}
+
+interface Contents {
+  [tabId: string]: { type: 'doc'; content?: any[] };
+}
+
+const generateId = () => Math.random().toString(36).substring(2, 9);
+
+export const TabGroupView: React.FC<TabGroupViewProps> = ({
+  node,
+  updateAttributes,
+  deleteNode,
+  selected,
+}) => {
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [openMenuIndex, setOpenMenuIndex] = useState<number | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const isInternalUpdate = useRef(false); // 避免 setContent 触发 onUpdate 循环
+
+  const tabs: Tab[] = node.attrs.tabs || [{ id: '1', title: '页签1' }];
+  const contents: Contents = node.attrs.contents || { '1': { type: 'doc', content: [{ type: 'paragraph' }] } };
+  const activeIndex: number = node.attrs.activeIndex ?? 0;
+
+  // 创建内部编辑器
+  const internalEditor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({ placeholder: '开始输入...' }),
+      TableWithDefaultWidth.configure({ resizable: true }),
+      TextAlign.configure({ types: ['heading', 'paragraph', 'tableCell', 'tableHeader'] }),
+      TableRowWithTextSelection,
+      TableCellWithColor.configure({
+        HTMLAttributes: { class: 'relative' },
+      }),
+      TableHeaderWithColor,
+      ResizableImage.configure({
+        HTMLAttributes: { class: 'rounded-lg' },
+      }),
+      TaskList.configure({
+        HTMLAttributes: { class: 'not-prose pl-0 list-none' },
+      }),
+      TaskItem.configure({
+        HTMLAttributes: { class: 'flex items-start gap-2 py-1' },
+      }),
+    ],
+    content: contents[tabs[activeIndex]?.id] || { type: 'doc', content: [{ type: 'paragraph' }] },
+    editorProps: {
+      attributes: {
+        class: 'outline-none min-h-[100px]',
+      },
+    },
+    immediatelyRender: false,
+    onFocus: () => {
+      setActiveInternalEditor(internalEditor);
+    },
+    onBlur: () => {
+      // 失去焦点时，一次性把当前 Tab 内容同步到 contents，并清除激活状态
+      const currentTabId = tabs[activeIndex]?.id;
+      if (currentTabId && internalEditor) {
+        updateAttributes({
+          contents: {
+            ...contents,
+            [currentTabId]: internalEditor.getJSON(),
+          },
+        });
+      }
+      setActiveInternalEditor(null);
+    },
+  });
+
+  // 切换 Tab：只改 activeIndex，内容由 useEffect 加载
+  const handleTabClick = useCallback((index: number) => {
+    if (editingIndex !== null) return;
+    if (index === activeIndex) return;
+    updateAttributes({ activeIndex: index });
+  }, [activeIndex, editingIndex, updateAttributes]);
+
+  // 加载目标 Tab 内容
+  useEffect(() => {
+    if (!internalEditor) return;
+    const targetTab = tabs[activeIndex];
+    if (!targetTab) return;
+
+    const targetContent = contents[targetTab.id] || { type: 'doc', content: [{ type: 'paragraph' }] };
+    isInternalUpdate.current = true;
+    internalEditor.commands.setContent(targetContent, false);
+    isInternalUpdate.current = false;
+  }, [activeIndex, tabs, contents, internalEditor]);
+
+  // 添加 Tab
+  const handleAddTab = useCallback(() => {
+    const newId = generateId();
+    const newTitle = `页签${tabs.length + 1}`;
+    updateAttributes({
+      tabs: [...tabs, { id: newId, title: newTitle }],
+      contents: {
+        ...contents,
+        [newId]: { type: 'doc', content: [{ type: 'paragraph' }] },
+      },
+      activeIndex: tabs.length,
+    });
+  }, [tabs, contents, updateAttributes]);
+
+  // 删除 Tab
+  const handleDeleteTab = useCallback((index: number) => {
+    if (tabs.length === 1) {
+      deleteNode();
+      return;
+    }
+
+    const tabIdToDelete = tabs[index].id;
+    const newTabs = tabs.filter((_, i) => i !== index);
+    const newContents = { ...contents };
+    delete newContents[tabIdToDelete];
+
+    let newActiveIndex = activeIndex;
+    if (index === activeIndex) {
+      newActiveIndex = Math.min(index, newTabs.length - 1);
+    } else if (index < activeIndex) {
+      newActiveIndex = activeIndex - 1;
+    }
+
+    updateAttributes({
+      tabs: newTabs,
+      contents: newContents,
+      activeIndex: newActiveIndex,
+    });
+  }, [tabs, contents, activeIndex, deleteNode, updateAttributes]);
+
+  // 更新 Tab 标题
+  const updateTabTitle = useCallback((index: number, title: string) => {
+    const newTabs = [...tabs];
+    newTabs[index] = { ...newTabs[index], title };
+    updateAttributes({ tabs: newTabs });
+  }, [tabs, updateAttributes]);
+
+  // 计算菜单位置
+  const getMenuPosition = (buttonEl: HTMLElement) => {
+    const rect = buttonEl.getBoundingClientRect();
+    return {
+      top: rect.bottom + window.scrollY + 4,
+      left: rect.left + window.scrollX,
+    };
+  };
+
+  // 切换菜单
+  const handleMenuToggle = (e: React.MouseEvent, index: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (openMenuIndex === index) {
+      setOpenMenuIndex(null);
+      setMenuPosition(null);
+    } else {
+      setMenuPosition(getMenuPosition(e.currentTarget as HTMLElement));
+      setOpenMenuIndex(index);
+    }
+  };
+
+  // 点击外部关闭菜单
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuIndex(null);
+      }
+    };
+    if (openMenuIndex !== null) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [openMenuIndex]);
+
+  // 开始编辑标题
+  const handleTitleClick = (index: number, currentTitle: string) => {
+    setEditingIndex(index);
+    setEditValue(currentTitle);
+    setOpenMenuIndex(null);
+  };
+
+  // 标题编辑完成
+  const handleTitleBlur = () => {
+    if (editingIndex !== null) {
+      const newTitle = editValue.trim() || `页签${editingIndex + 1}`;
+      updateTabTitle(editingIndex, newTitle);
+      setEditingIndex(null);
+    }
+  };
+
+  // 标题键盘事件
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (editingIndex !== null) {
+        const newTitle = editValue.trim() || `页签${editingIndex + 1}`;
+        updateTabTitle(editingIndex, newTitle);
+      }
+      setEditingIndex(null);
+    } else if (e.key === 'Escape') {
+      setEditingIndex(null);
+    }
+  };
+
+  // 自动聚焦
+  useEffect(() => {
+    if (editingIndex !== null && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editingIndex]);
+
+  return (
+    <NodeViewWrapper>
+      <div
+        className={`tab-group-container border border-gray-200 rounded-lg overflow-hidden mb-2 select-none ${
+          selected ? 'ring-2 ring-blue-500' : ''
+        }`}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {/* Tab 按钮栏 */}
+        <div className="flex items-center bg-gray-50 border-b border-gray-200 overflow-hidden">
+          {tabs.map((tab, index) => {
+            const isActive = index === activeIndex;
+
+            return (
+              <div key={tab.id} className="relative">
+                {editingIndex === index ? (
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={handleTitleBlur}
+                    onKeyDown={handleTitleKeyDown}
+                    className="bg-white border border-blue-400 rounded px-2 py-1.5 text-sm outline-none w-24"
+                    onClick={(e) => e.stopPropagation()}
+                    autoFocus
+                  />
+                ) : (
+                  <div className={`flex items-center border-r border-gray-200 last:border-r-0 ${isActive ? 'bg-white text-blue-600 font-medium border-b-2 border-b-blue-500 -mb-px' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                    <button
+                      onClick={() => handleTabClick(index)}
+                      className="px-3 py-2 text-sm cursor-pointer whitespace-nowrap"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {tab.title}
+                    </button>
+                    <button
+                      onClick={(e) => handleMenuToggle(e, index)}
+                      className="px-1 py-2 cursor-pointer"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M7 10l5 5 5-5z"/>
+                      </svg>
+                    </button>
+                  </div>
+                )}
+
+                {openMenuIndex === index && menuPosition && (
+                  <div
+                    ref={menuRef}
+                    className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[99999] min-w-[100px]"
+                    style={{ top: menuPosition.top, left: menuPosition.left }}
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuIndex(null);
+                        handleTitleClick(index, tab.title);
+                      }}
+                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 text-gray-700"
+                    >
+                      重命名
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuIndex(null);
+                        handleDeleteTab(index);
+                      }}
+                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100 text-red-600"
+                    >
+                      删除页签
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleAddTab();
+            }}
+            className="flex items-center justify-center px-2 py-2 text-gray-500 hover:bg-gray-100 hover:text-blue-600 transition-colors"
+            title="添加页签"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+
+        {/* Tab 内容区 */}
+        <div className="tab-content-wrapper p-3">
+          {internalEditor && <EditorContent editor={internalEditor} />}
+        </div>
+      </div>
+    </NodeViewWrapper>
+  );
+};
+
+export default TabGroupView;

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
+  <!-- 简约微笑云朵logo -->
+  <defs>
+    <linearGradient id="skyBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#93C5FD"/>
+      <stop offset="50%" style="stop-color:#60A5FA"/>
+      <stop offset="100%" style="stop-color:#3B82F6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 云朵主体 - 简约圆润的云形状 -->
+  <path d="M65 42 C65 34, 57 30, 49 30 C46 25, 39 25, 34 30 C29 25, 20 27, 18 35 C12 37, 10 44, 14 50 C12 57, 18 62, 28 62 L55 62 C65 62, 70 55, 68 47 C73 44, 71 39, 65 42 Z" fill="url(#skyBlue)"/>
+
+  <!-- 左眼睛 -->
+  <circle cx="36" cy="44" r="3.5" fill="#1E40AF"/>
+
+  <!-- 右眼睛 -->
+  <circle cx="52" cy="44" r="3.5" fill="#1E40AF"/>
+
+  <!-- 微笑弧线 - 简约曲线 -->
+  <path d="M38 52 Q44 58, 50 52" stroke="#1E40AF" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+</svg>

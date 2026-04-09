@@ -1,0 +1,9 @@
+# Supabase Edge Functions Configuration
+[functions.onedrive-upload]
+verify_jwt = false
+
+[functions.onedrive-download]
+verify_jwt = false
+
+[functions.onedrive-delete]
+verify_jwt = false

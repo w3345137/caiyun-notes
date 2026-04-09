@@ -1,0 +1,37 @@
+/* 思维导图容器样式 */
+.mindmap-container {
+  background-color: transparent;
+}
+
+/* 思维导图节点自定义样式 */
+jmnode {
+  padding: 6px 14px !important;
+  background-color: #fff !important;
+  color: #000 !important;
+  border: 2px solid #000 !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+jmnode:hover {
+  border-color: #87ceeb !important;
+  box-shadow: 0 0 8px rgba(135, 206, 235, 0.6) !important;
+  background-color: #fff !important;
+}
+
+jmnode.selected {
+  border-color: #1e90ff !important;
+  box-shadow: 0 0 12px rgba(30, 144, 255, 0.6) !important;
+  background-color: #fff !important;
+}
+
+jmnode.root {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+}
+
+/* 隐藏展开/收起按钮 */
+jmexpander {
+  display: none !important;
+}
