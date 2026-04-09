@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "install-deps": "npm install",
-    "clean": "rm -rf node_modules package-lock.json"
+    "clean": "rm -rf node_modules package-lock.json",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
