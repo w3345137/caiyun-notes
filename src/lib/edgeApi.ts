@@ -84,8 +84,8 @@ export async function apiRestoreSidebarState(selectedNoteId: string) {
 
 // ========== 笔记写入 API ==========
 
-export async function apiSaveNote(note: any) {
-  return callEdgeFunction('notes-write', { action: 'saveNote', note });
+export async function apiSaveNote(note: any, expectedVersion?: number) {
+  return callEdgeFunction('notes-write', { action: 'saveNote', note, expectedVersion });
 }
 
 export async function apiDeleteNote(noteId: string, allDescendantIds?: Set<string>) {

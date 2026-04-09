@@ -302,12 +302,75 @@ function isRemoteNewer(
   return false;
 }
 
+// ========== 版本冲突对话框 ==========
+function showConflictDialog(noteId: string, remoteNote: Note, localNote: Note): void {
+  const remoteUserName = remoteNote.updatedByName || '其他用户';
+  const pageTitle = localNote.title || '未命名页面';
+
+  // 创建弹窗容器
+  const overlay = document.createElement('div');
+  overlay.id = 'conflict-dialog-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:white;border-radius:12px;padding:24px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);';
+  dialog.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span style="font-size:16px;font-weight:600;color:#1f2937;">内容冲突</span>
+    </div>
+    <p style="color:#6b7280;font-size:14px;line-height:1.6;margin-bottom:20px;">
+      <strong>${remoteUserName}</strong> 同时修改了页面「${pageTitle}」，你的保存与对方的内容冲突。
+    </p>
+    <div style="display:flex;gap:8px;">
+      <button id="conflict-use-remote" style="flex:1;padding:10px 16px;border:1px solid #d1d5db;border-radius:8px;background:white;cursor:pointer;font-size:14px;color:#374151;font-weight:500;transition:all 0.15s;">
+        使用对方版本
+      </button>
+      <button id="conflict-use-local" style="flex:1;padding:10px 16px;border:none;border-radius:8px;background:#3b82f6;cursor:pointer;font-size:14px;color:white;font-weight:500;transition:all 0.15s;">
+        保留我的版本
+      </button>
+    </div>
+  `;
+
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
+  // 使用对方版本：用远程数据覆盖本地
+  dialog.querySelector('#conflict-use-remote')!.addEventListener('click', () => {
+    useNoteStore.getState().updateNoteFromRemote(remoteNote);
+    overlay.remove();
+    toast.success('已使用对方版本');
+  });
+
+  // 保留我的版本：强制覆盖服务端（不传 expectedVersion）
+  dialog.querySelector('#conflict-use-local')!.addEventListener('click', async () => {
+    // 重新递增版本号，强制覆盖
+    const currentNote = useNoteStore.getState().getNoteById(noteId);
+    if (currentNote) {
+      const forceResult = await saveNoteToCloud(currentNote);
+      if (forceResult.success) {
+        toast.success('已保留你的版本');
+      } else {
+        toast.error('保存失败，请重试');
+      }
+    }
+    overlay.remove();
+  });
+
+  // 点击遮罩不关闭（防止误操作）
+}
+
 // 规范化接收到的远程数据（保留 owner_id 等关键字段）
 function normalizeIncomingNote(row: any): Note {
   return {
     id: row.id,
     title: row.title || '无标题',
     content: row.content || '',
+    mindmapData: row.mindmap_data ?? row.mindmapData ?? null, // 思维导图数据
     parentId: row.parent_id || null,
     type: row.type || 'page',
     createdAt: row.created_at || new Date().toISOString(),
@@ -963,7 +1026,7 @@ export const useNoteStore = create<NoteState>()(
       // 从远程更新笔记（用于实时同步）
       // 核心逻辑：
       // 规则3：仅在页面加载、手动刷新、Realtime协作时更新
-      // 规则4：版本比较 - 服务器版本 > 本地版本时提示用户确认
+      // 规则4：版本比较 - 服务器版本 > 本地版本时更新
       updateNoteFromRemote: (note: Note) => {
         // 关键检查：如果笔记正在被本地编辑，直接跳过，不接收远程更新
         if (isNoteBeingEdited(note.id)) {
@@ -983,7 +1046,7 @@ export const useNoteStore = create<NoteState>()(
         }
 
         if (existingNote) {
-          // 规则4：版本比较 - 服务器版本 > 本地版本时提示用户确认
+          // 规则4：版本比较 - 服务器版本 > 本地版本时更新
           const localVersion = existingNote.version || 0;
           const remoteVersion = note.version || 1;
           
@@ -992,13 +1055,29 @@ export const useNoteStore = create<NoteState>()(
             console.log('[Remote] 检测到远程版本更新:', note.id, 
               '本地版本:', localVersion, '->', '远程版本:', remoteVersion);
             
-            // 【已简化】直接应用远程更新，不再提示用户
-            // 原因：频繁弹窗影响体验，且已有pending机制保护正在编辑的内容
+            // 合并远程数据，保留本地的 mindmapData（如果远程没有的话）
+            const mergedNote = { ...existingNote, ...note };
+            if (!note.mindmapData && existingNote.mindmapData) {
+              mergedNote.mindmapData = existingNote.mindmapData;
+            }
+            
             set((state) => ({
               notes: state.notes.map((n) =>
-                n.id === note.id ? { ...n, ...note } : n
+                n.id === note.id ? mergedNote : n
               ),
             }));
+
+            // 如果是协作者修改（非当前用户），显示非阻塞提示
+            const currentUserId = getCurrentUserId();
+            if (note.updatedBy && note.updatedBy !== currentUserId) {
+              const updaterName = note.updatedByName || '其他用户';
+              const pageTitle = note.title || '未命名页面';
+              toast(`${updaterName} 更新了「${pageTitle}」`, {
+                icon: '📝',
+                duration: 3000,
+              });
+            }
+
             console.log('[Remote] 已更新笔记（远程数据）:', note.id, note.title, '版本:', note.version);
           } else {
             console.log('[Remote] 跳过更新（本地数据已是最新或版本相同）:', note.id,
@@ -1205,7 +1284,8 @@ export const useNoteStore = create<NoteState>()(
 
       updateNote: (id, updates, options?: { silent?: boolean }) => {
         const existingNote = get().getNoteById(id);
-        const newVersion = (existingNote?.version ?? 0) + 1;
+        const oldVersion = existingNote?.version ?? 0;
+        const newVersion = oldVersion + 1;
         const now = new Date().toISOString();
         const userId = getCurrentUserId();
 
@@ -1225,13 +1305,32 @@ export const useNoteStore = create<NoteState>()(
         if (note) {
           (async () => {
             try {
-              const result = await saveNoteToCloud(note);
+              // 传递 expectedVersion（保存前的版本号），用于服务端乐观锁校验
+              const result = await saveNoteToCloud(note, oldVersion);
               clearPendingNote(id);
               if (result.success) {
                 console.log('[updateNote] 保存成功 id=', id);
                 // silent 模式不弹 toast（自动保存场景）
                 if (!options?.silent) {
                   toast.success('已保存到云端');
+                }
+              } else if (result.error === 'VERSION_CONFLICT' && result.conflictInfo) {
+                // 版本冲突：提示用户
+                console.warn('[updateNote] 版本冲突，提示用户选择');
+                const serverVer = result.conflictInfo.serverVersion;
+                const clientVer = result.conflictInfo.clientVersion;
+                // 从远程拉取最新版本的数据
+                const { data: serverNote } = await supabase
+                  .from('notes')
+                  .select('*')
+                  .eq('id', id)
+                  .single();
+                if (serverNote) {
+                  const remoteNote = normalizeIncomingNote(serverNote);
+                  // 弹出冲突选择提示
+                  showConflictDialog(id, remoteNote, note);
+                } else {
+                  toast.error('保存冲突：无法获取最新版本，请刷新页面');
                 }
               } else {
                 console.error('[updateNote] 保存失败:', result.error);

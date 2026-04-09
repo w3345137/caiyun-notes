@@ -25,8 +25,8 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case 'saveNote': {
-        // 保存笔记（upsert）
-        const { note } = params;
+        // 保存笔记（upsert，带乐观锁版本校验）
+        const { note, expectedVersion } = params;
 
         // 获取当前用户的显示名称
         let userDisplayName = userId;
@@ -41,14 +41,15 @@ Deno.serve(async (req) => {
           console.warn('[notes-write] 获取用户信息失败');
         }
 
-        // 查询已有笔记的 owner 和创建者信息
+        // 查询已有笔记的 owner、创建者信息、当前版本号
         let existingOwnerId = userId;
         let existingCreatedBy = userId;
         let existingCreatedByName = userDisplayName;
+        let existingVersion = 0;
         try {
           const { data: existing } = await supabase
             .from('notes')
-            .select('owner_id, created_by, created_by_name')
+            .select('owner_id, created_by, created_by_name, version')
             .eq('id', note.id)
             .maybeSingle();
           if (existing?.owner_id) {
@@ -58,8 +59,24 @@ Deno.serve(async (req) => {
             existingCreatedBy = existing.created_by;
             existingCreatedByName = existing.created_by_name || existingCreatedByName;
           }
+          if (existing?.version !== undefined && existing?.version !== null) {
+            existingVersion = existing.version;
+          }
         } catch (e) {
           console.warn('[notes-write] 查询已有笔记失败');
+        }
+
+        // 乐观锁版本校验：如果传了 expectedVersion，且数据库中版本号大于它，说明有冲突
+        if (expectedVersion !== undefined && existingVersion > expectedVersion) {
+          console.warn(`[notes-write] 版本冲突: 数据库版本=${existingVersion}, 期望版本=${expectedVersion}`);
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'VERSION_CONFLICT',
+            serverVersion: existingVersion,
+            clientVersion: expectedVersion,
+          }), {
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
         }
 
         const isNewNote = !existingOwnerId || existingOwnerId === userId;

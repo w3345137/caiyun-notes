@@ -91,7 +91,7 @@ export async function syncAllNotesToCloud(notes: Note[]): Promise<{ success: boo
   }
 }
 
-export async function saveNoteToCloud(note: Note): Promise<{ success: boolean; error?: string }> {
+export async function saveNoteToCloud(note: Note, expectedVersion?: number): Promise<{ success: boolean; error?: string; conflictInfo?: { serverVersion: number; clientVersion: number } }> {
   const userId = getCurrentUserId();
   if (!userId) {
     console.warn('[DB] saveNoteToCloud: userId 为空，不保存');
@@ -107,10 +107,22 @@ export async function saveNoteToCloud(note: Note): Promise<{ success: boolean; e
     }
   }
 
-  // 使用 Edge Function 保存笔记
-  const result = await edgeApi.apiSaveNote(note);
+  // 使用 Edge Function 保存笔记（带乐观锁版本校验）
+  const result = await edgeApi.apiSaveNote(note, expectedVersion);
 
   if (!result.success) {
+    // 版本冲突：返回冲突信息
+    if (result.error === 'VERSION_CONFLICT') {
+      console.warn(`[DB] 版本冲突: 服务端版本=${result.serverVersion}, 客户端版本=${result.clientVersion}`);
+      return {
+        success: false,
+        error: 'VERSION_CONFLICT',
+        conflictInfo: {
+          serverVersion: result.serverVersion,
+          clientVersion: result.clientVersion,
+        },
+      };
+    }
     console.error('[DB] 保存笔记失败:', result.error);
     return { success: false, error: result.error };
   }
