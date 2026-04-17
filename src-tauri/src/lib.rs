@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Manager, Emitter};
 #[cfg(desktop)]
 use tauri_plugin_updater::UpdaterExt;
 
