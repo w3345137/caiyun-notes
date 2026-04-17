@@ -17,11 +17,19 @@ jobs:
             target: x86_64-apple-darwin
           - platform: macos-latest
             target: aarch64-apple-darwin
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
 
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -86,11 +94,13 @@ jobs:
           WINDOWS_X64=$(ls downloads/*x64-setup.nsis.zip 2>/dev/null | head -1)
           MACOS_X64=$(ls downloads/*x86_64*.app.tar.gz 2>/dev/null | head -1 || ls downloads/*.app.tar.gz 2>/dev/null | grep -v aarch64 | head -1)
           MACOS_ARM=$(ls downloads/*aarch64*.app.tar.gz 2>/dev/null || ls downloads/*.app.tar.gz 2>/dev/null | grep aarch64 | head -1)
+          LINUX_X64=$(ls downloads/*x86_64*.AppImage.tar.gz 2>/dev/null | head -1 || ls downloads/*.AppImage.tar.gz 2>/dev/null | head -1)
           
           # 获取签名文件
           WINDOWS_SIG=$(cat "${WINDOWS_X64}.sig" 2>/dev/null || echo "")
           MACOS_X64_SIG=$(cat "${MACOS_X64}.sig" 2>/dev/null || echo "")
           MACOS_ARM_SIG=$(cat "${MACOS_ARM}.sig" 2>/dev/null || echo "")
+          LINUX_X64_SIG=$(cat "${LINUX_X64}.sig" 2>/dev/null || echo "")
           
           BASE_URL="http://49.235.160.8:3011/updates"
           
@@ -109,6 +119,13 @@ jobs:
                 "signature": "${MACOS_X64_SIG}"
               },
               "darwin-aarch64": {
+                "url": "${BASE_URL}/darwin-aarch64/${MACOS_ARM##*/}",
+                "signature": "${MACOS_ARM_SIG}"
+              },
+              "linux-x86_64": {
+                "url": "${BASE_URL}/linux-x86_64/${LINUX_X64##*/}",
+                "signature": "${LINUX_X64_SIG}"
+              }
                 "url": "${BASE_URL}/darwin-aarch64/${MACOS_ARM##*/}",
                 "signature": "${MACOS_ARM_SIG}"
               }
@@ -138,7 +155,7 @@ jobs:
           script: |
             # 按平台整理文件
             cd /notesapp/updates
-            mkdir -p windows-x86_64 darwin-x86_64 darwin-aarch64
+            mkdir -p windows-x86_64 darwin-x86_64 darwin-aarch64 linux-x86_64
             
             # 移动 Windows 文件
             for f in *x64-setup.nsis.zip*; do [ -f "$f" ] && mv "$f" windows-x86_64/; done
@@ -146,6 +163,9 @@ jobs:
             # 移动 macOS 文件
             for f in *x86_64*.app.tar.gz*; do [ -f "$f" ] && mv "$f" darwin-x86_64/; done
             for f in *aarch64*.app.tar.gz*; do [ -f "$f" ] && mv "$f" darwin-aarch64/; done
+            
+            # 移动 Linux 文件
+            for f in *.AppImage.tar.gz*; do [ -f "$f" ] && mv "$f" linux-x86_64/; done
             
             echo "Updates organized:"
             find . -type f | head -20
