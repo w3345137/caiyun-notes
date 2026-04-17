@@ -52,9 +52,10 @@
     "devtools": true,
     "updater": {
       "endpoints": [
-        "http://49.235.160.8:3011/updates/{{target}}/{{arch}}/{{current_version}}"
+        "http://49.235.160.8:3011/updates/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMxNzI5OEQ3M0M5MjYyQzEKUldUQllwSTgxNWh5d1JKQ3p3dFJOcTNxRmdIZHBNY2F0WDJaVVczRWh5SHR1b0ZVL2Y4eVNkUEcK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMxNzI5OEQ3M0M5MjYyQzEKUldUQllwSTgxNWh5d1JKQ3p3dFJOcTNxRmdIZHBNY2F0WDJaVVczRWh5SHR1b0ZVL2Y4eVNkUEcK",
+      "dangerousInsecureTransportProtocol": true
     }
   }
 }
