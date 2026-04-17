@@ -474,8 +474,8 @@ function SettingsTab({ currentUserEmail }: { currentUserEmail?: string }) {
         <h3 className="font-semibold text-gray-800 mb-3">关于云笔记管理后台</h3>
         <div className="text-sm text-gray-500 space-y-1">
           <p>版本：1.0.0</p>
-          <p>Supabase 项目：mdtbszztcmmdbnvosvpl</p>
-          <p>部署环境：minimaxi.space</p>
+          <p>数据库：本地 PostgreSQL</p>
+          <p>后端：Node.js v2.1 (本地)</p>
         </div>
       </div>
 

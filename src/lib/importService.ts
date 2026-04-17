@@ -8,7 +8,8 @@
  * 5. ID 匹配或弹窗选择目标位置
  */
 
-import { supabase } from './supabase';
+import { getCurrentUserId } from './auth';
+import { apiLoadFullTree } from './edgeApi';
 import yaml from 'js-yaml';
 
 // 原位置信息
@@ -197,14 +198,11 @@ export function detectCycle(notes: ParsedNote[]): string[][] {
  * 检查用户是否是笔记的 owner
  */
 export async function checkOwnership(noteId: string, userId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('notes')
-    .select('owner_id')
-    .eq('id', noteId)
-    .single();
-
-  if (error || !data) return false;
-  return data.owner_id === userId;
+  const result = await apiLoadFullTree();
+  if (!result.success || !result.data) return false;
+  const found = result.data.find((n: any) => n.id === noteId);
+  if (!found) return false;
+  return found.owner_id === userId;
 }
 
 /**
@@ -214,27 +212,29 @@ export async function getUserNotebooksAndSections(userId: string): Promise<{
   notebooks: { id: string; title: string }[];
   sections: { id: string; title: string; parentId: string | null }[];
 }> {
-  // 获取用户拥有的所有笔记本和分区
-  const { data, error } = await supabase
-    .from('notes')
-    .select('id, title, type, parent_id, owner_id')
-    .eq('owner_id', userId)
-    .in('type', ['notebook', 'section']);
+  try {
+    const result = await apiLoadFullTree();
+    if (!result.success || !result.data) {
+      console.error('[导入] 获取笔记本列表失败:', result.error);
+      return { notebooks: [], sections: [] };
+    }
 
-  if (error) {
-    console.error('[导入] 获取笔记本列表失败:', error);
+    // 过滤当前用户拥有的笔记本和分区
+    const userNotes = result.data.filter((n: any) => n.owner_id === userId && (n.type === 'notebook' || n.type === 'section'));
+
+    const notebooks = userNotes
+      .filter((n: any) => n.type === 'notebook')
+      .map((n: any) => ({ id: n.id, title: n.title }));
+
+    const sections = userNotes
+      .filter((n: any) => n.type === 'section')
+      .map((n: any) => ({ id: n.id, title: n.title, parentId: n.parent_id }));
+
+    return { notebooks, sections };
+  } catch (err) {
+    console.error('[导入] 获取笔记本列表异常:', err);
     return { notebooks: [], sections: [] };
   }
-
-  const notebooks = data
-    .filter(n => n.type === 'notebook')
-    .map(n => ({ id: n.id, title: n.title }));
-
-  const sections = data
-    .filter(n => n.type === 'section')
-    .map(n => ({ id: n.id, title: n.title, parentId: n.parent_id }));
-
-  return { notebooks, sections };
 }
 
 /**
@@ -244,51 +244,68 @@ export async function findMatchingParent(
   parentId: string,
   userId: string
 ): Promise<{ found: boolean; matchedId: string | null; isOwner: boolean }> {
-  const { data, error } = await supabase
-    .from('notes')
-    .select('id, owner_id')
-    .eq('id', parentId)
-    .single();
+  try {
+    const result = await apiLoadFullTree();
+    if (!result.success || !result.data) {
+      return { found: false, matchedId: null, isOwner: false };
+    }
 
-  if (error || !data) {
+    const found = result.data.find((n: any) => n.id === parentId);
+    if (!found) {
+      return { found: false, matchedId: null, isOwner: false };
+    }
+
+    return {
+      found: true,
+      matchedId: found.id,
+      isOwner: found.owner_id === userId,
+    };
+  } catch (err) {
+    console.error('[导入] 查找父节点异常:', err);
     return { found: false, matchedId: null, isOwner: false };
   }
-
-  return {
-    found: true,
-    matchedId: data.id,
-    isOwner: data.owner_id === userId,
-  };
 }
 
 /**
- * 导入单个笔记
+ * 导入单个笔记（通过本地后端 API）
+ * @param existingIds 已存在的ID集合，用于检测冲突（可选，不传则自动查询）
  */
 export async function importNote(
   note: ParsedNote,
   targetParentId: string | null,
-  userId: string
-): Promise<{ success: boolean; error?: string }> {
+  userId: string,
+  existingIds?: Set<string>
+): Promise<{ success: boolean; error?: string; actualId?: string }> {
   try {
-    const { error } = await supabase.from('notes').insert({
-      id: note.id,
-      title: note.title,
-      content: note.content,
-      type: note.type,
-      parent_id: targetParentId,
-      owner_id: userId,
-      icon: note.icon,
-      order_index: note.order,
-      created_at: note.createdAt,
-      updated_at: new Date().toISOString(),
-    });
+    const token = localStorage.getItem('notesapp_token');
+    if (!token) return { success: false, error: '未登录' };
 
-    if (error) {
-      // 如果是 ID 冲突，尝试用新 ID
-      if (error.code === '23505') {
-        const newId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        const { error: retryError } = await supabase.from('notes').insert({
-          id: newId,
+    // 检查 ID 是否已存在
+    let noteId = note.id;
+    if (existingIds && existingIds.has(noteId)) {
+      // ID 冲突，生成新 ID
+      noteId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    } else if (!existingIds) {
+      // 没有传入集合时，用 API 查询
+      const treeResult = await apiLoadFullTree();
+      if (treeResult.success && treeResult.data) {
+        if (treeResult.data.some((n: any) => n.id === noteId)) {
+          noteId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        }
+      }
+    }
+
+    const res = await fetch('/api/notes-write', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        userId,
+        action: 'saveNote',
+        note: {
+          id: noteId,
           title: note.title,
           content: note.content,
           type: note.type,
@@ -296,18 +313,16 @@ export async function importNote(
           owner_id: userId,
           icon: note.icon,
           order_index: note.order,
-          created_at: note.createdAt,
-          updated_at: new Date().toISOString(),
-        });
-        if (retryError) {
-          return { success: false, error: retryError.message };
-        }
-        return { success: true };
-      }
-      return { success: false, error: error.message };
+        },
+      }),
+    });
+
+    const data = await res.json();
+    if (!data.success) {
+      return { success: false, error: data.error || '保存失败' };
     }
 
-    return { success: true };
+    return { success: true, actualId: noteId };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

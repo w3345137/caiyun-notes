@@ -14,23 +14,50 @@ import type { Note } from '../types';
 
 // ========== Tauri 环境检测 ==========
 
-declare global {
-  interface Window {
-    __TAURI__?: {
-      fs: {
-        readTextFile: (path: string) => Promise<string>;
-        writeTextFile: (path: string, contents: string) => Promise<void>;
-        readDir: (path: string) => Promise<{ name: string; isDir: boolean }[]>;
-        exists: (path: string) => Promise<boolean>;
-        mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
-        remove: (path: string, options?: { recursive?: boolean }) => Promise<void>;
-      };
-    };
-  }
-}
-
 function isTauri(): boolean {
   return typeof window !== 'undefined' && !!window.__TAURI__;
+}
+
+// ========== Tauri v2 FS API 封装 ==========
+
+interface DirEntry {
+  name: string;
+  isDirectory: boolean;
+}
+
+async function tauriMkdir(path: string): Promise<void> {
+  const { mkdir, BaseDirectory } = window.__TAURI__.fs;
+  await mkdir(path, { baseDir: BaseDirectory.AppLocalData });
+}
+
+async function tauriExists(path: string): Promise<boolean> {
+  const { exists, BaseDirectory } = window.__TAURI__.fs;
+  return await exists(path, { baseDir: BaseDirectory.AppLocalData });
+}
+
+async function tauriWriteTextFile(path: string, contents: string): Promise<void> {
+  const { writeTextFile, BaseDirectory } = window.__TAURI__.fs;
+  await writeTextFile(path, contents, { baseDir: BaseDirectory.AppLocalData });
+}
+
+async function tauriReadTextFile(path: string): Promise<string> {
+  const { readTextFile, BaseDirectory } = window.__TAURI__.fs;
+  return await readTextFile(path, { baseDir: BaseDirectory.AppLocalData });
+}
+
+async function tauriReadDir(path: string): Promise<DirEntry[]> {
+  const { readDir, BaseDirectory } = window.__TAURI__.fs;
+  return await readDir(path, { baseDir: BaseDirectory.AppLocalData });
+}
+
+async function tauriRemove(path: string, recursive = false): Promise<void> {
+  const { remove, BaseDirectory } = window.__TAURI__.fs;
+  await remove(path, { baseDir: BaseDirectory.AppLocalData, recursive });
+}
+
+async function tauriMkdirRecursive(path: string): Promise<void> {
+  const { mkdir, BaseDirectory } = window.__TAURI__.fs;
+  await mkdir(path, { baseDir: BaseDirectory.AppLocalData, recursive: true });
 }
 
 // ========== 配置 ==========
@@ -76,28 +103,12 @@ export function setBackupConfig(config: BackupConfig): void {
   }
 }
 
-// ========== Tauri 备份路径 ==========
+// ========== Tauri 备份路径（v2: 使用 BaseDirectory 相对路径） ==========
 
-let tauriBasePath: string | null = null;
+const TAURI_BACKUP_BASE = 'backups'; // 相对于 AppLocalData
 
-/**
- * 获取 Tauri 备份目录路径
- * 使用 appDataDir/backups
- */
-async function getTauriBackupPath(): Promise<string | null> {
-  if (tauriBasePath) return tauriBasePath;
-
-  try {
-    // 动态导入 @tauri-apps/api/path
-    const { appDataDir } = await import('@tauri-apps/api/path');
-    const appData = await appDataDir();
-    tauriBasePath = `${appData}${TAURI_BACKUP_DIR}`;
-    console.log('[Backup] Tauri 备份路径:', tauriBasePath);
-    return tauriBasePath;
-  } catch (e) {
-    console.error('[Backup] 获取 Tauri 路径失败:', e);
-    return null;
-  }
+function getTauriNoteDir(noteId: string): string {
+  return `${TAURI_BACKUP_BASE}/${noteId}`;
 }
 
 /**
@@ -204,11 +215,7 @@ export async function createBackup(note: Note, notebookPath: string): Promise<{ 
 
   // Tauri 环境：使用文件系统
   if (isTauri()) {
-    const basePath = await getTauriBackupPath();
-    if (basePath) {
-      return createBackupTauri(backup, basePath, config.maxVersions);
-    }
-    return { success: false, error: '无法获取备份路径' };
+    return createBackupTauri(backup, '', config.maxVersions);
   }
 
   // Web 环境：使用 IndexedDB
@@ -216,11 +223,11 @@ export async function createBackup(note: Note, notebookPath: string): Promise<{ 
 }
 
 /**
- * Tauri 文件系统备份
+ * Tauri v2 文件系统备份
  */
 async function createBackupTauri(
   backup: BackupRecord,
-  basePath: string,
+  _basePath: string,
   maxVersions: number
 ): Promise<{ success: boolean; error?: string }> {
   try {
@@ -228,13 +235,12 @@ async function createBackupTauri(
       return { success: false, error: 'Tauri API 不可用' };
     }
 
-    // 创建备份目录：basePath/noteId/
-    const noteDir = `${basePath}/${backup.noteId}`;
-    
-    // 检查目录是否存在，不存在则创建
-    const dirExists = await window.__TAURI__.fs.exists(noteDir);
+    const noteDir = getTauriNoteDir(backup.noteId);
+
+    // 检查并创建备份目录
+    const dirExists = await tauriExists(noteDir);
     if (!dirExists) {
-      await window.__TAURI__.fs.mkdir(noteDir, { recursive: true });
+      await tauriMkdirRecursive(noteDir);
     }
 
     // 备份文件名：timestamp-version.json
@@ -244,12 +250,12 @@ async function createBackupTauri(
 
     // 写入文件
     const backupJson = JSON.stringify(backup, null, 2);
-    await window.__TAURI__.fs.writeTextFile(filePath, backupJson);
+    await tauriWriteTextFile(filePath, backupJson);
 
     console.log('[Backup] Tauri 备份创建成功:', filePath);
 
     // 清理旧备份
-    await cleanOldBackupsTauri(backup.noteId, basePath, maxVersions);
+    await cleanOldBackupsTauri(backup.noteId, maxVersions);
 
     return { success: true };
   } catch (e) {
@@ -299,11 +305,7 @@ async function createBackupIndexedDB(
 export async function getBackups(noteId: string): Promise<BackupRecord[]> {
   // Tauri 环境
   if (isTauri()) {
-    const basePath = await getTauriBackupPath();
-    if (basePath) {
-      return getBackupsTauri(noteId, basePath);
-    }
-    return [];
+    return getBackupsTauri(noteId);
   }
 
   // Web 环境
@@ -311,24 +313,24 @@ export async function getBackups(noteId: string): Promise<BackupRecord[]> {
 }
 
 /**
- * Tauri 获取备份列表
+ * Tauri v2 获取备份列表
  */
-async function getBackupsTauri(noteId: string, basePath: string): Promise<BackupRecord[]> {
+async function getBackupsTauri(noteId: string): Promise<BackupRecord[]> {
   try {
     if (!window.__TAURI__) return [];
 
-    const noteDir = `${basePath}/${noteId}`;
-    const dirExists = await window.__TAURI__.fs.exists(noteDir);
+    const noteDir = getTauriNoteDir(noteId);
+    const dirExists = await tauriExists(noteDir);
     if (!dirExists) return [];
 
-    const files = await window.__TAURI__.fs.readDir(noteDir);
+    const files = await tauriReadDir(noteDir);
     const backups: BackupRecord[] = [];
 
     for (const file of files) {
-      if (file.isDir || !file.name.endsWith('.json')) continue;
+      if (file.isDirectory || !file.name.endsWith('.json')) continue;
 
       try {
-        const content = await window.__TAURI__.fs.readTextFile(`${noteDir}/${file.name}`);
+        const content = await tauriReadTextFile(`${noteDir}/${file.name}`);
         const backup = JSON.parse(content) as BackupRecord;
         backups.push(backup);
       } catch (e) {
@@ -382,14 +384,10 @@ async function getBackupsIndexedDB(noteId: string): Promise<BackupRecord[]> {
 export async function getBackup(backupId: string): Promise<BackupRecord | null> {
   // Tauri 环境：从文件读取
   if (isTauri()) {
-    const basePath = await getTauriBackupPath();
-    if (basePath) {
-      // backupId 格式：noteId-timestamp
-      const [noteId] = backupId.split('-');
-      const backups = await getBackupsTauri(noteId, basePath);
-      return backups.find(b => b.id === backupId) || null;
-    }
-    return null;
+    // backupId 格式：noteId-timestamp
+    const [noteId] = backupId.split('-');
+    const backups = await getBackupsTauri(noteId);
+    return backups.find(b => b.id === backupId) || null;
   }
 
   // Web 环境：从 IndexedDB 读取
@@ -422,8 +420,35 @@ export async function getBackup(backupId: string): Promise<BackupRecord | null> 
 export async function deleteBackup(backupId: string): Promise<{ success: boolean }> {
   // Tauri 环境
   if (isTauri()) {
-    // TODO: 实现文件删除（需要找到具体文件）
-    return { success: true };
+    try {
+      if (!window.__TAURI__) return { success: false };
+      // backupId 格式：noteId-timestamp
+      const [noteId] = backupId.split('-');
+      const noteDir = getTauriNoteDir(noteId);
+      const dirExists = await tauriExists(noteDir);
+      if (!dirExists) return { success: false };
+
+      const files = await tauriReadDir(noteDir);
+      for (const file of files) {
+        if (file.isDirectory || !file.name.endsWith('.json')) continue;
+        try {
+          const content = await tauriReadTextFile(`${noteDir}/${file.name}`);
+          const backup = JSON.parse(content) as BackupRecord;
+          if (backup.id === backupId) {
+            await tauriRemove(`${noteDir}/${file.name}`);
+            console.log('[Backup] 已删除备份文件:', file.name);
+            return { success: true };
+          }
+        } catch (_) {
+          // 跳过读取错误的文件
+        }
+      }
+      console.warn('[Backup] 未找到要删除的备份:', backupId);
+      return { success: false };
+    } catch (e) {
+      console.error('[Backup] Tauri 删除备份失败:', e);
+      return { success: false };
+    }
   }
 
   // Web 环境
@@ -477,23 +502,24 @@ async function cleanOldBackups(noteId: string, maxVersions: number): Promise<voi
 /**
  * 清理旧备份（Tauri）
  */
-async function cleanOldBackupsTauri(noteId: string, basePath: string, maxVersions: number): Promise<void> {
+async function cleanOldBackupsTauri(noteId: string, maxVersions: number): Promise<void> {
   try {
     if (!window.__TAURI__) return;
 
-    const backups = await getBackupsTauri(noteId, basePath);
+    const backups = await getBackupsTauri(noteId);
     if (backups.length <= maxVersions) return;
 
     const toDelete = backups.slice(maxVersions);
-    const noteDir = `${basePath}/${noteId}`;
+    const noteDir = getTauriNoteDir(noteId);
 
     for (const backup of toDelete) {
       // 查找对应的文件
-      const files = await window.__TAURI__.fs.readDir(noteDir);
+      const files = await tauriReadDir(noteDir);
       for (const file of files) {
+        if (file.isDirectory || !file.name.endsWith('.json')) continue;
         if (file.name.includes(backup.id.split('-')[1])) {
           try {
-            await window.__TAURI__.fs.remove(`${noteDir}/${file.name}`);
+            await tauriRemove(`${noteDir}/${file.name}`);
             console.log('[Backup] 已删除旧备份:', file.name);
           } catch (e) {
             console.error('[Backup] 删除文件失败:', file.name, e);
@@ -516,11 +542,7 @@ export async function getBackupStats(): Promise<{
 }> {
   // Tauri 环境
   if (isTauri()) {
-    const basePath = await getTauriBackupPath();
-    if (basePath) {
-      return getBackupStatsTauri(basePath);
-    }
-    return { totalBackups: 0, totalSize: 0, noteCount: 0 };
+    return getBackupStatsTauri();
   }
 
   // Web 环境
@@ -530,7 +552,7 @@ export async function getBackupStats(): Promise<{
 /**
  * Tauri 获取统计
  */
-async function getBackupStatsTauri(basePath: string): Promise<{
+async function getBackupStatsTauri(): Promise<{
   totalBackups: number;
   totalSize: number;
   noteCount: number;
@@ -538,28 +560,28 @@ async function getBackupStatsTauri(basePath: string): Promise<{
   try {
     if (!window.__TAURI__) return { totalBackups: 0, totalSize: 0, noteCount: 0 };
 
-    const dirExists = await window.__TAURI__.fs.exists(basePath);
+    const dirExists = await tauriExists(TAURI_BACKUP_BASE);
     if (!dirExists) return { totalBackups: 0, totalSize: 0, noteCount: 0 };
 
-    const noteDirs = await window.__TAURI__.fs.readDir(basePath);
+    const noteDirs = await tauriReadDir(TAURI_BACKUP_BASE);
     let totalBackups = 0;
     let totalSize = 0;
     const noteIds = new Set<string>();
 
     for (const noteDir of noteDirs) {
-      if (!noteDir.isDir) continue;
+      if (!noteDir.isDirectory) continue;
 
-      const files = await window.__TAURI__.fs.readDir(`${basePath}/${noteDir.name}`);
+      const files = await tauriReadDir(`${TAURI_BACKUP_BASE}/${noteDir.name}`);
       for (const file of files) {
-        if (file.isDir || !file.name.endsWith('.json')) continue;
+        if (file.isDirectory || !file.name.endsWith('.json')) continue;
 
         try {
-          const content = await window.__TAURI__.fs.readTextFile(`${basePath}/${noteDir.name}/${file.name}`);
+          const content = await tauriReadTextFile(`${TAURI_BACKUP_BASE}/${noteDir.name}/${file.name}`);
           const backup = JSON.parse(content) as BackupRecord;
           totalBackups++;
           totalSize += backup.size;
           noteIds.add(backup.noteId);
-        } catch (e) {
+        } catch (_) {
           // 忽略读取错误
         }
       }
@@ -619,21 +641,18 @@ async function getBackupStatsIndexedDB(): Promise<{
 export async function clearAllBackups(): Promise<{ success: boolean }> {
   // Tauri 环境：删除整个备份目录
   if (isTauri()) {
-    const basePath = await getTauriBackupPath();
-    if (basePath && window.__TAURI__) {
-      try {
-        const exists = await window.__TAURI__.fs.exists(basePath);
-        if (exists) {
-          await window.__TAURI__.fs.remove(basePath, { recursive: true });
-        }
-        console.log('[Backup] Tauri 备份已清空');
-        return { success: true };
-      } catch (e) {
-        console.error('[Backup] 清空 Tauri 备份失败:', e);
-        return { success: false };
+    try {
+      if (!window.__TAURI__) return { success: false };
+      const exists = await tauriExists(TAURI_BACKUP_BASE);
+      if (exists) {
+        await tauriRemove(TAURI_BACKUP_BASE, true);
       }
+      console.log('[Backup] Tauri 备份已清空');
+      return { success: true };
+    } catch (e) {
+      console.error('[Backup] 清空 Tauri 备份失败:', e);
+      return { success: false };
     }
-    return { success: false };
   }
 
   // Web 环境：清空 IndexedDB

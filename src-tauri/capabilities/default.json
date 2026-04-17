@@ -14,6 +14,14 @@
     "fs:allow-exists",
     "fs:allow-read-dir",
     "fs:allow-remove",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPLOCALDATA/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$APPCONFIG/**" }
+      ]
+    },
     "updater:default",
     "dialog:default"
   ]

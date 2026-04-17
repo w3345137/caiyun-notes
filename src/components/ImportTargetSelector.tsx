@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, ChevronRight, ChevronDown, BookOpen, Folder, AlertCircle, Check, MapPin, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getUserNotebooksAndSections, ParsedNote, OriginalLocationInfo } from '../lib/importService';
+import { getCurrentUserId } from '../lib/auth';
 
 // 导入方式
 export type ImportMode = 'original' | 'new_location';
@@ -44,16 +45,16 @@ export const ImportTargetSelector: React.FC<ImportTargetSelectorProps> = ({
   }, [isOpen]);
 
   const loadUserData = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    console.log('[导入调试] loadUserData 获取用户:', user?.id);
+    const user = getCurrentUserId();
+    console.log('[导入调试] loadUserData 获取用户:', user);
     if (!user) {
       toast.error('请先登录');
       onCancel();
       return;
     }
-    setUserId(user.id);
+    setUserId(user);
 
-    const { notebooks, sections } = await getUserNotebooksAndSections(user.id);
+    const { notebooks, sections } = await getUserNotebooksAndSections(user);
     setNotebooks(notebooks);
     setSections(sections);
 
@@ -390,5 +391,3 @@ export const ImportTargetSelector: React.FC<ImportTargetSelectorProps> = ({
     </div>
   );
 };
-
-import { supabase } from '../lib/supabase';

@@ -1,7 +1,10 @@
 /**
- * 笔记状态管理 (v4 - 统一保存版)
- * 核心改动：updateNote 自动触发云端保存 + 本地备份
- * 所有组件只需调 updateNote，保存逻辑由 store 统一处理
+ * 笔记状态管理 (v5 - 精简保存版)
+ * 核心改动：
+ * - updateNote 只更新 store，不自动保存
+ * - 累计编辑量达到阈值后自动保存当前页面
+ * - syncToCloud 只保存当前选中页面（手动 Ctrl+S）
+ * - 去掉定时保存和全量同步
  */
 import { create } from 'zustand';
 import { Note } from '../types';
@@ -15,6 +18,11 @@ import { createBackup, getBackupConfig } from '../lib/localBackup';
 // === 全局缓存 ===
 let _updateLogsCache: any[] = [];
 let _editingNotes = new Set<string>();
+
+// 编辑量追踪：记录每个笔记未保存的编辑次数
+const _editCounters = new Map<string, number>();
+// 编辑量阈值：累积 20 次编辑自动保存
+const AUTO_SAVE_THRESHOLD = 20;
 
 // 云端保存 debounce：避免短时间大量请求
 const _saveTimers = new Map<string, NodeJS.Timeout>();
@@ -50,7 +58,20 @@ function sanitizeNote(n: any): any {
 }
 
 /**
- * 延迟保存到云端（debounce，2秒内同一笔记只保存一次）
+ * 立即保存单个笔记到云端
+ */
+async function saveSingleNote(note: any) {
+  try {
+    await saveNoteToCloud(note);
+    console.log(`[Store] 云端保存成功: ${note.id.substring(0, 12)}...`);
+  } catch (e) {
+    console.error(`[Store] 云端保存失败: ${note.id}`, e);
+  }
+}
+
+/**
+ * debounce 保存单个笔记（2秒内同一笔记只保存一次）
+ * 用于 reorderPages 等批量操作场景
  */
 function debouncedCloudSave(note: any) {
   const id = note.id;
@@ -59,30 +80,8 @@ function debouncedCloudSave(note: any) {
   }
   _saveTimers.set(id, setTimeout(async () => {
     _saveTimers.delete(id);
-    try {
-      await saveNoteToCloud(note);
-      console.log(`[Store] 云端保存成功: ${note.id.substring(0, 12)}...`);
-    } catch (e) {
-      console.error(`[Store] 云端保存失败: ${note.id}`, e);
-    }
+    await saveSingleNote(note);
   }, 2000));
-}
-
-/**
- * 立即保存到云端（不 debounce，用于 Ctrl+S 等手动保存）
- */
-async function immediateCloudSave(note: any) {
-  // 清除可能存在的 debounce 定时器
-  const id = note.id;
-  if (_saveTimers.has(id)) {
-    clearTimeout(_saveTimers.get(id)!);
-    _saveTimers.delete(id);
-  }
-  try {
-    await saveNoteToCloud(note);
-  } catch (e) {
-    console.error(`[Store] 立即保存失败: ${note.id}`, e);
-  }
 }
 
 /**
@@ -97,7 +96,6 @@ async function tryCreateBackup(note: any) {
     if (typeof content !== 'string' || content.length < 50) return;
     await createBackup(note as Note, '');
   } catch (e) {
-    // 备份失败不影响保存流程
     console.warn('[Store] 本地备份失败:', e);
   }
 }
@@ -148,19 +146,26 @@ export const useNoteStore = create<any>((set, get) => ({
   },
 
   /**
-   * 全量同步到云端（Ctrl+S 使用）
-   * 立即保存所有笔记，不 debounce
+   * 保存当前选中页面到云端（Ctrl+S 使用）
+   * 只保存当前正在编辑的那一个页面
    */
   syncToCloud: async () => {
-    set({ isSyncing: true, loadingStatus: '同步中...' });
-    const notes = get().notes;
-    for (const n of notes) {
-      if (n.content || n.title) {
-        await immediateCloudSave(n);
+    set({ isSyncing: true, loadingStatus: '保存中...' });
+    const state = get();
+    const selectedId = state.selectedNoteId;
+    
+    if (selectedId) {
+      const note = state.notes.find((n: Note) => n.id === selectedId);
+      if (note) {
+        await saveSingleNote(note);
+        // 同步保存本地备份
+        await tryCreateBackup(note);
+        // 重置编辑计数器
+        _editCounters.delete(selectedId);
       }
     }
+    
     // 同时保存侧边栏状态
-    const state = get();
     await saveSidebarState(state.expandedNodes, state.selectedNoteId).catch(() => {});
     set({ isSyncing: false, lastSyncedAt: new Date(), loadingStatus: '就绪' });
     return { success: true };
@@ -173,22 +178,29 @@ export const useNoteStore = create<any>((set, get) => ({
   },
 
   /**
-   * 统一更新入口：更新 store + 自动云端保存 + 本地备份
-   * content 变化时触发备份（debounce），其他字段变化直接保存
+   * 统一更新入口：更新 store
+   * 编辑量累计达到阈值后自动保存 + 本地备份
    */
   updateNote: (id: string, updates: any) => {
     set((state: any) => {
       const newNotes = state.notes.map((n: Note) => n.id === id ? { ...n, ...updates } : n);
-      // 找到更新后的笔记
       const updatedNote = newNotes.find((n: Note) => n.id === id);
-      if (updatedNote) {
-        // 云端保存（debounce 2秒）
-        debouncedCloudSave(updatedNote);
-        // 内容变化时创建本地备份
-        if (updates.content !== undefined) {
+      
+      if (updatedNote && updates.content !== undefined) {
+        // 累加编辑计数器
+        const count = (_editCounters.get(id) || 0) + 1;
+        _editCounters.set(id, count);
+        
+        // 达到阈值自动保存
+        if (count >= AUTO_SAVE_THRESHOLD) {
+          _editCounters.set(id, 0); // 重置计数器
+          // 异步保存，不阻塞 UI
+          saveSingleNote(updatedNote);
           tryCreateBackup(updatedNote);
+          console.log(`[Store] 编辑量达阈值(${AUTO_SAVE_THRESHOLD})，自动保存: ${id.substring(0, 12)}...`);
         }
       }
+      
       return { notes: newNotes };
     });
   },
@@ -206,23 +218,29 @@ export const useNoteStore = create<any>((set, get) => ({
       set({ selectedNoteId: newNote.id });
       debouncedSaveSidebarState(get().expandedNodes, newNote.id);
     }
-    // 新建笔记立即保存到云端（不 debounce）
-    immediateCloudSave(newNote);
+    // 新建笔记立即保存到云端
+    saveSingleNote(newNote);
     return newNote.id;
   },
 
   deleteNote: async (id: string) => {
-    await deleteNoteFromCloud(id);
+    const res = await deleteNoteFromCloud(id);
+    if (res && !res.success) {
+      console.error('[Store] 删除笔记失败:', res.error);
+      return res;
+    }
+    // 清理编辑计数器
+    _editCounters.delete(id);
     set((state: any) => ({
       notes: state.notes.filter((n: Note) => n.id !== id && n.parent_id !== id && n.parentId !== id)
     }));
+    return res;
   },
 
   toggleExpanded: (id: string) => {
     set((state: any) => {
       const nodes = state.expandedNodes;
       const newExpanded = nodes.includes(id) ? nodes.filter((x: string) => x !== id) : [...nodes, id];
-      // 持久化侧边栏状态
       debouncedSaveSidebarState(newExpanded, state.selectedNoteId);
       return { expandedNodes: newExpanded };
     });
@@ -238,7 +256,7 @@ export const useNoteStore = create<any>((set, get) => ({
         return n;
       })
     }));
-    // 排序变化后保存
+    // 排序变化后 debounce 保存
     const notes = get().notes;
     const changed = notes.filter((n: Note) =>
       (n.parent_id === notebookId || n.parentId === notebookId) &&

@@ -1,38 +1,35 @@
 /**
- * Admin Console API - 前端接口
- * 所有管理操作通过 Edge Function 执行，避免 service_role key 暴露
- * 使用 Supabase access_token 进行身份验证
+ * Admin Console API - 本地后端版本
+ * 所有管理操作通过本地后端 /api/admin 执行
  */
-import { getCurrentUserId } from './auth';
-import { supabase } from './supabase';
 
-const SUPABASE_URL = 'https://mdtbszztcmmdbnvosvpl.supabase.co';
-const EDGE_FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`;
+const API_BASE = '/api';
 
 /**
- * 调用 admin-api Edge Function
+ * 获取本地 JWT token
+ */
+function getToken(): string | null {
+  return localStorage.getItem('notesapp_token');
+}
+
+/**
+ * 调用本地管理员 API
  */
 async function callAdminApi<T = any>(
   action: string,
   params: Record<string, any> = {}
 ): Promise<{ success: boolean; data?: T; error?: string }> {
-  const userId = getCurrentUserId();
-  if (!userId) {
-    return { success: false, error: 'Not authenticated' };
-  }
-
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData.session?.access_token;
-  if (!accessToken) {
-    return { success: false, error: 'No access token' };
+  const token = getToken();
+  if (!token) {
+    return { success: false, error: '未登录' };
   }
 
   try {
-    const response = await fetch(`${EDGE_FUNCTIONS_URL}/admin-api`, {
+    const response = await fetch(`${API_BASE}/admin`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({
         action,
@@ -49,7 +46,7 @@ async function callAdminApi<T = any>(
     return result;
   } catch (err: any) {
     console.error(`[AdminAPI] ${action} 调用失败:`, err);
-    return { success: false, error: err?.message || 'Network error' };
+    return { success: false, error: err?.message || '网络错误' };
   }
 }
 
@@ -61,9 +58,9 @@ export function isAdminEmail(email: string | undefined): boolean {
   return ADMIN_EMAILS.includes(email.toLowerCase());
 }
 
-export async function checkIsAdmin(userId: string): Promise<boolean> {
-  const result = await callAdminApi<boolean>('checkIsAdmin');
-  return result.success && result.data === true;
+export async function checkIsAdmin(): Promise<boolean> {
+  const result = await callAdminApi<boolean>('getDbStats');
+  return result.success;
 }
 
 // ========== 用户管理 ==========

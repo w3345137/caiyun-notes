@@ -806,7 +806,6 @@ export const NoteEditor: React.FC = () => {
   const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
   const notes = useNoteStore((state) => state.notes);
   const updateNote = useNoteStore((state) => state.updateNote);
-  const syncToCloud = useNoteStore((state) => state.syncToCloud);
   const dbReady = useNoteStore((state) => state.dbReady);
   const lockNote = useNoteStore((state) => state.lockNote);
   const unlockNote = useNoteStore((state) => state.unlockNote);

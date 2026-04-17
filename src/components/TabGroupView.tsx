@@ -4,7 +4,6 @@ import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Plus } from 'lucide-react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { Table } from '@tiptap/extension-table';
 import { TableWithDefaultWidth } from '../extensions/TableWithDefaultWidth';
 import TextAlign from '@tiptap/extension-text-align';
 import { TableRowWithTextSelection } from '../extensions/TableRowWithTextSelection';
@@ -40,7 +39,7 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
   updateAttributes,
   deleteNode,
   selected,
-  editor: externalEditor, // 主编辑器实例
+  editor: externalEditor,
 }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -48,14 +47,39 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const isInternalUpdate = useRef(false); // 避免 setContent 触发 onUpdate 循环
 
   const tabs: Tab[] = node.attrs.tabs || [{ id: '1', title: '页签1' }];
   const contents: Contents = node.attrs.contents || { '1': { type: 'doc', content: [{ type: 'paragraph' }] } };
   const activeIndex: number = node.attrs.activeIndex ?? 0;
 
+  // 用 ref 保持最新值，避免 onBlur/handleTabClick 中的闭包过时问题
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const contentsRef = useRef(contents);
+  contentsRef.current = contents;
+  const activeIndexRef = useRef(activeIndex);
+  activeIndexRef.current = activeIndex;
+  const updateAttributesRef = useRef(updateAttributes);
+  updateAttributesRef.current = updateAttributes;
+
   // 获取主编辑器的可编辑状态
   const isExternalEditable = externalEditor?.isEditable ?? true;
+
+  /**
+   * 保存当前活跃 Tab 的编辑器内容到 node attrs
+   * 所有会切换/修改 Tab 的操作前都应调用此函数
+   */
+  const saveCurrentContent = useCallback((editorInstance: any) => {
+    if (!editorInstance) return;
+    const currentTabId = tabsRef.current[activeIndexRef.current]?.id;
+    if (!currentTabId) return;
+    updateAttributesRef.current({
+      contents: {
+        ...contentsRef.current,
+        [currentTabId]: editorInstance.getJSON(),
+      },
+    });
+  }, []);
 
   // 创建内部编辑器
   const internalEditor = useEditor({
@@ -80,7 +104,7 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
       }),
     ],
     content: contents[tabs[activeIndex]?.id] || { type: 'doc', content: [{ type: 'paragraph' }] },
-    editable: isExternalEditable, // 跟随主编辑器的锁定状态
+    editable: isExternalEditable,
     editorProps: {
       attributes: {
         class: 'outline-none min-h-[100px]',
@@ -91,16 +115,8 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
       setActiveInternalEditor(internalEditor);
     },
     onBlur: () => {
-      // 失去焦点时，一次性把当前 Tab 内容同步到 contents，并清除激活状态
-      const currentTabId = tabs[activeIndex]?.id;
-      if (currentTabId && internalEditor) {
-        updateAttributes({
-          contents: {
-            ...contents,
-            [currentTabId]: internalEditor.getJSON(),
-          },
-        });
-      }
+      // 失去焦点时保存当前内容（通过 ref 获取最新值）
+      saveCurrentContent(internalEditor);
       setActiveInternalEditor(null);
     },
   });
@@ -112,27 +128,28 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
     }
   }, [internalEditor, isExternalEditable]);
 
-  // 切换 Tab：只改 activeIndex，内容由 useEffect 加载
+  // 切换 Tab：先保存当前内容，再切换
   const handleTabClick = useCallback((index: number) => {
     if (editingIndex !== null) return;
-    if (index === activeIndex) return;
-    updateAttributes({ activeIndex: index });
-  }, [activeIndex, editingIndex, updateAttributes]);
+    if (index === activeIndexRef.current) return;
+    // 先保存当前 Tab 的内容
+    saveCurrentContent(internalEditor);
+    updateAttributesRef.current({ activeIndex: index });
+  }, [editingIndex, internalEditor, saveCurrentContent]);
 
-  // 加载目标 Tab 内容
+  // 加载目标 Tab 内容 —— 仅在 activeIndex 变化时触发
   useEffect(() => {
     if (!internalEditor) return;
     const targetTab = tabs[activeIndex];
     if (!targetTab) return;
 
     const targetContent = contents[targetTab.id] || { type: 'doc', content: [{ type: 'paragraph' }] };
-    isInternalUpdate.current = true;
     internalEditor.commands.setContent(targetContent, false);
-    isInternalUpdate.current = false;
-  }, [activeIndex, tabs, contents, internalEditor]);
+  }, [activeIndex, internalEditor]); // 故意不包含 tabs 和 contents，避免循环触发
 
-  // 添加 Tab
+  // 添加 Tab：先保存当前内容
   const handleAddTab = useCallback(() => {
+    saveCurrentContent(internalEditor);
     const newId = generateId();
     const newTitle = `页签${tabs.length + 1}`;
     updateAttributes({
@@ -143,14 +160,17 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
       },
       activeIndex: tabs.length,
     });
-  }, [tabs, contents, updateAttributes]);
+  }, [tabs, contents, updateAttributes, internalEditor, saveCurrentContent]);
 
-  // 删除 Tab
+  // 删除 Tab：先保存当前内容
   const handleDeleteTab = useCallback((index: number) => {
     if (tabs.length === 1) {
       deleteNode();
       return;
     }
+
+    // 先保存当前内容（确保未保存的编辑不丢失）
+    saveCurrentContent(internalEditor);
 
     const tabIdToDelete = tabs[index].id;
     const newTabs = tabs.filter((_, i) => i !== index);
@@ -169,7 +189,7 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
       contents: newContents,
       activeIndex: newActiveIndex,
     });
-  }, [tabs, contents, activeIndex, deleteNode, updateAttributes]);
+  }, [tabs, contents, activeIndex, deleteNode, updateAttributes, internalEditor, saveCurrentContent]);
 
   // 更新 Tab 标题
   const updateTabTitle = useCallback((index: number, title: string) => {
@@ -305,6 +325,7 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
                     className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[99999] min-w-[100px]"
                     style={{ top: menuPosition.top, left: menuPosition.left }}
                   >
+                    {isExternalEditable && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -315,6 +336,8 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
                     >
                       重命名
                     </button>
+                    )}
+                    {isExternalEditable && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -325,12 +348,14 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
                     >
                       删除页签
                     </button>
+                    )}
                   </div>
                 )}
               </div>
             );
           })}
 
+          {isExternalEditable && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -341,6 +366,7 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
           >
             <Plus size={14} />
           </button>
+          )}
         </div>
 
         {/* Tab 内容区 */}

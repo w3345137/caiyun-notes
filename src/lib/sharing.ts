@@ -2,7 +2,7 @@
  * 笔记本分享服务
  * 通过 Edge Functions 访问数据库，替代直接使用 serviceClient
  */
-import { supabase } from './supabase';
+import { getCurrentUserId } from './auth';
 import * as edgeApi from './edgeApi';
 
 export interface NotebookShare {
@@ -31,7 +31,7 @@ export async function shareNotebookToUser(
   permission: 'view' | 'edit' = 'edit'
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = getCurrentUserId();
     if (!user) {
       return { success: false, error: '用户未登录' };
     }

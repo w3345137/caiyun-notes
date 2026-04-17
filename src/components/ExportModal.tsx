@@ -3,7 +3,6 @@ import { X, Download, Upload, ChevronRight, ChevronDown, FileText, Folder, BookO
 import { useAuth } from './AuthProvider';
 import { useNoteStore } from '../store/noteStore';
 import toast from 'react-hot-toast';
-import { supabase } from '../lib/supabase';
 import { getSharedNotebooks } from '../lib/sharing';
 import { apiLoadFullTree } from '../lib/edgeApi';
 import yaml from 'js-yaml';
@@ -128,16 +127,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
 
     setIsLoading(true);
     try {
-      // 1. 获取当前用户拥有的笔记本 ID
-      const { data: ownedNotebooks } = await supabase
-        .from('notes')
-        .select('id')
-        .eq('owner_id', user.id)
-        .eq('type', 'notebook');
+      // 1. 获取所有笔记数据
+      const result = await apiLoadFullTree();
+      if (!result.success) {
+        console.error('加载笔记失败:', result.error);
+        toast.error('加载笔记失败');
+        return;
+      }
 
-      const ownedNotebookIds = new Set((ownedNotebooks || []).map((n: any) => n.id));
+      const allData = result.data || [];
 
-      // 2. 获取分享给当前用户的笔记本 ID
+      // 2. 获取当前用户拥有的笔记本 ID
+      const ownedNotebookIds = new Set(
+        allData.filter((n: any) => n.owner_id === user.id && n.type === 'notebook').map((n: any) => n.id)
+      );
+
+      // 3. 获取分享给当前用户的笔记本 ID
       const sharedNotebooks = await getSharedNotebooks();
       const sharedNotebookIds = new Set(sharedNotebooks.map((s: any) => s.note_id));
 
@@ -149,15 +154,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
         return;
       }
 
-      // 3. 通过 Edge Function 获取所有可访问的笔记（包含子孙节点）
-      const result = await apiLoadFullTree();
-      if (!result.success) {
-        console.error('加载笔记失败:', result.error);
-        toast.error('加载笔记失败');
-        return;
-      }
-
-      const data = result.data || [];
+      const data = allData;
 
       if (data.length === 0) {
         setExportTree([]);
@@ -555,23 +552,42 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
     }
   };
 
-  // 原位置导入：保留原 ID 和父子关系
+  // 原位置导入：保留原 ID 和父子关系，使用 ID 映射处理冲突
   const performImportOriginal = async (notesToImport: ParsedNote[]) => {
     console.log('[导入调试] performImportOriginal called, notes:', notesToImport.length);
     setIsImporting(true);
     let success = 0;
     let failed = 0;
     const allIssues: ImportIssue[] = [...issues];
+    // ID 映射：原始ID → 实际导入后的ID（用于重映射子笔记的 parentId）
+    const idMapping = new Map<string, string>();
 
     try {
       const sortedNotes = topologicalSort(notesToImport);
 
+      // 预加载已有笔记 ID，避免每个 importNote 都查一次
+      const existingIdsResult = await apiLoadFullTree();
+      const existingIds = new Set<string>();
+      if (existingIdsResult.success && existingIdsResult.data) {
+        existingIdsResult.data.forEach((n: any) => existingIds.add(n.id));
+      }
+
       for (const note of sortedNotes) {
-        console.log('[导入调试] 导入笔记:', { id: note.id, title: note.title, type: note.type, parentId: note.parentId });
-        const result = await importNote(note, note.parentId, user?.id || '');
+        // 使用 ID 映射重映射 parentId
+        let resolvedParentId = note.parentId;
+        if (resolvedParentId && idMapping.has(resolvedParentId)) {
+          resolvedParentId = idMapping.get(resolvedParentId)!;
+        }
+
+        console.log('[导入调试] 导入笔记:', { id: note.id, title: note.title, type: note.type, parentId: resolvedParentId });
+        const result = await importNote(note, resolvedParentId, user?.id || '', existingIds);
         console.log('[导入调试] importNote result:', result);
         if (result.success) {
           success++;
+          // 记录 ID 映射（如果因为冲突使用了新 ID）
+          idMapping.set(note.id, result.actualId || note.id);
+          // 将新 ID 加入 existingIds 防止后续批次内冲突
+          existingIds.add(result.actualId || note.id);
         } else {
           failed++;
           allIssues.push({
@@ -596,42 +612,49 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
     }
   };
 
-  // 新位置导入：根据笔记类型决定目标位置
+  // 新位置导入：根据笔记类型决定目标位置，保持导入批次内部的父子关系
   const performImportNewLocation = async (notesToImport: ParsedNote[], targetNotebookId: string, targetSectionId: string | null) => {
     setIsImporting(true);
     let success = 0;
     let failed = 0;
     const allIssues: ImportIssue[] = [...issues];
+    // ID 映射：原始ID → 实际导入后的ID
+    const idMapping = new Map<string, string>();
+    // 收集导入批次中的所有原始ID，用于判断 parentId 是否在批次内
+    const batchIds = new Set(notesToImport.map(n => n.id));
 
     try {
       const sortedNotes = topologicalSort(notesToImport);
 
+      // 预加载已有笔记 ID
+      const existingIdsResult = await apiLoadFullTree();
+      const existingIds = new Set<string>();
+      if (existingIdsResult.success && existingIdsResult.data) {
+        existingIdsResult.data.forEach((n: any) => existingIds.add(n.id));
+      }
+
       for (const note of sortedNotes) {
-        // 根据笔记类型决定 parent_id
         let targetParentId: string | null = null;
+
         if (note.type === 'notebook') {
-          // 笔记本：完全新建，parent_id = null
-          targetParentId = null;
+          // 笔记本：放到目标笔记本下（变成顶级分区或子笔记本）
+          targetParentId = targetNotebookId;
+        } else if (note.parentId && batchIds.has(note.parentId)) {
+          // 父节点在导入批次中：用 ID 映射后的实际 ID
+          targetParentId = idMapping.get(note.parentId) || note.parentId;
         } else if (note.type === 'section') {
           // 分区：放到目标笔记本下
           targetParentId = targetNotebookId;
         } else {
-          // 页面：放到目标分区下
-          targetParentId = targetSectionId;
-          if (!targetSectionId) {
-            failed++;
-            allIssues.push({
-              fileName: note.originalFileName,
-              issueType: 'parent_not_found',
-              message: `页面 "${note.title}" 需要选择一个分区来放置`,
-            });
-            continue;
-          }
+          // 页面：放到目标分区下（如果选择了的话），否则放到目标笔记本下
+          targetParentId = targetSectionId || targetNotebookId;
         }
 
-        const result = await importNote(note, targetParentId, user?.id || '');
+        const result = await importNote(note, targetParentId, user?.id || '', existingIds);
         if (result.success) {
           success++;
+          idMapping.set(note.id, result.actualId || note.id);
+          existingIds.add(result.actualId || note.id);
         } else {
           failed++;
           allIssues.push({
