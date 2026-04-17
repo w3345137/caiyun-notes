@@ -5,6 +5,9 @@ on:
     tags:
       - 'p*'  # p1, p2, p3... APP 版本标签
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
