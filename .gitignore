@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Tauri build
+src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Cache
+.cache/
+.parcel-cache/
+.vite/
+
+# Secrets (IMPORTANT)
+秘钥/
+*.pem
+*.key
+
+# Local project files (not part of the app)
+App/
+fix-export/
+logos/
+memorys/
+versions/
+.workbuddy/
+.openclaw/
+中文目录/
+
+# Generated images
+generated-images/
+
+# Backend (deployed separately)
+backend/

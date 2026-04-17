@@ -1,0 +1,151 @@
+name: Build & Release NotesApp
+
+on:
+  push:
+    tags:
+      - 'p*'  # p1, p2, p3... APP 版本标签
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npx vite build --mode prod
+
+      - name: Build Tauri app (signed)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          projectPath: .
+          tauriScript: npx tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: '彩云笔记 ${{ github.ref_name }}'
+          releaseBody: 'See the assets below to download and install this version.'
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+  # 发布后上传更新文件到服务器
+  deploy-updates:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release assets
+        uses: dsaltares/fetch-gh-release-asset@master
+        with:
+          version: ${{ github.ref_name }}
+          regex: true
+          file: '.*'
+          target: './downloads/'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate latest.json
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#p}"  # 去掉 p 前缀，如 p2 → 2
+          
+          # 查找各平台文件
+          WINDOWS_X64=$(ls downloads/*x64-setup.nsis.zip 2>/dev/null | head -1)
+          MACOS_X64=$(ls downloads/*x86_64*.app.tar.gz 2>/dev/null | head -1 || ls downloads/*.app.tar.gz 2>/dev/null | grep -v aarch64 | head -1)
+          MACOS_ARM=$(ls downloads/*aarch64*.app.tar.gz 2>/dev/null || ls downloads/*.app.tar.gz 2>/dev/null | grep aarch64 | head -1)
+          
+          # 获取签名文件
+          WINDOWS_SIG=$(cat "${WINDOWS_X64}.sig" 2>/dev/null || echo "")
+          MACOS_X64_SIG=$(cat "${MACOS_X64}.sig" 2>/dev/null || echo "")
+          MACOS_ARM_SIG=$(cat "${MACOS_ARM}.sig" 2>/dev/null || echo "")
+          
+          BASE_URL="http://49.235.160.8:3011/updates"
+          
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "彩云笔记 ${TAG} 更新",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "windows-x86_64": {
+                "url": "${BASE_URL}/windows-x86_64/${WINDOWS_X64##*/}",
+                "signature": "${WINDOWS_SIG}"
+              },
+              "darwin-x86_64": {
+                "url": "${BASE_URL}/darwin-x86_64/${MACOS_X64##*/}",
+                "signature": "${MACOS_X64_SIG}"
+              },
+              "darwin-aarch64": {
+                "url": "${BASE_URL}/darwin-aarch64/${MACOS_ARM##*/}",
+                "signature": "${MACOS_ARM_SIG}"
+              }
+            }
+          }
+          EOF
+          
+          echo "Generated latest.json:"
+          cat latest.json
+
+      - name: Upload to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 49.235.160.8
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "downloads/*,latest.json"
+          target: "/notesapp/updates"
+          strip_components: 1
+
+      - name: Organize updates on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 49.235.160.8
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # 按平台整理文件
+            cd /notesapp/updates
+            mkdir -p windows-x86_64 darwin-x86_64 darwin-aarch64
+            
+            # 移动 Windows 文件
+            for f in *x64-setup.nsis.zip*; do [ -f "$f" ] && mv "$f" windows-x86_64/; done
+            
+            # 移动 macOS 文件
+            for f in *x86_64*.app.tar.gz*; do [ -f "$f" ] && mv "$f" darwin-x86_64/; done
+            for f in *aarch64*.app.tar.gz*; do [ -f "$f" ] && mv "$f" darwin-aarch64/; done
+            
+            echo "Updates organized:"
+            find . -type f | head -20

@@ -1,0 +1,204 @@
+/* ============================================================
+   思维导图 - Mind Elixir 样式（参考图风格）
+   ============================================================ */
+
+/* 外层容器 */
+.mindmap-outer {
+  position: relative;
+  border: none; /* 去掉边框 */
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 12px 0;
+  background: #fafbfc;
+  transition: all 0.2s ease;
+}
+
+.mindmap-outer.mindmap-selected {
+  box-shadow: 0 0 0 1px #3b82f6; /* 选中时显示边框 */
+}
+
+/* 全屏模式 */
+.mindmap-outer.mindmap-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  margin: 0;
+  border-radius: 0;
+  border: none;
+  background: #fff;
+}
+
+.mindmap-outer.mindmap-fullscreen .mindmap-container {
+  height: calc(100vh - 76px) !important;
+}
+
+/* 工具栏 — 仅选中时显示 */
+.mindmap-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.mindmap-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mindmap-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: #e2e8f0;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.mindmap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.mindmap-btn svg {
+  flex-shrink: 0;
+}
+
+.mindmap-btn span {
+  font-size: 12px;
+}
+
+.mindmap-btn:hover {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.mindmap-btn:active {
+  background: #cbd5e1;
+}
+
+/* Mind Elixir 容器 */
+.mindmap-container {
+  width: 100%;
+  height: 400px;
+  position: relative;
+  overflow: hidden; /* 裁剪溢出，通过调整容器高度来确保内容可见 */
+  outline: none;
+}
+
+/* 全屏模式下工具栏始终显示 */
+.mindmap-outer.mindmap-fullscreen .mindmap-toolbar {
+  position: relative;
+  z-index: 10;
+}
+
+/* ============================================================
+   Mind Elixir 节点样式覆盖 — 参考图风格
+   ============================================================ */
+
+/* 根节点：深色背景 + 白色文字 + 粗边框 */
+.mindmap-container me-root > me-tpc {
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  padding: 10px 24px !important;
+  border-radius: 8px !important;
+  border: 3px solid #1a252f !important;
+  background: #2c3e50 !important;
+  color: #ffffff !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
+  line-height: 1.5 !important;
+}
+
+/* 一级分支节点（主分支）：较大文字，颜色跟随分支色 */
+.mindmap-container me-main > me-wrapper > me-parent > me-tpc {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  padding: 6px 16px !important;
+  border-radius: 6px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
+  line-height: 1.5 !important;
+}
+
+/* 二级及以下节点：正常大小 */
+.mindmap-container me-tpc {
+  font-size: 14px !important;
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
+  line-height: 1.5 !important;
+  transition: box-shadow 0.15s ease !important;
+}
+
+.mindmap-container me-tpc:hover {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* 选中节点 */
+.mindmap-container me-tpc.selected {
+  box-shadow: 0 0 0 2px var(--selected, #3b82f6) !important;
+}
+
+/* 确保上下文菜单在最上层 */
+.mind-elixir-context-menu {
+  z-index: 10000 !important;
+}
+
+/* NodeView 整体 */
+.mindmap-node-view {
+  margin: 8px 0;
+}
+
+/* 隐藏 mind-elixir 自带的工具栏（我们用自己的） */
+.mindmap-container .mind-elixir-toolbar {
+  display: none !important;
+}
+
+/* ============================================================
+   拖拽预览增强 — 更明显的视觉反馈
+   ============================================================ */
+
+/* 拖拽幽灵元素 — 增强可见性 */
+.mindmap-container .mind-elixir-ghost {
+  font-size: 13px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+/* 拖拽放置目标指示 — 更醒目的颜色 */
+.mindmap-container me-parent me-tpc .insert-preview.show {
+  background: rgba(59, 130, 246, 0.25) !important;
+  border-radius: 4px !important;
+  transition: opacity 0.1s ease !important;
+}
+
+.mindmap-container me-parent me-tpc .insert-preview.before.show {
+  border-top: 2px solid #3b82f6 !important;
+  background: transparent !important;
+}
+
+.mindmap-container me-parent me-tpc .insert-preview.after.show {
+  border-bottom: 2px solid #3b82f6 !important;
+  background: transparent !important;
+}
+
+.mindmap-container me-parent me-tpc .insert-preview.in.show {
+  background: rgba(59, 130, 246, 0.15) !important;
+  border: 1px dashed #3b82f6 !important;
+}

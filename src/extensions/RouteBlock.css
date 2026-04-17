@@ -1,0 +1,655 @@
+/* RouteBlock 样式 */
+.route-block-wrapper {
+  margin: 16px 0;
+}
+
+.route-block {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.route-block.selected {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.route-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.route-title {
+  font-weight: 600;
+  color: #374151;
+}
+
+.route-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.route-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.route-btn:hover {
+  background: #e5e7eb;
+}
+
+/* 主体布局 */
+.route-body {
+  display: flex;
+  min-height: 300px;
+}
+
+/* ==================== 左侧列表区 ==================== */
+.route-list-panel {
+  width: 340px;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  position: relative;
+  overflow: visible;
+}
+
+.route-list-state {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  z-index: 10;
+  color: #6b7280;
+}
+
+.route-list-state.error {
+  color: #ef4444;
+}
+
+/* 搜索框 */
+.route-search {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.route-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.route-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.route-search-loading {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.route-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0; right: 0;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  margin-top: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.route-suggestion-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.route-suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.route-suggestion-item:hover {
+  background: #f9fafb;
+}
+
+.suggestion-name {
+  font-weight: 500;
+  color: #111827;
+  font-size: 14px;
+}
+
+.suggestion-address {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+/* 模式切换 */
+.route-mode-switch {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.route-mode-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  font-size: 13px;
+  cursor: pointer;
+  background: transparent;
+  color: #6b7280;
+  transition: all 0.2s;
+}
+
+.route-mode-btn.active {
+  background: #fff;
+  color: #374151;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.route-mode-btn:hover:not(.active) {
+  color: #374151;
+}
+
+/* 标记显示切换 */
+.route-label-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.route-label-btn {
+  padding: 3px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  background: #fff;
+  color: #6b7280;
+}
+
+.route-label-btn.active {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+/* 地点列表 */
+.route-points {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.route-depart {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.route-time-input {
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.route-point {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  background: #f9fafb;
+  border-radius: 4px;
+  margin-bottom: 3px;
+  cursor: grab;
+  font-size: 13px;
+}
+
+.route-point:hover {
+  background: #f3f4f6;
+}
+
+.route-point.dragging {
+  opacity: 0.5;
+  background: #dbeafe;
+}
+
+.point-drag {
+  color: #9ca3af;
+  cursor: grab;
+}
+
+/* 颜色选择器 */
+.point-color-picker {
+  width: 20px;
+  height: 20px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+}
+
+.point-color-picker::-webkit-color-swatch-wrapper {
+  padding: 1px;
+}
+
+.point-color-picker::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.point-name {
+  flex: 1;
+  font-size: 13px;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.point-stay {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.route-stay-input {
+  width: 40px;
+  padding: 2px 4px;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.route-stay-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.stay-unit {
+  color: #9ca3af;
+}
+
+.point-remove {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 4px;
+}
+
+.point-remove:hover {
+  color: #ef4444;
+}
+
+.route-leg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.leg-arrow {
+  color: #9ca3af;
+}
+
+.leg-info {
+  flex: 1;
+}
+
+.leg-arrive {
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.route-empty {
+  text-align: center;
+  color: #9ca3af;
+  padding: 24px;
+  font-size: 14px;
+}
+
+.route-list-footer {
+  margin-top: auto;
+}
+
+/* 复制按钮 */
+.route-copy-btn {
+  width: 100%;
+  padding: 8px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.route-copy-btn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.route-copy-btn:disabled {
+  background: #d1d5db;
+  cursor: not-allowed;
+}
+
+/* ==================== 右侧地图区 ==================== */
+.route-map-panel {
+  flex: 1;
+  min-height: 300px;
+  position: relative;
+  background: #f3f4f6;
+}
+
+/* 初始提示 - 手动触发 */
+.route-map-prompt {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.route-start-btn {
+  padding: 12px 24px;
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  color: #374151;
+  transition: all 0.2s;
+}
+
+.route-start-btn:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.route-map-prompt-hint {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* 地图工具栏（规划/导出按钮） */
+.route-map-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 100;
+  display: flex;
+  gap: 4px;
+}
+
+.route-toolbar-btn {
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.route-toolbar-btn:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.route-map-loading,
+.route-map-error,
+.route-map-hint,
+.route-map-calculating {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.route-map-error {
+  color: #ef4444;
+}
+
+.route-map-calculating {
+  background: rgba(255, 255, 255, 0.9);
+  padding: 16px;
+  border-radius: 8px;
+}
+
+/* ==================== API Key 设置面板 ==================== */
+.route-settings-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.route-settings-panel {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  width: 420px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+
+.route-settings-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 8px;
+}
+
+.route-settings-desc {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.route-settings-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.route-settings-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.route-settings-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.route-settings-input::placeholder {
+  color: #d1d5db;
+  font-size: 12px;
+}
+
+.route-settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.route-settings-btn {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.route-settings-btn.primary {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.route-settings-btn.primary:hover {
+  background: #2563eb;
+}
+
+.route-settings-btn.secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.route-settings-btn.secondary:hover {
+  background: #e5e7eb;
+}
+
+.route-settings-note {
+  font-size: 12px;
+  color: #f59e0b;
+  margin-top: 12px;
+}
+
+/* ==================== 导出面板 ==================== */
+.route-export-section {
+  margin: 12px 0;
+}
+
+.route-export-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.route-export-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.route-export-table th {
+  background: #f9fafb;
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.route-export-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+}
+
+.export-color-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+/* ==================== 加载动画 ==================== */
+.route-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: route-spin 1s linear infinite;
+}
+
+@keyframes route-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .route-body {
+    flex-direction: column;
+  }
+
+  .route-list-panel {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+    min-height: 200px;
+  }
+
+  .route-map-panel {
+    min-height: 250px;
+  }
+}
