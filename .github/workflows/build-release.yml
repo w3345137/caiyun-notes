@@ -83,16 +83,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p downloads
-          # 找到最新的 draft release
-          RELEASE_ID=$(gh release list --repo ${{ github.repository }} --json id,tagName --jq ".[] | select(.tagName==\"${{ github.ref_name }}\") | .id")
-          if [ -z "$RELEASE_ID" ]; then
-            echo "ERROR: No release found for tag ${{ github.ref_name }}"
-            exit 1
-          fi
-          echo "Release ID: ${RELEASE_ID}"
-          # 下载所有 assets
+          # 直接按 tag 下载 release assets
           cd downloads
-          gh release download ${{ github.ref_name }} --repo ${{ github.repository }} --clobber || true
+          gh release download ${{ github.ref_name }} --repo ${{ github.repository }} --clobber
           cd ..
           echo "=== Downloaded files ==="
           ls -la downloads/ || echo "No files downloaded"
