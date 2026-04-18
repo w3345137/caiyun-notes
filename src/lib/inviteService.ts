@@ -183,21 +183,7 @@ export async function cancelInvite(inviteId: string): Promise<{ success: boolean
 }
 
 // 获取待处理的申请数量（用于红点显示）
+// 注意：邀请功能尚未本地化，暂返回 0
 export async function getPendingInviteCount(): Promise<number> {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return 0;
-
-    const result = await edgeApi.apiGetPendingCount();
-
-    if (!result.success) {
-      console.error('获取待处理申请数量失败:', result.error);
-      return 0;
-    }
-
-    return result.count || 0;
-  } catch (err) {
-    console.error('获取待处理申请数量失败:', err);
-    return 0;
-  }
+  return 0;
 }

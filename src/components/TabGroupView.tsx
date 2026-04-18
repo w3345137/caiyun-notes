@@ -12,6 +12,13 @@ import { TableHeaderWithColor } from '../extensions/TableHeaderWithColor';
 import { ResizableImage } from '../extensions/ResizableImage';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
+import Highlight from '@tiptap/extension-highlight';
+import Link from '@tiptap/extension-link';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import { FontSize } from '@tiptap/extension-font-size';
+import { ListKeymap } from '@tiptap/extension-list-keymap';
+import { Markdown } from '@tiptap/markdown';
 import { setActiveInternalEditor } from '../lib/nodeViewEditorManager';
 
 interface TabGroupViewProps {
@@ -86,6 +93,9 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
     extensions: [
       StarterKit,
       Placeholder.configure({ placeholder: '开始输入...' }),
+      ResizableImage.configure({
+        HTMLAttributes: { class: 'rounded-lg' },
+      }),
       TableWithDefaultWidth.configure({ resizable: true }),
       TextAlign.configure({ types: ['heading', 'paragraph', 'tableCell', 'tableHeader'] }),
       TableRowWithTextSelection,
@@ -93,14 +103,29 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
         HTMLAttributes: { class: 'relative' },
       }),
       TableHeaderWithColor,
-      ResizableImage.configure({
-        HTMLAttributes: { class: 'rounded-lg' },
-      }),
+      TextStyle,
+      Color,
+      FontSize.configure({ types: ['textStyle'] }),
+      Highlight,
+      Link.configure({ openOnClick: false }),
       TaskList.configure({
         HTMLAttributes: { class: 'not-prose pl-0 list-none' },
       }),
       TaskItem.configure({
         HTMLAttributes: { class: 'flex items-start gap-2 py-1' },
+      }),
+      ListKeymap.configure({
+        listTypes: [
+          { itemName: 'listItem', wrapperNames: ['bulletList', 'orderedList'] },
+          { itemName: 'taskItem', wrapperNames: ['taskList'] },
+        ],
+      }),
+      Markdown.configure({
+        html: false,
+        tightLists: true,
+        breaks: false,
+        transformCopiedText: true,
+        transformPastedText: true,
       }),
     ],
     content: contents[tabs[activeIndex]?.id] || { type: 'doc', content: [{ type: 'paragraph' }] },
@@ -127,6 +152,23 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
       internalEditor.setEditable(isExternalEditable);
     }
   }, [internalEditor, isExternalEditable]);
+
+  // 内部编辑器内容变化时自动保存到 node attrs（防抖 1s，防止刷新丢失）
+  useEffect(() => {
+    if (!internalEditor) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const handler = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        saveCurrentContent(internalEditor);
+      }, 1000);
+    };
+    internalEditor.on('update', handler);
+    return () => {
+      internalEditor.off('update', handler);
+      if (timer) clearTimeout(timer);
+    };
+  }, [internalEditor, saveCurrentContent]);
 
   // 切换 Tab：先保存当前内容，再切换
   const handleTabClick = useCallback((index: number) => {

@@ -20,11 +20,11 @@ export async function signIn(email: string, password: string) {
   return data;
 }
 
-export async function signUp(email: string, password: string, displayName: string) {
+export async function signUp(email: string, password: string, displayName: string, verifyToken: string) {
   const res = await fetch(`${API_BASE}/auth/v1/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, grant_type: 'signup', display_name: displayName })
+    body: JSON.stringify({ email, password, grant_type: 'signup', display_name: displayName, verifyToken })
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -32,6 +32,42 @@ export async function signUp(email: string, password: string, displayName: strin
   }
   const data = await res.json();
   localStorage.setItem('notesapp_token', data.access_token);
+  return data;
+}
+
+// 发送验证码
+export async function sendVerificationCode(email: string, purpose: 'register' | 'reset-password') {
+  const res = await fetch(`${API_BASE}/send-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, purpose })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || '发送验证码失败');
+  return data;
+}
+
+// 验证验证码
+export async function verifyCode(email: string, code: string, purpose: 'register' | 'reset-password') {
+  const res = await fetch(`${API_BASE}/verify-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code, purpose })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || '验证码验证失败');
+  return data;
+}
+
+// 重置密码
+export async function resetPassword(email: string, newPassword: string, verifyToken: string) {
+  const res = await fetch(`${API_BASE}/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, newPassword, verifyToken })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || '重置密码失败');
   return data;
 }
 

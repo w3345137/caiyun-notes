@@ -2,19 +2,24 @@
    思维导图 - Mind Elixir 样式（参考图风格）
    ============================================================ */
 
-/* 外层容器 */
+/* 外层容器 — 固定高度，不超出编辑区产生外层滚动 */
 .mindmap-outer {
   position: relative;
-  border: none; /* 去掉边框 */
+  border: none;
   border-radius: 12px;
   overflow: hidden;
-  margin: 12px 0;
+  margin: 16px 0;
   background: #fafbfc;
   transition: all 0.2s ease;
+  outline: none !important;
+  /* 固定高度：vh 减去顶部工具栏(约90px)、padding(约60px)、底部栏(约40px) */
+  height: 60vh;
+  min-height: 350px;
+  max-height: calc(100vh - 200px);
 }
 
 .mindmap-outer.mindmap-selected {
-  box-shadow: 0 0 0 1px #3b82f6; /* 选中时显示边框 */
+  /* 不显示选中边框 */
 }
 
 /* 全屏模式 */
@@ -31,8 +36,12 @@
   background: #fff;
 }
 
+.mindmap-outer.mindmap-fullscreen .mindmap-canvas-wrapper {
+  height: 100vh;
+}
+
 .mindmap-outer.mindmap-fullscreen .mindmap-container {
-  height: calc(100vh - 76px) !important;
+  height: 100% !important;
 }
 
 /* 工具栏 — 仅选中时显示 */
@@ -93,13 +102,52 @@
   background: #cbd5e1;
 }
 
-/* Mind Elixir 容器 */
+/* 画布包裹器（画布 + 滚动条） — 填满 outer */
+.mindmap-canvas-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Mind Elixir 容器 — 填满 canvas-wrapper */
 .mindmap-container {
   width: 100%;
-  height: 400px;
+  height: 100%;
   position: relative;
-  overflow: hidden; /* 裁剪溢出，通过调整容器高度来确保内容可见 */
+  overflow: hidden;
   outline: none;
+  /* 高清渲染 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* MindElixir 内部 map-canvas 层 — 确保高清渲染 */
+.mindmap-container .map-canvas {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* 思维导图节点文字清晰渲染 */
+.mindmap-container me-tpc,
+.mindmap-container me-tpc .text {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
+
+/* 编辑输入框样式覆盖 — 确保背景不透明，z-index 足够高 */
+.mindmap-container #input-box {
+  position: absolute !important;
+  background-color: #ffffff !important;
+  border: 1px solid #3b82f6 !important;
+  border-radius: 4px !important;
+  z-index: 200 !important;
+  outline: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  min-width: 60px !important;
 }
 
 /* 全屏模式下工具栏始终显示 */
@@ -125,17 +173,20 @@
   line-height: 1.5 !important;
 }
 
-/* 一级分支节点（主分支）：较大文字，颜色跟随分支色 */
+/* 一级分支节点（主分支）：较大文字，有边框 */
 .mindmap-container me-main > me-wrapper > me-parent > me-tpc {
   font-size: 16px !important;
   font-weight: 600 !important;
   padding: 6px 16px !important;
   border-radius: 6px !important;
+  border: 1.5px solid #94a3b8 !important;
+  background: #ffffff !important;
+  color: #333333 !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
   line-height: 1.5 !important;
 }
 
-/* 二级及以下节点：正常大小 */
+/* 二级及以下节点：正常大小，无边框 */
 .mindmap-container me-tpc {
   font-size: 14px !important;
   padding: 4px 10px !important;
@@ -143,6 +194,9 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
   line-height: 1.5 !important;
   transition: box-shadow 0.15s ease !important;
+  border: none !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
 }
 
 .mindmap-container me-tpc:hover {
@@ -161,7 +215,24 @@
 
 /* NodeView 整体 */
 .mindmap-node-view {
-  margin: 8px 0;
+  margin: 0;
+}
+
+/* 强制去掉 ProseMirror 对思维导图节点的选中样式（#8cf 蓝色边框/蓝底） */
+/* ProseMirror-selectednode 类加在 ReactNodeViewRenderer 的外层 div（class 含 "node-mindmap"）上 */
+/* 必须用 !important 覆盖 prosemirror-view/style/prosemirror.css 中的默认 outline: 2px solid #8cf */
+.ProseMirror-selectednode[class*="node-mindmap"] {
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  caret-color: transparent !important;
+}
+.ProseMirror-selectednode[class*="node-mindmap"] > * {
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 /* 隐藏 mind-elixir 自带的工具栏（我们用自己的） */
@@ -201,4 +272,120 @@
 .mindmap-container me-parent me-tpc .insert-preview.in.show {
   background: rgba(59, 130, 246, 0.15) !important;
   border: 1px dashed #3b82f6 !important;
+}
+
+/* ============================================================
+   自定义滚动条
+   ============================================================ */
+
+.mindmap-scrollbar-track {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.04);
+  z-index: 20;
+  border-radius: 4px;
+}
+
+.mindmap-scrollbar-track:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* 横向滚动条 */
+.mindmap-scrollbar-x {
+  bottom: 4px;
+  left: 4px;
+  right: 18px;
+  height: 8px;
+}
+
+/* 纵向滚动条 */
+.mindmap-scrollbar-y {
+  top: 4px;
+  right: 4px;
+  bottom: 18px;
+  width: 8px;
+}
+
+.mindmap-scrollbar-thumb {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.mindmap-scrollbar-x .mindmap-scrollbar-thumb {
+  top: 1px;
+  height: 6px;
+  min-width: 30px;
+}
+
+.mindmap-scrollbar-y .mindmap-scrollbar-thumb {
+  left: 1px;
+  width: 6px;
+  min-height: 30px;
+}
+
+.mindmap-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.mindmap-scrollbar-thumb:active {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================
+   框选矩形
+   ============================================================ */
+
+.mindmap-selection-rect {
+  position: absolute;
+  border: 2px dashed #3b82f6;
+  background: rgba(59, 130, 246, 0.08);
+  z-index: 30;
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+/* ============================================================
+   缩放提示
+   ============================================================ */
+
+.mindmap-zoom-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #94a3b8;
+  pointer-events: none;
+  opacity: 0.7;
+  white-space: nowrap;
+  z-index: 15;
+  transition: opacity 0.3s ease;
+}
+
+.mindmap-outer:hover .mindmap-zoom-hint {
+  opacity: 0;
+}
+
+/* ============================================================
+   缩放百分比按钮
+   ============================================================ */
+
+.mindmap-btn-zoom {
+  min-width: 48px;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #334155;
+}
+
+/* ============================================================
+   非全屏模式下画布包裹器自适应高度
+   ============================================================ */
+
+.mindmap-outer:not(.mindmap-fullscreen) .mindmap-canvas-wrapper {
+  /* 高度由 JS 动态设置在 mindmap-container 上 */
+  position: relative;
+  overflow: hidden;
 }

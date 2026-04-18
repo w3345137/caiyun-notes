@@ -7,7 +7,6 @@ let activeInternalEditor: Editor | null = null;
  * 获取当前活跃的内部编辑器（用于工具栏命令路由）
  */
 export function getActiveInternalEditor(): Editor | null {
-  console.log('[nodeViewEditorManager] getActiveInternalEditor() =>', activeInternalEditor ? '有值' : 'null');
   return activeInternalEditor;
 }
 
@@ -15,6 +14,5 @@ export function getActiveInternalEditor(): Editor | null {
  * 设置当前活跃的内部编辑器（TabGroupView 调用）
  */
 export function setActiveInternalEditor(editor: Editor | null): void {
-  console.log('[nodeViewEditorManager] setActiveInternalEditor(', editor ? '有值' : 'null', ')');
   activeInternalEditor = editor;
 }

@@ -83,11 +83,8 @@ export const TabGroup = Node.create<TabGroupOptions>({
       'div',
       mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
         'data-tab-group': '',
-        'data-active-index': node.attrs.activeIndex,
-        'data-tabs': JSON.stringify(node.attrs.tabs),
-        'data-contents': JSON.stringify(node.attrs.contents),
       }),
-      0, // 不渲染子节点，内容存在 attrs 里
+      0, // 不渲染子节点，内容存在 attrs 里（HTMLAttributes 已包含 data-* 属性）
     ];
   },
 

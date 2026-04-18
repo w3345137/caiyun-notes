@@ -23,10 +23,10 @@ import { getActiveInternalEditor } from '../lib/nodeViewEditorManager';
 import { ListKeymap } from '@tiptap/extension-list-keymap';
 import { useNoteStore, markNoteAsEditing, markNoteAsEditingEnd } from '../store/noteStore';
 import { useAuth } from '../components/AuthProvider';
-import { MindmapExtension } from '../extensions/MindmapExtension';
+import { MindmapExtension, getActiveMindmapActions } from '../extensions/MindmapExtension';
 import { RouteBlock } from '../extensions/RouteBlock.tsx';
 import { AttachmentBlock } from '../extensions/AttachmentBlock';
-import { AlertCircle, Plus, Minus, Table as TableIcon, ChevronDown, PaintBucket, Lock, Unlock, Bold, Italic, Strikethrough, List, ListOrdered, ListTodo, CirclePlus, Camera } from 'lucide-react';
+import { AlertCircle, Plus, Minus, Table as TableIcon, ChevronDown, PaintBucket, Lock, Unlock, Bold, Italic, Strikethrough, List, ListOrdered, ListTodo, CirclePlus, Camera, Maximize2, Download, Image, FileText, Trash2 } from 'lucide-react';
 import mermaid from 'mermaid';
 import toast from 'react-hot-toast';
 import html2canvas from 'html2canvas';
@@ -114,6 +114,9 @@ const EditorToolbar: React.FC<{
   const [showDeleteDropdown, setShowDeleteDropdown] = useState(false);
   const [showCellOpDropdown, setShowCellOpDropdown] = useState(false);
   const [isTableActive, setIsTableActive] = useState(false);
+  const [isMindmapActive, setIsMindmapActive] = useState(false);
+  const [showMindmapAddDropdown, setShowMindmapAddDropdown] = useState(false);
+  const [showMindmapExportDropdown, setShowMindmapExportDropdown] = useState(false);
   const [, forceToolbarUpdate] = useState(0); // 强制工具栏重渲染
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -126,16 +129,50 @@ const EditorToolbar: React.FC<{
     if (!editor) return;
 
     let rafId: number;
-    const handler = () => {
+    let cachedMindmapActive = false;
+
+    // 文档结构变化时扫描是否有 mindmap 节点（O(n) 遍历，仅在增删节点时触发）
+    const scanMindmap = () => {
+      let found = false;
+      editor.state.doc.descendants((node: any) => {
+        if (node.type.name === 'mindmap') {
+          found = true;
+          return false;
+        }
+      });
+      if (found !== cachedMindmapActive) {
+        cachedMindmapActive = found;
+        setIsMindmapActive(found);
+      }
+    };
+
+    // 初始扫描
+    scanMindmap();
+
+    // 选区变化：只更新格式状态（轻量）
+    const onSelectionUpdate = () => {
       rafId = requestAnimationFrame(() => {
         setIsTableActive(editor.isActive('table'));
-        forceToolbarUpdate(n => n + 1); // 触发整个工具栏重渲染
+        forceToolbarUpdate(n => n + 1);
       });
     };
 
-    editor.on('selectionUpdate', handler);
+    // transaction：只在文档结构变化时重新扫描 mindmap
+    const onTransaction = ({ transaction }: any) => {
+      if (transaction.docChanged) {
+        rafId = requestAnimationFrame(() => {
+          scanMindmap();
+          setIsTableActive(editor.isActive('table'));
+          forceToolbarUpdate(n => n + 1);
+        });
+      }
+    };
+
+    editor.on('selectionUpdate', onSelectionUpdate);
+    editor.on('transaction', onTransaction);
     return () => {
-      editor.off('selectionUpdate', handler);
+      editor.off('selectionUpdate', onSelectionUpdate);
+      editor.off('transaction', onTransaction);
       cancelAnimationFrame(rafId);
     };
   }, [editor]);
@@ -171,6 +208,8 @@ const EditorToolbar: React.FC<{
         setShowDeleteDropdown(false);
         setShowCellOpDropdown(false);
         setShowColorPicker(false);
+        setShowMindmapAddDropdown(false);
+        setShowMindmapExportDropdown(false);
       }
     };
 
@@ -614,38 +653,62 @@ const EditorToolbar: React.FC<{
 
               document.body.appendChild(container);
 
-              // 注入编辑器相关的所有样式（扩大匹配范围）
-              const styleSheets = Array.from(document.styleSheets);
+              // 注入完整的编辑器样式（内嵌 App.css 中所有 ProseMirror 相关规则）
               const styleEl = document.createElement('style');
-              for (const sheet of styleSheets) {
-                try {
-                  const rules = Array.from(sheet.cssRules);
-                  for (const rule of rules) {
-                    const text = rule.cssText;
-                    if (text.includes('ProseMirror') ||
-                        text.includes('taskList') ||
-                        text.includes('task-item') ||
-                        text.includes('data-type') ||
-                        text.includes('data-checked')) {
-                      styleEl.textContent += text + '\n';
-                    }
-                  }
-                } catch { /* cross-origin sheets */ }
-              }
-              // 额外注入关键表格样式（确保离屏渲染正确）
-              styleEl.textContent += `
-                .ProseMirror table { border-collapse: collapse; table-layout: fixed; }
-                .ProseMirror th, .ProseMirror td { border: 1px solid #8C8F93 !important; padding: 0.63em 0.6em !important; font-size: 14px; line-height: 1.4; vertical-align: middle; box-sizing: border-box; }
-                .ProseMirror th { background-color: #f3f4f6; font-weight: 600; font-size: 14px; }
+              styleEl.textContent = `
+                .ProseMirror { outline: none; padding: 0; max-width: 100%; box-sizing: border-box; font-size: 16px; min-width: 0; width: 100%; }
+                .ProseMirror img { max-width: 100%; height: auto; border-radius: 8px; margin: 0.5em 0; }
+                .ProseMirror img.ProseMirror-selectednode { outline: 2px solid #3b82f6; outline-offset: 2px; }
+                .ProseMirror .image-wrapper { display: flex; }
+                .ProseMirror .image-wrapper.align-left { justify-content: flex-start; }
+                .ProseMirror .image-wrapper.align-center { justify-content: center; }
+                .ProseMirror .image-wrapper.align-right { justify-content: flex-end; }
+                .ProseMirror h1 { font-size: 2em; font-weight: 700; margin: 0.3em 0 0 0; line-height: normal; }
+                .ProseMirror h2 { font-size: 1.5em; font-weight: 600; margin: 0.3em 0 0 0; line-height: normal; }
+                .ProseMirror h3 { font-size: 1.17em; font-weight: 600; margin: 0.3em 0 0 0; line-height: normal; }
+                .ProseMirror p { margin: 0; line-height: 1.5; }
+                .ProseMirror ul, .ProseMirror ol { margin: 0; padding-left: 1.5em; line-height: normal; }
+                .ProseMirror ul { list-style-type: disc; }
+                .ProseMirror ol { list-style-type: decimal; }
+                .ProseMirror ol li { padding-left: 0.25em; }
+                .ProseMirror li { margin: 0; line-height: normal; }
+                .ProseMirror li p { margin: 0; }
+                .ProseMirror blockquote { border-left: 3px solid #3b82f6; padding-left: 1em; margin: 0.5em 0; color: #6b7280; font-style: italic; line-height: normal; }
+                .ProseMirror code { background-color: #f3f4f6; border-radius: 3px; padding: 0.1em 0.3em; font-family: 'Fira Code', monospace; font-size: 0.9em; color: #e11d48; }
+                .ProseMirror pre { background-color: #1f2937; color: #f9fafb; border-radius: 8px; padding: 1em; margin: 0.5em 0; overflow-x: auto; line-height: normal; }
+                .ProseMirror pre code { background: none; color: inherit; padding: 0; }
+                .ProseMirror a { color: #3b82f6; text-decoration: underline; cursor: pointer; }
+                .ProseMirror hr { border: none; border-top: 2px solid #e5e7eb; margin: 0.5em 0; }
+                .ProseMirror table { border-collapse: collapse; margin: 0; table-layout: fixed; box-sizing: border-box; position: relative; }
+                .ProseMirror th, .ProseMirror td { border: 1px solid #8C8F93 !important; padding: 0.63em 0.6em !important; font-size: 14px; line-height: 1.4; vertical-align: middle; box-sizing: border-box; position: relative; }
+                .ProseMirror th { background-color: #f3f4f6; font-weight: 600; text-align: left; font-size: 14px; padding: 0.54em 0.6em !important; }
                 .ProseMirror td { background-color: white; font-size: 14px; }
-                .ProseMirror td p { margin: 0; line-height: 1.4; }
-                .ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: 0; margin: 0; }
-                .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; padding: 0; line-height: 1.5; }
-                .ProseMirror ul[data-type="taskList"] li > label { display: flex; align-items: center; flex-shrink: 0; height: 1.5em; }
-                .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 1em; height: 1em; border: 1px solid #6b7280; border-radius: 50%; background: transparent; margin: 0; position: relative; flex-shrink: 0; }
-                .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 0.5em; height: 0.5em; border-radius: 50%; background: #6b7280; }
-                .ProseMirror ul[data-type="taskList"] li > div { flex: 1; line-height: 1.5; }
+                .ProseMirror td p { margin: 0; line-height: normal; }
+                .ProseMirror .tableWrapper { display: block; max-width: 100%; overflow-x: auto; margin: 0.5em 0; box-sizing: border-box; }
+                .ProseMirror mark { background-color: #fef08a; padding: 0.1em 0; }
+                .ProseMirror .text-left { text-align: left; }
+                .ProseMirror .text-center { text-align: center; }
+                .ProseMirror .text-right { text-align: right; }
+                .ProseMirror strong { font-weight: 700; }
+                .ProseMirror em { font-style: italic; }
+                .ProseMirror s { text-decoration: line-through; }
+                .ProseMirror u { text-decoration: underline; }
+                .ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: 0; margin: 0; font-size: inherit; line-height: inherit; }
+                .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; padding: 0; font-size: inherit; line-height: 1.5; }
+                .ProseMirror ul[data-type="taskList"] li > label { display: flex; align-items: center; flex-shrink: 0; margin: 0; padding: 0; height: 1.5em; }
+                .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 1em; height: 1em; border: 1px solid #6b7280; border-radius: 50%; background-color: transparent; cursor: pointer; margin: 0; padding: 0; position: relative; flex-shrink: 0; }
+                .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"]:checked { background-color: transparent; border-color: #6b7280; }
+                .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 0.5em; height: 0.5em; border-radius: 50%; background-color: #6b7280; }
                 .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div { text-decoration: line-through; color: #9ca3af; }
+                .ProseMirror ul[data-type="taskList"] li > div { flex: 1; font-size: inherit; line-height: 1.5; word-wrap: break-word; overflow-wrap: break-word; }
+                .ProseMirror td ul[data-type="taskList"] { margin: 0; padding: 0; font-size: inherit; }
+                .ProseMirror td ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.3em; font-size: inherit; margin: 0; padding: 0; }
+                .ProseMirror td ul[data-type="taskList"] li > label { display: flex; align-items: center; flex-shrink: 0; margin: 0; padding: 0; height: 1.3em; margin-top: 1px; }
+                .ProseMirror td ul[data-type="taskList"] li > label input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 1em; height: 1em; border: 1px solid #6b7280; border-radius: 50%; background-color: transparent; margin: 0; padding: 0; position: relative; flex-shrink: 0; }
+                .ProseMirror td ul[data-type="taskList"] li > label input[type="checkbox"]:checked { background-color: transparent; border-color: #6b7280; }
+                .ProseMirror td ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 0.5em; height: 0.5em; border-radius: 50%; background-color: #6b7280; }
+                .ProseMirror td ul[data-type="taskList"] li > div { flex: 1; font-size: inherit; line-height: 1.3; }
+                .ProseMirror td ul[data-type="taskList"] li > div p { line-height: 1.3; }
               `;
               container.prepend(styleEl);
               container.classList.add('ProseMirror');
@@ -659,35 +722,58 @@ const EditorToolbar: React.FC<{
 
               document.body.removeChild(container);
 
-              // 转为 Blob 并写入剪贴板
+              // 三级剪贴板策略：Tauri API → Web Clipboard API → 下载降级
+              const blobToBase64 = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  const dataUrl = reader.result as string;
+                  resolve(dataUrl.split(',')[1]); // 去掉 data:image/png;base64, 前缀
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+
               canvas.toBlob(async (blob) => {
                 if (!blob) {
                   toast.error('生成图片失败');
                   return;
                 }
-                // 尝试写入剪贴板（需要 HTTPS 或 localhost）
-                let clipboardSuccess = false;
+
+                // 策略1: Tauri 原生剪贴板（APP环境）
+                const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+                if (isTauri) {
+                  try {
+                    const { invoke } = await import('@tauri-apps/api/core');
+                    const base64 = await blobToBase64(blob);
+                    await invoke('plugin:clipboard-manager|write_image', { base64 });
+                    toast.success('已复制为图片');
+                    return;
+                  } catch (err) {
+                    console.warn('Tauri 剪贴板写入失败:', err);
+                  }
+                }
+
+                // 策略2: Web Clipboard API（需要 HTTPS 或 localhost）
                 if (typeof navigator.clipboard?.write === 'function' && typeof ClipboardItem !== 'undefined') {
                   try {
                     await navigator.clipboard.write([
                       new ClipboardItem({ 'image/png': blob })
                     ]);
-                    clipboardSuccess = true;
                     toast.success('已复制为图片');
+                    return;
                   } catch (err) {
-                    console.warn('剪贴板写入失败:', err);
+                    console.warn('Web 剪贴板写入失败:', err);
                   }
                 }
-                if (!clipboardSuccess) {
-                  // 降级：下载图片
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'selection.png';
-                  a.click();
-                  URL.revokeObjectURL(url);
-                  toast.success('图片已下载（剪贴板不可用）');
-                }
+
+                // 策略3: 下载降级
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'selection.png';
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success('图片已下载');
               }, 'image/png');
             } catch (err) {
               console.error('复制为图片失败:', err);
@@ -785,6 +871,55 @@ const EditorToolbar: React.FC<{
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* 思维导图专属工具栏 - 仅在思维导图激活时显示 */}
+      {isMindmapActive && (
+        <div className="flex items-center gap-[2px] px-2 bg-purple-100 border border-purple-200 rounded py-0">
+
+          {/* 新增节点下拉菜单 */}
+          <div className="relative">
+            <ToolbarButton onClick={() => { setShowMindmapAddDropdown(!showMindmapAddDropdown); setShowMindmapExportDropdown(false); }} disabled={disabled} title="新增节点" isActive={showMindmapAddDropdown}>
+              <CirclePlus className="w-4 h-4" />
+            </ToolbarButton>
+            {showMindmapAddDropdown && (
+              <div className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px]">
+                <button onClick={() => { getActiveMindmapActions()?.addChild(); setShowMindmapAddDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">子节点</button>
+                <button onClick={() => { getActiveMindmapActions()?.addSibling(); setShowMindmapAddDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">同级节点</button>
+              </div>
+            )}
+          </div>
+
+          {/* 全屏 */}
+          <ToolbarButton onClick={() => { getActiveMindmapActions()?.toggleFullscreen(); }} disabled={disabled} title="全屏">
+            <Maximize2 className="w-4 h-4" />
+          </ToolbarButton>
+
+          {/* 导出下拉菜单 */}
+          <div className="relative">
+            <ToolbarButton onClick={() => { setShowMindmapExportDropdown(!showMindmapExportDropdown); setShowMindmapAddDropdown(false); }} disabled={disabled} title="导出" isActive={showMindmapExportDropdown}>
+              <Download className="w-4 h-4" />
+            </ToolbarButton>
+            {showMindmapExportDropdown && (
+              <div className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px]">
+                <button onClick={() => { getActiveMindmapActions()?.exportImage(); setShowMindmapExportDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 flex items-center gap-2">
+                  <Image className="w-3 h-3" /> 导出为图片
+                </button>
+                <button onClick={() => { getActiveMindmapActions()?.exportMarkdown(); setShowMindmapExportDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 flex items-center gap-2">
+                  <FileText className="w-3 h-3" /> 导出为 Markdown
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 分隔线 */}
+          <div className="w-px h-4 bg-purple-300 mx-1" />
+
+          {/* 删除思维导图 */}
+          <ToolbarButton onClick={() => { getActiveMindmapActions()?.deleteMindmap(); }} disabled={disabled} title="删除思维导图">
+            <Trash2 className="w-4 h-4 text-red-500" />
+          </ToolbarButton>
         </div>
       )}
 

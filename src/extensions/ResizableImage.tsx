@@ -137,7 +137,7 @@ const ResizableImageView: React.FC<{ node: any; updateAttributes: any; selected:
     <NodeViewWrapper className="resizable-image-wrapper" data-drag-handle>
       <div
         ref={containerRef}
-        className={`relative inline-block ${isSelected ? 'ring-1 ring-blue-500 z-50' : ''}`}
+        className={`relative inline-block ${isSelected ? 'z-50' : ''}`}
         onClick={handleClick}
       >
         <img
@@ -152,27 +152,34 @@ const ResizableImageView: React.FC<{ node: any; updateAttributes: any; selected:
         />
         {isSelected && (
           <>
-            {/* 四角拖动点 */}
+            {/* 选中边框 */}
+            <div className="absolute inset-0 border-2 border-blue-500 rounded-lg pointer-events-none" />
+            {/* 四角拖动点 — 更大更好抓 */}
             <div
-              className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-white border border-blue-500 rounded-sm cursor-nw-resize"
+              className="absolute -top-1 -left-1 w-3 h-3 bg-blue-500 rounded-full cursor-nw-resize shadow-sm hover:scale-125 transition-transform"
               onMouseDown={(e) => handleResizeStart('nw', e)}
             />
             <div
-              className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-white border border-blue-500 rounded-sm cursor-ne-resize"
+              className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full cursor-ne-resize shadow-sm hover:scale-125 transition-transform"
               onMouseDown={(e) => handleResizeStart('ne', e)}
             />
             <div
-              className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-white border border-blue-500 rounded-sm cursor-sw-resize"
+              className="absolute -bottom-1 -left-1 w-3 h-3 bg-blue-500 rounded-full cursor-sw-resize shadow-sm hover:scale-125 transition-transform"
               onMouseDown={(e) => handleResizeStart('sw', e)}
             />
             <div
-              className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-white border border-blue-500 rounded-sm cursor-se-resize"
+              className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 rounded-full cursor-se-resize shadow-sm hover:scale-125 transition-transform"
               onMouseDown={(e) => handleResizeStart('se', e)}
             />
+            {/* 宽度指示 */}
+            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap">
+              {size.width} × {size.height === 'auto' ? 'auto' : size.height}
+            </div>
             {/* 删除按钮 */}
             <button
               onClick={handleDelete}
-              className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-xs font-bold hover:bg-red-600"
+              className="absolute -top-2.5 -right-2.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs shadow-md hover:bg-red-600 hover:scale-110 transition-all"
+              title="删除图片"
             >
               ×
             </button>
