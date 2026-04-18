@@ -739,13 +739,14 @@ const EditorToolbar: React.FC<{
                   return;
                 }
 
+                // 转为 base64
+                const base64 = await blobToBase64(blob);
+
                 // 策略1: Tauri 原生剪贴板（APP环境）
-                const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-                if (isTauri) {
+                const tauriWindow = window as any;
+                if (tauriWindow.__TAURI__) {
                   try {
-                    const { invoke } = await import('@tauri-apps/api/core');
-                    const base64 = await blobToBase64(blob);
-                    await invoke('plugin:clipboard-manager|write_image', { base64 });
+                    await tauriWindow.__TAURI__.core.invoke('plugin:clipboard-manager|write_image', { base64 });
                     toast.success('已复制为图片');
                     return;
                   } catch (err) {
@@ -1123,6 +1124,50 @@ export const NoteEditor: React.FC = () => {
     editorProps: {
       attributes: {
         class: 'outline-none',
+      },
+      // 拦截图片拖拽和粘贴，转为 base64 data URL（blob: URL 刷新后失效）
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false; // 内部拖拽由 ProseMirror 处理
+        const files = event.dataTransfer?.files;
+        if (!files || files.length === 0) return false;
+        const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+        if (imageFiles.length === 0) return false;
+        event.preventDefault();
+        const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        for (const file of imageFiles) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const base64 = e.target?.result as string;
+            const node = view.state.schema.nodes.image.create({ src: base64, width: 300 });
+            const insertPos = pos ? pos.pos : view.state.selection.from;
+            const tr = view.state.tr.insert(insertPos, node);
+            view.dispatch(tr);
+          };
+          reader.readAsDataURL(file);
+        }
+        return true;
+      },
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.startsWith('image/')) {
+            event.preventDefault();
+            const file = item.getAsFile();
+            if (!file) continue;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const base64 = e.target?.result as string;
+              const node = view.state.schema.nodes.image.create({ src: base64, width: 300 });
+              const tr = view.state.tr.insert(view.state.selection.from, node);
+              view.dispatch(tr);
+            };
+            reader.readAsDataURL(file);
+            return true;
+          }
+        }
+        return false;
       },
     },
     immediatelyRender: false, // Safari 兼容性修复

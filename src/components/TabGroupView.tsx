@@ -134,6 +134,50 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
       attributes: {
         class: 'outline-none min-h-[100px]',
       },
+      // 拦截图片拖拽和粘贴，转为 base64 data URL（blob: URL 刷新后失效）
+      handleDrop: (view: any, event: any, _slice: any, moved: boolean) => {
+        if (moved) return false;
+        const files = event.dataTransfer?.files;
+        if (!files || files.length === 0) return false;
+        const imageFiles = Array.from(files).filter((f: File) => f.type.startsWith('image/'));
+        if (imageFiles.length === 0) return false;
+        event.preventDefault();
+        const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        for (const file of imageFiles) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const base64 = (e.target?.result as string);
+            const node = view.state.schema.nodes.image.create({ src: base64, width: 300 });
+            const insertPos = pos ? pos.pos : view.state.selection.from;
+            const tr = view.state.tr.insert(insertPos, node);
+            view.dispatch(tr);
+          };
+          reader.readAsDataURL(file);
+        }
+        return true;
+      },
+      handlePaste: (view: any, event: any) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.startsWith('image/')) {
+            event.preventDefault();
+            const file = item.getAsFile();
+            if (!file) continue;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const base64 = (e.target?.result as string);
+              const node = view.state.schema.nodes.image.create({ src: base64, width: 300 });
+              const tr = view.state.tr.insert(view.state.selection.from, node);
+              view.dispatch(tr);
+            };
+            reader.readAsDataURL(file);
+            return true;
+          }
+        }
+        return false;
+      },
     },
     immediatelyRender: false,
     onFocus: () => {

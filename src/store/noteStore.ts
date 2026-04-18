@@ -21,8 +21,8 @@ let _editingNotes = new Set<string>();
 
 // 编辑量追踪：记录每个笔记未保存的编辑次数
 const _editCounters = new Map<string, number>();
-// 编辑量阈值：累积 20 次编辑自动保存
-const AUTO_SAVE_THRESHOLD = 20;
+// 编辑量阈值：累积 5 次编辑自动保存（静默，不弹提示）
+const AUTO_SAVE_THRESHOLD = 5;
 
 // 云端保存 debounce：避免短时间大量请求
 const _saveTimers = new Map<string, NodeJS.Timeout>();
@@ -183,7 +183,8 @@ export const useNoteStore = create<any>((set, get) => ({
    */
   updateNote: (id: string, updates: any) => {
     set((state: any) => {
-      const newNotes = state.notes.map((n: Note) => n.id === id ? { ...n, ...updates } : n);
+      const now = new Date().toISOString();
+      const newNotes = state.notes.map((n: Note) => n.id === id ? { ...n, ...updates, updatedAt: now, updated_at: now } : n);
       const updatedNote = newNotes.find((n: Note) => n.id === id);
       
       if (updatedNote && updates.content !== undefined) {
