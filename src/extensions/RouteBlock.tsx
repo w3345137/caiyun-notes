@@ -20,9 +20,9 @@ declare module '@tiptap/core' {
   }
 }
 
-// 默认公共高德地图 API Key
-const DEFAULT_AMAP_KEY = '9c1d077b3fa7e2dc92f90580d5e768e9';
-const DEFAULT_AMAP_SECURITY = '3f3cbacb34cf33d01945a67c82f16721';
+// 高德地图 API Key - 优先从环境变量读取，否则从 localStorage 读取用户自定义
+const DEFAULT_AMAP_KEY = import.meta.env.VITE_AMAP_KEY || '';
+const DEFAULT_AMAP_SECURITY = import.meta.env.VITE_AMAP_SECURITY || '';
 
 // localStorage keys
 const LS_KEY_API = 'notesapp_amap_key';

@@ -368,10 +368,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
         buildNodeMap(exportTree);
 
         for (const nb of notebooks) {
-          const nbContent = [noteToMarkdown(nb), ...nb.children.map(c => noteToMarkdown(c))].join('\n\n');
+          const collectAllDescendants = (node: TreeNode): TreeNode[] => {
+            const result: TreeNode[] = [];
+            for (const child of node.children) {
+              result.push(child);
+              result.push(...collectAllDescendants(child));
+            }
+            return result;
+          };
+          const allDescendants = collectAllDescendants(nb);
+          const nbContent = [noteToMarkdown(nb), ...allDescendants.map(c => noteToMarkdown(c))].join('\n\n');
           downloadFile(buildFilePrefix(nb, nodeMap), nbContent);
-          // 下载子节点
-          for (const child of nb.children) {
+          for (const child of allDescendants) {
             downloadFile(buildFilePrefix(child, nodeMap), noteToMarkdown(child));
           }
         }

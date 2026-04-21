@@ -16,13 +16,13 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-// 分区拖拽包装器 - 包裹原有分区项
-interface SectionWrapperProps {
+// 通用拖拽包装器 - 包裹可排序项
+interface SortableWrapperProps {
   id: string;
   children: React.ReactNode;
 }
 
-export const SectionWrapper: React.FC<SectionWrapperProps> = ({ id, children }) => {
+export const SortableWrapper: React.FC<SortableWrapperProps> = ({ id, children }) => {
   const {
     attributes,
     listeners,
@@ -45,34 +45,9 @@ export const SectionWrapper: React.FC<SectionWrapperProps> = ({ id, children }) 
   );
 };
 
-// 页面拖拽包装器 - 包裹原有页面项
-interface PageWrapperProps {
-  id: string;
-  children: React.ReactNode;
-}
-
-export const PageWrapper: React.FC<PageWrapperProps> = ({ id, children }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
-    </div>
-  );
-};
+// 兼容旧版别名
+export const SectionWrapper = SortableWrapper;
+export const PageWrapper = SortableWrapper;
 
 // 分区拖拽区域
 interface SectionsDndAreaProps {

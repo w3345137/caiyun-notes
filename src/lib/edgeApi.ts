@@ -1,6 +1,6 @@
 /**
- * 全面兼容旧版 edgeApi 导出 (审计修复版 v2)
- * 修复 D: 修正所有函数签名以匹配调用方传参
+ * 本地后端 API 客户端 (全面替代 Supabase + Edge Functions)
+ * 所有数据操作通过本地后端 /api/* 完成
  */
 import { getCurrentUserId } from './auth';
 
@@ -28,23 +28,32 @@ export const apiBatchUpdateOrder = (items: any[]) => call('/notes-query', { acti
 export const apiLoadSidebarState = () => call('/notes-query', { action: 'loadSidebarState' });
 export const apiSaveSidebarState = (e: string[], s: string | null) => call('/notes-query', { action: 'saveSidebarState', expandedNodes: e, selectedNoteId: s });
 
-// === 审计修复 D: 锁管理 (修正参数签名) ===
+// === 锁管理 ===
 export const apiLockNote = (noteId: string, userName: string) => call('/locks-manage', { action: 'lockNote', noteId, userName });
 export const apiUnlockNote = (noteId: string, isOwner?: boolean) => call('/locks-manage', { action: 'unlockNote', noteId, isOwner });
 export const apiRefreshLock = (noteId: string) => call('/locks-manage', { action: 'refreshLock', noteId });
 export const apiGetPageLock = (noteId: string) => call('/locks-manage', { action: 'getPageLock', noteId });
 export const apiRemoveLocksForUser = (notebookId: string, userId: string) => call('/locks-manage', { action: 'removeLocksForUser', notebookId, userId });
 
-// === 共享/邀请映射 ===
+// === 共享映射 ===
 export const apiGetNotebookShares = (id: string) => call('/shares-query', { action: 'getNotebookShares', notebookId: id });
 export const apiShareNotebook = (id: string, email: string, p: string) => call('/shares-write', { action: 'shareNotebook', notebookId: id, email, permission: p });
 export const apiUnshareNotebook = (id: string, email: string) => call('/shares-write', { action: 'unshareNotebook', notebookId: id, email });
 export const apiGetSharedNotebookIds = () => call('/shares-query', { action: 'getSharedNotebookIds' });
 export const apiGetSharedNotebooks = () => call('/shares-query', { action: 'getSharedNotebooks' });
-export const apiGetNotebookInfo = (id?: string) => ({ success: true, data: { id, title: '未知笔记本' } });
-export const apiGetReceivedInvites = () => ({ success: true, data: [] });
-export const apiGetPendingCount = () => ({ success: true, data: 0 });
-export const apiRespondToInvite = (inviteId?: string, action?: string) => ({ success: true });
+
+// === 邀请映射 (走本地后端 /invites-manage) ===
+export const apiGetReceivedInvites = () => call('/invites-manage', { action: 'getReceivedInvites' });
+export const apiGetMyInvites = () => call('/invites-manage', { action: 'getMyInvites' });
+export const apiGetPendingCount = () => call('/invites-manage', { action: 'getPendingInviteCount' });
+export const apiCreateInvite = (notebookId: string, inviteeUserId: string, permission: string) => call('/invites-manage', { action: 'createInvite', notebookId, inviteeUserId, permission });
+export const apiRespondToInvite = (inviteId: string, accept: boolean) => call('/invites-manage', { action: 'respondToInvite', inviteId, accept });
+export const apiCancelInvite = (inviteId: string) => call('/invites-manage', { action: 'cancelInvite', inviteId });
+export const apiGetNotebookInfo = async (id?: string) => {
+  if (!id) return { success: false, data: null };
+  const result = await call('/notes-query', { action: 'getNoteById', noteId: id });
+  return result;
+};
 
 // === 兼容旧版别名 ===
 export const loadFullTree = apiLoadFullTree;
@@ -53,5 +62,3 @@ export const deleteNoteFromCloud = apiDeleteNote;
 export const batchUpdateOrder = apiBatchUpdateOrder;
 export const loadSidebarState = apiLoadSidebarState;
 export const saveSidebarState = apiSaveSidebarState;
-
-console.log('[EdgeAPI] 已全面兼容旧版导出 (审计修复版)');

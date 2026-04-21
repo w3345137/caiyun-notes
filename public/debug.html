@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Mindmap Debug</title>
+<style>
+body { margin: 0; font-family: sans-serif; }
+#info { position: fixed; top: 0; left: 0; right: 0; background: #333; color: #fff; padding: 10px; font-size: 12px; z-index: 99999; white-space: pre-wrap; }
+#container { width: 100vw; height: 100vh; background: #f0f0f0; }
+</style>
+</head>
+<body>
+<div id="info">Loading...</div>
+<div id="container"></div>
+<script type="module">
+import MindElixir from 'https://esm.sh/mind-elixir@^4.4.0';
+
+const info = document.getElementById('info');
+const container = document.getElementById('container');
+
+const data = {
+  nodeData: {
+    id: 'root',
+    topic: '中心主题',
+    expanded: true,
+    children: [
+      { id: 'c1', topic: '分支主题 1', children: [], branchColor: '#c0392b' },
+      { id: 'c2', topic: '分支主题 2', children: [], branchColor: '#27ae60' },
+      { id: 'c3', topic: '分支主题 3', children: [], branchColor: '#2980b9' },
+    ],
+  },
+};
+
+const me = new MindElixir({
+  el: container,
+  direction: MindElixir.SIDE,
+  draggable: true,
+  toolBar: false,
+  keypress: true,
+  locale: 'zh_CN',
+  overflowHidden: false,
+  handleWheel: () => {},
+});
+
+me.init(data);
+
+setTimeout(() => {
+  const map = me.map;
+  const topics = container.querySelectorAll('me-tpc');
+  const firstTpc = topics[0];
+  
+  let bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  topics.forEach(t => {
+    const r = t.getBoundingClientRect();
+    bounds.minX = Math.min(bounds.minX, r.left);
+    bounds.minY = Math.min(bounds.minY, r.top);
+    bounds.maxX = Math.max(bounds.maxX, r.right);
+    bounds.maxY = Math.max(bounds.maxY, r.bottom);
+  });
+  
+  info.textContent = JSON.stringify({
+    containerSize: { w: container.clientWidth, h: container.clientHeight },
+    mapTransform: map?.style?.transform,
+    mapOffset: { x: me.map.offsetLeft, y: me.map.offsetTop },
+    topicCount: topics.length,
+    firstTopicSize: firstTpc ? { w: firstTpc.offsetWidth, h: firstTpc.offsetHeight } : null,
+    contentBounds: bounds,
+    scaleVal: me.scaleVal,
+  }, null, 2);
+}, 500);
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from './AuthProvider';
-import { uploadToOneDrive, formatFileSize, checkOneDriveBinding } from '../lib/onedriveService';
+import { uploadToOneDrive, formatFileSize, checkNotebookOnedrive } from '../lib/onedriveService';
 import { X, Upload, Cloud, FileText, Image, Video, Volume2, FileCode, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -27,18 +27,19 @@ export const AttachmentInsertModal: React.FC<AttachmentInsertModalProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isBindingCheckDone, setIsBindingCheckDone] = useState(false);
   const [isBound, setIsBound] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 检查 OneDrive 绑定状态
   React.useEffect(() => {
     const checkBinding = async () => {
-      if (!user) return;
-      const result = await checkOneDriveBinding(user.id);
+      if (!user || !noteId) return;
+      const result = await checkNotebookOnedrive(noteId);
       setIsBound(result.bound);
+      setIsOwner(result.isOwner);
       setIsBindingCheckDone(true);
     };
     checkBinding();
-  }, [user]);
+  }, [user, noteId]);
 
   if (!isBound && isBindingCheckDone) {
     return (
@@ -57,13 +58,19 @@ export const AttachmentInsertModal: React.FC<AttachmentInsertModalProps> = ({
             <div className="w-16 h-16 mx-auto mb-4 bg-orange-100 rounded-full flex items-center justify-center">
               <AlertCircle className="w-8 h-8 text-orange-500" />
             </div>
-            <h3 className="text-lg font-medium text-gray-800 mb-2">请先绑定 OneDrive 账号</h3>
+            <h3 className="text-lg font-medium text-gray-800 mb-2">
+              {isOwner ? '请先绑定 OneDrive 账号' : '笔记本所有者未绑定 OneDrive'}
+            </h3>
             <p className="text-sm text-gray-500 mb-4">
-              在使用附件功能之前，需要先绑定您的 OneDrive 账号。
+              {isOwner
+                ? '在使用附件功能之前，需要先绑定您的 OneDrive 账号。'
+                : '该笔记本的所有者尚未绑定 OneDrive，无法上传附件。'}
             </p>
-            <p className="text-xs text-gray-400">
-              点击右上角头像 → OneDrive 云盘 → 绑定账号
-            </p>
+            {isOwner && (
+              <p className="text-xs text-gray-400">
+                点击右上角头像 → OneDrive 云盘 → 绑定账号
+              </p>
+            )}
           </div>
           <div className="px-4 py-3 bg-gray-50 flex justify-end">
             <button
@@ -89,7 +96,7 @@ export const AttachmentInsertModal: React.FC<AttachmentInsertModalProps> = ({
     setUploading(true);
 
     try {
-      const result = await uploadToOneDrive(user.id, noteId, selectedFile, '/彩云笔记', '彩云笔记');
+      const result = await uploadToOneDrive(selectedFile, noteId, '/彩云笔记', '彩云笔记');
       if (result.success && result.data) {
         toast.success('上传成功！');
         onInsert({
@@ -151,7 +158,7 @@ export const AttachmentInsertModal: React.FC<AttachmentInsertModalProps> = ({
             >
               <Upload className="w-10 h-10 mx-auto mb-3 text-gray-400" />
               <p className="text-sm text-gray-600">点击选择文件</p>
-              <p className="text-xs text-gray-400 mt-1">文件将上传到您的 OneDrive</p>
+              <p className="text-xs text-gray-400 mt-1">文件将上传到笔记本所有者的 OneDrive</p>
             </div>
           ) : (
             <div className="border border-gray-200 rounded-xl p-4">

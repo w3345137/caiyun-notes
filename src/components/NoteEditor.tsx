@@ -26,14 +26,17 @@ import { useAuth } from '../components/AuthProvider';
 import { MindmapExtension, getActiveMindmapActions } from '../extensions/MindmapExtension';
 import { RouteBlock } from '../extensions/RouteBlock.tsx';
 import { AttachmentBlock } from '../extensions/AttachmentBlock';
-import { AlertCircle, Plus, Minus, Table as TableIcon, ChevronDown, PaintBucket, Lock, Unlock, Bold, Italic, Strikethrough, List, ListOrdered, ListTodo, CirclePlus, Camera, Maximize2, Download, Image, FileText, Trash2 } from 'lucide-react';
+import { FolderBlock } from '../extensions/FolderBlock';
+import { AudioBlock } from '../extensions/AudioBlock';
+import { AlertCircle, Plus, Minus, Table as TableIcon, ChevronDown, PaintBucket, Lock, Unlock, Bold, Italic, Strikethrough, List, ListOrdered, ListTodo, CirclePlus, Camera, Maximize2, Download, Image, FileText, Trash2, FolderOpen } from 'lucide-react';
 import mermaid from 'mermaid';
 import toast from 'react-hot-toast';
 import html2canvas from 'html2canvas';
 import { HistoryPanel } from '../components/HistoryPanel';
 import { AttachmentInsertModal } from '../components/AttachmentInsertModal';
 import { apiGetNotebookShares } from '../lib/edgeApi';
-import { checkOneDriveBinding } from '../lib/onedriveService';
+import { checkNotebookOnedrive } from '../lib/onedriveService';
+import { getNotebookLLMConfig } from '../lib/llmService';
 
 // 延迟初始化 mermaid - Safari 兼容性修复
 let mermaidInitialized = false;
@@ -94,16 +97,32 @@ const FONT_SIZES = [
   { label: '48', value: '48px' },
 ];
 
+// 图片上传到服务器，返回永久 URL
+async function uploadImageToServer(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append('image', file);
+  const token = localStorage.getItem('notesapp_token');
+  const resp = await fetch('/api/upload-image', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  const data = await resp.json();
+  if (!data.success) throw new Error(data.error || '上传失败');
+  return data.url;
+}
+
 const EditorToolbar: React.FC<{
   editor: any;
   onMindmapClick: () => void;
   onAttachmentClick: () => void;
+  onRecorderClick: () => void;
   showColorPicker: boolean;
   setShowColorPicker: (show: boolean) => void;
   handleCellColor: (color: string) => void;
   disabled?: boolean;
   wordCount?: number;
-}> = React.memo(({ editor: externalEditor, onMindmapClick, onAttachmentClick, showColorPicker, setShowColorPicker, handleCellColor, disabled, wordCount = 0 }) => {
+}> = React.memo(({ editor: externalEditor, onMindmapClick, onAttachmentClick, onRecorderClick, showColorPicker, setShowColorPicker, handleCellColor, disabled, wordCount = 0 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showFontSizeDropdown, setShowFontSizeDropdown] = useState(false);
   const [showAlignDropdown, setShowAlignDropdown] = useState(false);
@@ -228,15 +247,29 @@ const EditorToolbar: React.FC<{
     '#0891b2', '#2563eb', '#7c3aed', '#db2777', '#ffffff', '#6b7280'
   ];
 
-  const handleImageUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && editor) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const base64 = e.target?.result as string;
-        editor.chain().focus().insertContent({ type: 'image', attrs: { src: base64, width: 300 } }).run();
-      };
-      reader.readAsDataURL(file);
+      try {
+        // 先插入临时占位
+        const tempSrc = URL.createObjectURL(file);
+        editor.chain().focus().insertContent({ type: 'image', attrs: { src: tempSrc, width: 300 } }).run();
+        // 上传到服务器
+        const url = await uploadImageToServer(file);
+        // 替换为永久 URL（找到刚插入的图片节点）
+        const { state } = editor.view;
+        const { tr } = state;
+        state.doc.descendants((node, pos) => {
+          if (node.type.name === 'image' && node.attrs.src === tempSrc) {
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: url });
+          }
+        });
+        if (tr.docChanged) editor.view.dispatch(tr);
+        URL.revokeObjectURL(tempSrc);
+      } catch (err) {
+        console.error('图片上传失败:', err);
+        toast.error('图片上传失败');
+      }
     }
     event.target.value = '';
   }, [editor]);
@@ -500,12 +533,25 @@ const EditorToolbar: React.FC<{
             >
               插入分割线
             </button>
-            {/* 插入附件 - 已搁置 */}
+            {/* 插入文件夹 */}
             <button
-              disabled
-              className="w-full px-4 py-2 text-sm text-left text-gray-400 cursor-not-allowed"
+              onClick={() => {
+                onAttachmentClick();
+                setShowInsertDropdown(false);
+              }}
+              className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
             >
-              插入附件
+              插入文件夹
+            </button>
+            {/* 插入录音机 */}
+            <button
+              onClick={() => {
+                onRecorderClick();
+                setShowInsertDropdown(false);
+              }}
+              className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
+            >
+              插入录音机
             </button>
           </div>
         )}
@@ -1100,6 +1146,10 @@ export const NoteEditor: React.FC = () => {
       RouteBlock,
       // 附件块扩展
       AttachmentBlock,
+      // 文件夹块扩展
+      FolderBlock,
+      // 录音机块扩展
+      AudioBlock,
       // 列表快捷键（Tab/Shift+Tab缩进）
       ListKeymap.configure({
         listTypes: [
@@ -1135,15 +1185,24 @@ export const NoteEditor: React.FC = () => {
         event.preventDefault();
         const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
         for (const file of imageFiles) {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const base64 = e.target?.result as string;
-            const node = view.state.schema.nodes.image.create({ src: base64, width: 300 });
-            const insertPos = pos ? pos.pos : view.state.selection.from;
-            const tr = view.state.tr.insert(insertPos, node);
-            view.dispatch(tr);
-          };
-          reader.readAsDataURL(file);
+          const tempSrc = URL.createObjectURL(file);
+          const node = view.state.schema.nodes.image.create({ src: tempSrc, width: 300 });
+          const insertPos = pos ? pos.pos : view.state.selection.from;
+          const tr = view.state.tr.insert(insertPos, node);
+          view.dispatch(tr);
+          // 异步上传替换
+          uploadImageToServer(file).then(url => {
+            const { state } = editorRef.current?.view || {};
+            if (!state) return;
+            const { tr: replaceTr } = state;
+            state.doc.descendants((n, p) => {
+              if (n.type.name === 'image' && n.attrs.src === tempSrc) {
+                replaceTr.setNodeMarkup(p, undefined, { ...n.attrs, src: url });
+              }
+            });
+            if (replaceTr.docChanged) view.dispatch(replaceTr);
+            URL.revokeObjectURL(tempSrc);
+          }).catch(err => console.error('拖放图片上传失败:', err));
         }
         return true;
       },
@@ -1156,14 +1215,22 @@ export const NoteEditor: React.FC = () => {
             event.preventDefault();
             const file = item.getAsFile();
             if (!file) continue;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const base64 = e.target?.result as string;
-              const node = view.state.schema.nodes.image.create({ src: base64, width: 300 });
-              const tr = view.state.tr.insert(view.state.selection.from, node);
-              view.dispatch(tr);
-            };
-            reader.readAsDataURL(file);
+            const tempSrc = URL.createObjectURL(file);
+            const node = view.state.schema.nodes.image.create({ src: tempSrc, width: 300 });
+            const tr = view.state.tr.insert(view.state.selection.from, node);
+            view.dispatch(tr);
+            // 异步上传替换
+            uploadImageToServer(file).then(url => {
+              const { state } = view;
+              const { tr: replaceTr } = state;
+              state.doc.descendants((n, p) => {
+                if (n.type.name === 'image' && n.attrs.src === tempSrc) {
+                  replaceTr.setNodeMarkup(p, undefined, { ...n.attrs, src: url });
+                }
+              });
+              if (replaceTr.docChanged) view.dispatch(replaceTr);
+              URL.revokeObjectURL(tempSrc);
+            }).catch(err => console.error('粘贴图片上传失败:', err));
             return true;
           }
         }
@@ -1230,15 +1297,17 @@ export const NoteEditor: React.FC = () => {
     if (!editor) return;
 
     const handleBlur = () => {
-      // 延迟执行，等待 focus 事件完成（防止切换笔记时误触发）
       setTimeout(() => {
-        // 检查是否 focus 到了其他元素
         const activeElement = document.activeElement;
         const editorElement = editor.view?.dom;
 
-        // 如果焦点移到了编辑器外部，标记结束编辑
-        if (editorElement && !editorElement.contains(activeElement) && selectedNoteId) {
-          console.log('[Editor] 编辑器失去焦点，标记结束编辑:', selectedNoteId);
+        const isMindmapEditing = activeElement && (
+          activeElement.closest('.smm-node-edit-wrap') ||
+          activeElement.closest('.smm-richtext-node-edit-wrap') ||
+          activeElement.closest('.mindmap-container')
+        );
+
+        if (editorElement && !editorElement.contains(activeElement) && selectedNoteId && !isMindmapEditing) {
           markNoteAsEditingEnd(selectedNoteId);
         }
       }, 100);
@@ -1366,6 +1435,20 @@ export const NoteEditor: React.FC = () => {
     const timeoutId = setTimeout(loadContent, 50);
     return () => {
       clearTimeout(timeoutId);
+      // 切换离开时，flush pending 的 debounce 内容并保存到云端
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+        autoSaveTimeoutRef.current = null;
+      }
+      if (pendingContentRef.current !== null &&
+          pendingContentRef.current !== lastSavedContentRef.current &&
+          selectedNoteId) {
+        const pendingContent = pendingContentRef.current;
+        lastSavedContentRef.current = pendingContent;
+        pendingContentRef.current = null;
+        updateNote(selectedNoteId, { content: pendingContent }, { silent: true });
+        useNoteStore.getState().saveNoteById(selectedNoteId);
+      }
       // 切换离开时标记结束编辑
       markNoteAsEditingEnd(selectedNoteId);
     };
@@ -1392,15 +1475,54 @@ export const NoteEditor: React.FC = () => {
     }
   };
 
-  // 处理插入附件点击（先检测绑定状态）
+  // 处理插入文件夹点击（检查笔记本所有者的 OneDrive 绑定状态）
   const handleAttachmentClick = async () => {
-    if (!user) return;
-    const result = await checkOneDriveBinding(user.id);
+    if (!user || !selectedNote?.id) return;
+    const result = await checkNotebookOnedrive(selectedNote.id);
     if (!result.bound) {
-      toast.error('请先绑定 OneDrive 账号');
+      if (result.isOwner) {
+        toast.error('请先绑定 OneDrive 账号');
+      } else {
+        toast.error('该笔记本所有者未绑定 OneDrive，无法使用文件夹功能');
+      }
       return;
     }
-    setShowAttachmentModal(true);
+    if (result.access === 'view') {
+      toast.error('只有查看权限，无法上传文件');
+      return;
+    }
+    if (editor) {
+      editor.chain().focus().insertFolderBlock({ noteId: selectedNote.id, folderName: '附件文件夹' }).run();
+    }
+  };
+
+  // 处理插入录音机点击（检查大模型 + OneDrive 绑定状态）
+  const handleRecorderClick = async () => {
+    if (!user || !selectedNote?.id) return;
+
+    const odResult = await checkNotebookOnedrive(selectedNote.id);
+    if (!odResult.bound) {
+      if (odResult.isOwner) {
+        toast.error('请先绑定 OneDrive 账号');
+      } else {
+        toast.error('该笔记本所有者未绑定 OneDrive，无法使用录音功能');
+      }
+      return;
+    }
+
+    const llmResult = await getNotebookLLMConfig(selectedNote.id);
+    if (!llmResult.configured) {
+      if (llmResult.is_owner) {
+        toast.error('请先配置大模型');
+      } else {
+        toast.error('该笔记本所有者未配置大模型，无法使用录音功能');
+      }
+      return;
+    }
+
+    if (editor) {
+      editor.chain().focus().insertAudioBlock({ noteId: selectedNote.id }).run();
+    }
   };
 
   if (!selectedNote) {
@@ -1447,6 +1569,7 @@ export const NoteEditor: React.FC = () => {
           editor={editor}
           onMindmapClick={handleMindmapClick}
           onAttachmentClick={handleAttachmentClick}
+          onRecorderClick={handleRecorderClick}
           showColorPicker={showColorPicker}
           setShowColorPicker={setShowColorPicker}
           handleCellColor={handleCellColor}

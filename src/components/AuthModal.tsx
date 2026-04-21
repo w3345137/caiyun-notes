@@ -50,17 +50,17 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [countdown, setCountdown] = useState(0);
   const [sendingCode, setSendingCode] = useState(false);
 
-  if (!isOpen) return null;
-
-  const showError = (msg: string) => setAlertMsg(msg);
-  const closeAlert = () => setAlertMsg('');
-
-  // 倒计时
+  // 倒计时（必须在所有条件返回之前，保持 hooks 调用数量一致）
   useEffect(() => {
     if (countdown <= 0) return;
     const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
     return () => clearTimeout(timer);
   }, [countdown]);
+
+  if (!isOpen) return null;
+
+  const showError = (msg: string) => setAlertMsg(msg);
+  const closeAlert = () => setAlertMsg('');
 
   const handleSendCode = async (purpose: 'register' | 'reset-password') => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -124,7 +124,9 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     } catch (error: any) {
       let msg = error?.message || '登录失败，请检查邮箱和密码';
       if (msg === 'Invalid credentials') msg = '邮箱或密码错误';
-      if (msg === 'Invalid credentials (No local password)') msg = '该账号尚未设置本地密码';
+      if (msg === 'No local password') {
+        msg = '该账号尚未设置本地密码，请点击"忘记密码"通过邮箱验证设置新密码后登录';
+      }
       showError(msg);
     } finally {
       setLoading(false);

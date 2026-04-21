@@ -42,12 +42,12 @@ const AttachmentBlockView: React.FC<{
     if (!user) return;
     setDownloading(true);
     try {
-      const result = await downloadFromOneDrive(user.id, attrs.attachmentId);
+      const result = await downloadFromOneDrive(attrs.attachmentId);
       if (result.success && result.blob) {
         const url = URL.createObjectURL(result.blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = attrs.fileName;
+        a.download = result.fileName || attrs.fileName;
         a.click();
         URL.revokeObjectURL(url);
         toast.success('下载成功');

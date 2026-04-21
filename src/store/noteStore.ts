@@ -21,8 +21,8 @@ let _editingNotes = new Set<string>();
 
 // 编辑量追踪：记录每个笔记未保存的编辑次数
 const _editCounters = new Map<string, number>();
-// 编辑量阈值：累积 5 次编辑自动保存（静默，不弹提示）
-const AUTO_SAVE_THRESHOLD = 5;
+// 编辑量阈值：累积 2 次编辑自动保存（静默，不弹提示）
+const AUTO_SAVE_THRESHOLD = 2;
 
 // 云端保存 debounce：避免短时间大量请求
 const _saveTimers = new Map<string, NodeJS.Timeout>();
@@ -31,7 +31,7 @@ function sanitizeNote(n: any): any {
   if (!n) return {};
   return {
     ...n,
-    id: n.id || `gen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: n.id || `gen-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     title: n.title || '无标题',
     content: n.content || '',
     type: n.type || 'page',
@@ -208,9 +208,19 @@ export const useNoteStore = create<any>((set, get) => ({
 
   setSyncError: (err: string | null) => set({ syncError: err }),
 
+  saveNoteById: async (id: string) => {
+    const note = get().notes.find((n: Note) => n.id === id);
+    if (note) {
+      await saveSingleNote(note);
+      tryCreateBackup(note);
+      _editCounters.delete(id);
+      console.log(`[Store] 切换页面自动保存: ${id.substring(0, 12)}...`);
+    }
+  },
+
   addNote: (parentId: string | null, type: string = 'page', title: string = '新笔记', opts: any = {}) => {
     const newNote = sanitizeNote({
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
       title, type, parent_id: parentId, parentId,
       order_index: 0, order: 0
     });

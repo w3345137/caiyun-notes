@@ -131,28 +131,40 @@ function AppContent() {
     return () => clearInterval(interval);
   }, [user]);
 
-  // 【APP更新检查】监听 Tauri updater 事件（仅 APP 环境有效）
+  // 【APP更新检查】检测新版本并下载安装（仅 APP 环境有效）
   useEffect(() => {
     if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-      try {
-        const { listen } = (window as any).__TAURI_INTERNALS__.event;
-        let updateInfo: any = null;
-
-        const unlisten = listen('update-available', (event: any) => {
-          updateInfo = event.payload;
-          console.log('[Updater] 发现新版本:', updateInfo.version);
-          toast(`发现新版本 ${updateInfo.version}`, {
-            icon: '🚀',
-            duration: 8000,
-          });
-        });
-
-        return () => {
-          unlisten.then((fn: () => void) => fn());
-        };
-      } catch (e) {
-        // 非 Tauri 环境，忽略
-      }
+      const checkAndUpdate = async () => {
+        try {
+          const { check } = await import('@tauri-apps/plugin-updater');
+          const { relaunch } = await import('@tauri-apps/plugin-process');
+          const update = await check();
+          if (update) {
+            console.log('[Updater] 发现新版本:', update.version);
+            toast(`发现新版本 ${update.version}，正在下载...`, {
+              icon: '🚀',
+              duration: 5000,
+            });
+            await update.downloadAndInstall((event) => {
+              if (event.event === 'Started') {
+                console.log('[Updater] 开始下载...');
+              } else if (event.event === 'Progress') {
+                const downloaded = (event.data as any).chunkLength || 0;
+                console.log('[Updater] 下载中... 已下载:', downloaded, 'bytes');
+              } else if (event.event === 'Finished') {
+                toast.success('下载完成，即将重启安装...', { duration: 3000 });
+                console.log('[Updater] 下载完成');
+              }
+            });
+            await relaunch();
+          } else {
+            console.log('[Updater] 已是最新版本');
+          }
+        } catch (e) {
+          console.error('[Updater] 检查更新失败:', e);
+        }
+      };
+      setTimeout(checkAndUpdate, 3000);
     }
   }, []);
 

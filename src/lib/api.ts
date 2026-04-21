@@ -10,13 +10,11 @@ function getToken(): string | null {
 function saveToken(token: string): void {
   console.log('[API] Saving token to localStorage');
   localStorage.setItem('notesapp_token', token);
-  localStorage.setItem('sb-mdtbszztcmmdbnvosvpl-auth-token', JSON.stringify({ access_token: token }));
 }
 
 function clearToken(): void {
   console.warn('[API] Clearing invalid token');
   localStorage.removeItem('notesapp_token');
-  localStorage.removeItem('sb-mdtbszztcmmdbnvosvpl-auth-token');
 }
 
 // 通用 Fetch 包装器

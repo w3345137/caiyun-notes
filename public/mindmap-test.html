@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Mindmap Test</title>
+<style>
+body { margin: 0; font-family: sans-serif; background: #f5f5f5; }
+#log { position: fixed; right: 0; top: 0; width: 420px; height: 100vh; overflow-y: auto; background: #1e1e1e; color: #0f0; font-size: 12px; padding: 10px; z-index: 9999; font-family: monospace; }
+#container { width: calc(100vw - 440px); height: 100vh; border: 2px solid #ccc; }
+.ok { color: #0f0; }
+.err { color: #f44; }
+.info { color: #4af; }
+</style>
+</head>
+<body>
+<div id="log"></div>
+<div id="container"></div>
+<script type="module">
+const log = (msg, cls='info') => {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = new Date().toLocaleTimeString() + ' | ' + msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+};
+
+window.onerror = (msg, src, line, col, err) => {
+  log('UNCAUGHT: ' + msg + ' at L' + line, 'err');
+};
+window.addEventListener('unhandledrejection', (e) => {
+  log('UNHANDLED: ' + e.reason, 'err');
+});
+
+log('=== Mindmap Standalone Test ===');
+log('Loading simple-mind-map from CDN...');
+
+try {
+  const smm = await import('https://esm.sh/simple-mind-map@0.14.0-fix.2');
+  const MindMap = smm.default;
+  log('MindMap loaded: ' + (MindMap ? 'OK' : 'FAILED'), MindMap ? 'ok' : 'err');
+
+  if (!MindMap) { log('ABORT: MindMap is null', 'err'); throw new Error('no MindMap'); }
+
+  // Load plugins
+  try {
+    const Drag = (await import('https://esm.sh/simple-mind-map@0.14.0-fix.2/src/plugins/Drag.js')).default;
+    const Select = (await import('https://esm.sh/simple-mind-map@0.14.0-fix.2/src/plugins/Select.js')).default;
+    const Export = (await import('https://esm.sh/simple-mind-map@0.14.0-fix.2/src/plugins/Export.js')).default;
+    const RainbowLines = (await import('https://esm.sh/simple-mind-map@0.14.0-fix.2/src/plugins/RainbowLines.js')).default;
+    MindMap.usePlugin(Drag);
+    MindMap.usePlugin(Select);
+    MindMap.usePlugin(Export);
+    MindMap.usePlugin(RainbowLines);
+    log('Plugins loaded: OK', 'ok');
+  } catch(e) {
+    log('Plugin load warning: ' + e.message, 'info');
+  }
+
+  const container = document.getElementById('container');
+  log('Container size: ' + container.offsetWidth + 'x' + container.offsetHeight);
+
+  const origError = console.error;
+  console.error = (...args) => {
+    log('CONSOLE.ERROR: ' + args.join(' '), 'err');
+    origError.apply(console, args);
+  };
+
+  const mm = new MindMap({
+    el: container,
+    data: {
+      data: { text: '中心主题', uid: 'root', expand: true },
+      children: [
+        { data: { text: '分支1', uid: 'b1' }, children: [
+          { data: { text: '子主题1-1', uid: 'b1-1' }, children: [] },
+        ] },
+        { data: { text: '分支2', uid: 'b2' }, children: [] },
+        { data: { text: '分支3', uid: 'b3' }, children: [] },
+      ]
+    },
+    layout: 'mindMapStructure',
+    theme: 'default',
+    fit: true,
+    mousewheelAction: 'zoom',
+    mousewheelZoomActionReverse: true,
+    enableShortcutOnlyWhenMouseInSvg: false,
+    rainbowLinesConfig: {
+      open: true,
+      colorsList: ['rgb(192,57,43)', 'rgb(212,160,23)', 'rgb(39,174,96)', 'rgb(41,128,185)', 'rgb(142,68,173)', 'rgb(230,126,34)']
+    },
+  });
+
+  log('MindMap instance created: OK', 'ok');
+  log('view: ' + (mm.view ? 'OK' : 'MISSING'), mm.view ? 'ok' : 'err');
+  log('renderer: ' + (mm.renderer ? 'OK' : 'MISSING'), mm.renderer ? 'ok' : 'err');
+
+  // Test 1: fit
+  setTimeout(() => {
+    try {
+      if (mm.view && mm.view.fit) {
+        mm.view.fit();
+        log('Test 1 - view.fit(): OK', 'ok');
+      } else {
+        log('Test 1 - view.fit(): SKIPPED (no view)', 'info');
+      }
+    } catch(e) {
+      log('Test 1 - view.fit() error: ' + e.message, 'err');
+    }
+  }, 500);
+
+  // Test 2: SVG content
+  setTimeout(() => {
+    try {
+      const svg = container.querySelector('svg');
+      log('Test 2 - SVG: ' + (svg ? 'OK' : 'MISSING'), svg ? 'ok' : 'err');
+      if (svg) {
+        const paths = svg.querySelectorAll('path');
+        const rects = svg.querySelectorAll('rect');
+        const texts = svg.querySelectorAll('text');
+        log('  paths: ' + paths.length + ', rects: ' + rects.length + ', texts: ' + texts.length);
+
+        const colors = new Set();
+        paths.forEach(p => {
+          const stroke = p.getAttribute('stroke');
+          if (stroke && stroke !== 'none') colors.add(stroke);
+        });
+        log('  Line colors: ' + (colors.size > 0 ? [...colors].join(', ') : 'NONE'), colors.size > 0 ? 'ok' : 'err');
+      }
+    } catch(e) {
+      log('Test 2 error: ' + e.message, 'err');
+    }
+  }, 1000);
+
+  // Test 3: execCommand INSERT_CHILD_NODE
+  setTimeout(() => {
+    try {
+      mm.execCommand('INSERT_CHILD_NODE');
+      const data = mm.getData();
+      log('Test 3 - INSERT_CHILD_NODE: OK, children=' + data.children.length, 'ok');
+    } catch(e) {
+      log('Test 3 - INSERT_CHILD_NODE error: ' + e.message, 'err');
+    }
+  }, 2000);
+
+  // Test 4: getData
+  setTimeout(() => {
+    try {
+      const data = mm.getData();
+      log('Test 4 - getData: OK', 'ok');
+      log('  Root text: ' + data.data.text);
+      log('  Children: ' + data.children.length);
+      log('  Data: ' + JSON.stringify(data).substring(0, 300));
+    } catch(e) {
+      log('Test 4 - getData error: ' + e.message, 'err');
+    }
+  }, 3000);
+
+  // Test 5: Keyboard shortcut (Tab)
+  setTimeout(() => {
+    try {
+      container.focus();
+      const beforeData = mm.getData();
+      const beforeCount = beforeData.children.length;
+
+      // Dispatch Tab key on container
+      const tabEvent = new KeyboardEvent('keydown', {
+        key: 'Tab', code: 'Tab', keyCode: 9, which: 9,
+        bubbles: true, cancelable: true
+      });
+      container.dispatchEvent(tabEvent);
+
+      setTimeout(() => {
+        const afterData = mm.getData();
+        const afterCount = afterData.children.length;
+        log('Test 5 - Tab key: before=' + beforeCount + ' after=' + afterCount,
+          afterCount > beforeCount ? 'ok' : 'err');
+      }, 500);
+    } catch(e) {
+      log('Test 5 - Tab key error: ' + e.message, 'err');
+    }
+  }, 4000);
+
+  // Test 6: Check for flicker (data_change event)
+  setTimeout(() => {
+    try {
+      let changeCount = 0;
+      mm.on('data_change', () => { changeCount++; });
+
+      mm.execCommand('INSERT_CHILD_NODE');
+
+      setTimeout(() => {
+        log('Test 6 - data_change events after insert: ' + changeCount,
+          changeCount <= 2 ? 'ok' : 'err');
+      }, 500);
+    } catch(e) {
+      log('Test 6 error: ' + e.message, 'err');
+    }
+    log('=== All Tests Complete ===', 'info');
+  }, 6000);
+
+} catch(e) {
+  log('FATAL: ' + e.message + '\n' + e.stack, 'err');
+}
+</script>
+</body>
+</html>

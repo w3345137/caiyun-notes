@@ -21,7 +21,7 @@ const NODE_COLORS = [
   '#00bcd4', '#e91e63', '#8bc34a', '#3f51b5', '#ff5722', '#607d8b'
 ];
 
-const generateId = () => `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+const generateId = () => `node-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
 const createNode = (text: string, x: number, y: number, color?: string): MindmapNode => ({
   id: generateId(),

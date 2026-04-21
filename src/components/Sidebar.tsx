@@ -13,8 +13,9 @@ import { getReceivedInvites, getMyInvites, getPendingInviteCount, createInvite, 
 import { getUpdateLogsCache, setUpdateLogsCache } from '../store/noteStore';
 import { NotebookSkeleton, SectionSkeleton, PageSkeleton } from './SkeletonItems';
 import { ConfirmModal } from './ConfirmModal';
-import { Cloud, HardDrive } from 'lucide-react';
-import { getAttachments, uploadToOneDrive, deleteAttachment, downloadFromOneDrive, formatFileSize, getFileIconType, checkOneDriveBinding, Attachment } from '../lib/onedriveService';
+import { Cloud, HardDrive, Bot } from 'lucide-react';
+import { getAttachments, getOneDriveAuthUrl, uploadToOneDrive, deleteAttachment, downloadFromOneDrive, formatFileSize, getFileIconType, checkOneDriveBinding, checkNotebooksStorageBatch, Attachment } from '../lib/onedriveService';
+import { checkLLMConfig, saveLLMConfig, deleteLLMConfig, testLLMConnection } from '../lib/llmService';
 import { SectionsDndArea, SectionWrapper, PageWrapper, PagesDndArea, getPageIcon } from './DndComponents';
 import { BackupConfigModal } from './BackupConfigModal';
 import { BackupHistoryModal } from './BackupHistoryModal';
@@ -407,7 +408,8 @@ const NotebookItem: React.FC<{
   onViewInvites: (notebook: Note) => void;
   isShared?: boolean;
   isOwner?: boolean;
-}> = ({ notebook, sections, isExpanded, isActive, activeSection, onToggle, onSectionClick, onTitleChange, onDelete, onAddSection, onShare, onIconChange, onCopyId, onViewInvites, isShared = false, isOwner = false }) => {
+  hasStorage?: boolean;
+}> = ({ notebook, sections, isExpanded, isActive, activeSection, onToggle, onSectionClick, onTitleChange, onDelete, onAddSection, onShare, onIconChange, onCopyId, onViewInvites, isShared = false, isOwner = false, hasStorage = false }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [dragOverSectionIndex, setDragOverSectionIndexLocal] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -493,6 +495,12 @@ const NotebookItem: React.FC<{
                 <Folder className="w-4 h-4 text-blue-500" />
                 新建分区
               </button>
+              {hasStorage && (
+                <div className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-500 cursor-default">
+                  <HardDrive className="w-4 h-4" />
+                  已绑定储存空间
+                </div>
+              )}
               <button
                 onClick={() => { onDelete(notebook.id); setShowMenu(false); }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
@@ -1222,6 +1230,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showOneDriveModal, setShowOneDriveModal] = useState(false);
+  const [showLLMConfigModal, setShowLLMConfigModal] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [showBackupConfig, setShowBackupConfig] = useState(false);
   const [showBackupHistory, setShowBackupHistory] = useState(false);
@@ -1236,6 +1245,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
     isDanger?: boolean;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
   const [sharedNotebookIds, setSharedNotebookIds] = useState<Set<string>>(new Set());
+  const [storageBoundIds, setStorageBoundIds] = useState<Set<string>>(new Set());
   const [dragOverPageIndex, setDragOverPageIndex] = useState<number | null>(null);
   const [dragOverSectionIndex, setDragOverSectionIndex] = useState<{ [key: string]: number }>({});
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -1263,6 +1273,25 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
 
     if (notebookIds.length > 0) {
       loadSharedNotebooks();
+    }
+  }, [notebookIds]);
+
+  // 批量查询笔记本的储存空间绑定状态
+  useEffect(() => {
+    const loadStorageStatus = async () => {
+      try {
+        const ids = notes.filter((n) => n.type === 'notebook').map((n) => n.id);
+        const result = await checkNotebooksStorageBatch(ids);
+        const boundSet = new Set<string>();
+        result.forEach((bound, nid) => { if (bound) boundSet.add(nid); });
+        setStorageBoundIds(boundSet);
+      } catch (e) {
+        console.error('批量获取储存空间状态失败:', e);
+      }
+    };
+
+    if (notebookIds.length > 0) {
+      loadStorageStatus();
     }
   }, [notebookIds]);
 
@@ -1451,7 +1480,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
       {/* 顶部 - Logo */}
       <div className="h-[47px] shrink-0 flex items-center px-3 bg-white border-b border-gray-100 justify-between">
         {!collapsed && (
-          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.0.1</span></span>
+          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.1</span></span>
         )}
         <div className={`flex items-center gap-1 ${collapsed ? 'w-full justify-center' : ''}`}>
           {!collapsed && (
@@ -1519,6 +1548,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                         onViewInvites={handleViewInvites}
                         isShared={isShared}
                         isOwner={notebook.owner_id === user?.id}
+                        hasStorage={storageBoundIds.has(notebook.id)}
                       />
                     </div>
                   );
@@ -1635,11 +1665,18 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                     笔记导出/导入
                   </button>
                   <button
-                    disabled
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-400 cursor-not-allowed"
+                    onClick={() => { setShowOneDriveModal(true); setShowUserMenu(false); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
                   >
-                    <Cloud className="w-4 h-4" />
+                    <Cloud className="w-4 h-4 text-sky-500" />
                     OneDrive 云盘
+                  </button>
+                  <button
+                    onClick={() => { setShowLLMConfigModal(true); setShowUserMenu(false); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <Bot className="w-4 h-4 text-violet-500" />
+                    AI大模型配置
                   </button>
                   <button
                     onClick={() => { setShowBackupConfig(true); setShowUserMenu(false); }}
@@ -1850,6 +1887,11 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
       {/* OneDrive 云盘弹窗 */}
       {showOneDriveModal && (
         <OneDriveModal onClose={() => setShowOneDriveModal(false)} />
+      )}
+
+      {/* 大模型配置弹窗 */}
+      {showLLMConfigModal && (
+        <LLMConfigModal onClose={() => setShowLLMConfigModal(false)} />
       )}
 
       {/* 确认弹窗 */}
@@ -2165,6 +2207,330 @@ const InviteManagementModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
   );
 };
 
+// 大模型配置弹窗
+const LLMConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [protocol, setProtocol] = useState<'openai' | 'anthropic'>('openai');
+  const [provider, setProvider] = useState('openai');
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [modelName, setModelName] = useState('gpt-4o-mini');
+  const [isConfigured, setIsConfigured] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; reply?: string; elapsed?: number; error?: string } | null>(null);
+
+  const openaiProviders = [
+    { value: 'openai', label: 'OpenAI', defaultBase: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini' },
+    { value: 'deepseek', label: 'DeepSeek', defaultBase: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat' },
+    { value: 'zhipu', label: '智谱 AI', defaultBase: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4-flash' },
+    { value: 'qwen', label: '通义千问', defaultBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-turbo' },
+    { value: 'moonshot', label: 'Moonshot', defaultBase: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k' },
+    { value: 'custom_openai', label: '自定义 (OpenAI 兼容)', defaultBase: '', defaultModel: '' },
+  ];
+
+  const anthropicProviders = [
+    { value: 'anthropic', label: 'Anthropic (Claude)', defaultBase: 'https://api.anthropic.com', defaultModel: 'claude-sonnet-4-20250514' },
+    { value: 'custom_anthropic', label: '自定义 (Anthropic 兼容)', defaultBase: '', defaultModel: '' },
+  ];
+
+  const currentProviders = protocol === 'openai' ? openaiProviders : anthropicProviders;
+  const currentProvider = currentProviders.find(p => p.value === provider) || currentProviders[0];
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      const result = await checkLLMConfig();
+      if (result.configured && result.config) {
+        setIsConfigured(true);
+        setProtocol(result.config.protocol || 'openai');
+        setProvider(result.config.provider || (result.config.protocol === 'anthropic' ? 'anthropic' : 'openai'));
+        setApiKey(result.config.api_key || '');
+        setBaseUrl(result.config.base_url || '');
+        setModelName(result.config.model_name || 'gpt-4o-mini');
+      }
+    };
+    loadConfig();
+  }, []);
+
+  const handleProtocolChange = (newProtocol: 'openai' | 'anthropic') => {
+    setProtocol(newProtocol);
+    const providers = newProtocol === 'openai' ? openaiProviders : anthropicProviders;
+    setProvider(providers[0].value);
+    if (providers[0].defaultBase) setBaseUrl(providers[0].defaultBase);
+    if (providers[0].defaultModel) setModelName(providers[0].defaultModel);
+  };
+
+  const handleProviderChange = (val: string) => {
+    setProvider(val);
+    const opt = currentProviders.find(p => p.value === val);
+    if (opt && !val.startsWith('custom')) {
+      if (!baseUrl || currentProviders.some(p => p.defaultBase === baseUrl)) {
+        setBaseUrl(opt.defaultBase);
+      }
+      if (!modelName || currentProviders.some(p => p.defaultModel === modelName)) {
+        setModelName(opt.defaultModel);
+      }
+    }
+  };
+
+  const handleSave = async () => {
+    if (!apiKey.trim()) {
+      toast.error('请输入 API Key');
+      return;
+    }
+    if (!modelName.trim()) {
+      toast.error('请输入模型名称');
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await saveLLMConfig({
+        provider,
+        protocol,
+        api_key: apiKey.trim(),
+        base_url: baseUrl.trim(),
+        model_name: modelName.trim(),
+      });
+      if (result.success) {
+        toast.success('大模型配置已保存');
+        setIsConfigured(true);
+      } else {
+        toast.error(result.error || '保存失败');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setSaving(true);
+    try {
+      const result = await deleteLLMConfig();
+      if (result.success) {
+        toast.success('已删除大模型配置');
+        setApiKey('');
+        setBaseUrl('');
+        setModelName('gpt-4o-mini');
+        setProvider('openai');
+        setProtocol('openai');
+        setIsConfigured(false);
+      } else {
+        toast.error(result.error || '删除失败');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    if (!apiKey.trim()) {
+      toast.error('请先输入 API Key');
+      return;
+    }
+    if (!modelName.trim()) {
+      toast.error('请先输入模型名称');
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await testLLMConnection({
+        protocol,
+        api_key: apiKey.trim(),
+        base_url: baseUrl.trim(),
+        model_name: modelName.trim(),
+      });
+      setTestResult(result);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const protocolLabel = protocol === 'openai' ? 'OpenAI' : 'Anthropic';
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-[520px] max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="bg-gradient-to-r from-violet-500 to-purple-600 px-4 py-3 flex justify-between items-center flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Bot className="w-5 h-5 text-white" />
+            <span className="text-white font-medium">AI大模型配置</span>
+          </div>
+          <button onClick={onClose} className="text-white/80 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 overflow-y-auto">
+          <p className="text-xs text-gray-500">
+            配置大模型后，你拥有的笔记本可以使用 AI 相关功能。配置信息仅存储在你的账号下，共享者通过你的笔记本使用 AI 时会使用你的配额。
+          </p>
+
+          {isConfigured && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+              <span>✓</span>
+              <span>已配置 · {protocolLabel} 协议 · {currentProvider.label} · {modelName}</span>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">接口协议</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleProtocolChange('openai')}
+                  className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+                    protocol === 'openai'
+                      ? 'border-violet-400 bg-violet-50 text-violet-700'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  OpenAI 协议
+                  <span className="block text-[10px] text-gray-400 mt-0.5">/v1/chat/completions</span>
+                </button>
+                <button
+                  onClick={() => handleProtocolChange('anthropic')}
+                  className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+                    protocol === 'anthropic'
+                      ? 'border-violet-400 bg-violet-50 text-violet-700'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Anthropic 协议
+                  <span className="block text-[10px] text-gray-400 mt-0.5">/v1/messages</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">服务商</label>
+              <select
+                value={provider}
+                onChange={(e) => handleProviderChange(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+              >
+                {currentProviders.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+              <div className="relative">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={protocol === 'openai' ? 'sk-...' : 'sk-ant-...'}
+                  className="w-full px-3 py-2 pr-16 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600 px-1"
+                >
+                  {showKey ? '隐藏' : '显示'}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Base URL
+                <span className="text-gray-400 font-normal ml-1">（可选，自定义接口地址）</span>
+              </label>
+              <input
+                type="text"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder={currentProvider.defaultBase || (protocol === 'openai' ? 'https://api.example.com/v1' : 'https://api.anthropic.com')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">模型名称</label>
+              <input
+                type="text"
+                value={modelName}
+                onChange={(e) => setModelName(e.target.value)}
+                placeholder={currentProvider.defaultModel || (protocol === 'openai' ? 'gpt-4o-mini' : 'claude-sonnet-4-20250514')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          {testResult && (
+            <div className={`px-3 py-2 rounded-lg text-sm ${
+              testResult.success
+                ? 'bg-green-50 border border-green-200 text-green-700'
+                : 'bg-red-50 border border-red-200 text-red-600'
+            }`}>
+              {testResult.success ? (
+                <div>
+                  <div className="flex items-center gap-1">
+                    <span>✓ 连接成功</span>
+                    <span className="text-green-500 text-xs">({testResult.elapsed}ms)</span>
+                  </div>
+                  {testResult.reply && (
+                    <div className="mt-1 text-xs text-green-600 truncate">
+                      模型回复: {testResult.reply}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <span>✗ 连接失败</span>
+                  {testResult.error && (
+                    <div className="mt-1 text-xs text-red-500">{testResult.error}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-2">
+            <div>
+              {isConfigured && (
+                <button
+                  onClick={handleDelete}
+                  disabled={saving}
+                  className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  删除配置
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleTest}
+                disabled={testing || saving}
+                className="px-3 py-1.5 text-sm text-violet-600 border border-violet-300 hover:bg-violet-50 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {testing ? '测试中...' : '测试连接'}
+              </button>
+              <button
+                onClick={onClose}
+                className="px-4 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-4 py-1.5 text-sm text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {saving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // OneDrive 云盘管理弹窗
   const OneDriveModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const { user } = useAuth();
@@ -2195,7 +2561,7 @@ const InviteManagementModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
 
   const checkBindingStatus = async () => {
     if (!user) return;
-    const result = await checkOneDriveBinding(user.id);
+    const result = await checkOneDriveBinding();
     setIsBound(result.bound);
     // 不自动跳转到文件管理，保持在绑定设置页
   };
@@ -2213,7 +2579,7 @@ const InviteManagementModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
   const checkBindStatus = async () => {
     if (!user) return;
     addDebug('检查绑定状态', 'pending', '查询数据库...');
-    const result = await getAttachments(user.id);
+    const result = await getAttachments();
     if (result.success && result.data && result.data.length >= 0) {
       addDebug('检查绑定状态', 'ok', '数据库查询成功');
       setIsBound(true);
@@ -2227,12 +2593,17 @@ const InviteManagementModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
   const loadAttachments = async () => {
     if (!user) return;
     setLoading(true);
-    const result = await getAttachments(user.id);
+    const result = await getAttachments();
     if (result.success) {
       setAttachments(result.data || []);
     }
     setLoading(false);
   };
+
+  // 检测是否在 Tauri APP 中
+  const isTauriApp = typeof (window as any).__TAURI__ !== 'undefined' ||
+    (navigator.userAgent || '').includes('Tauri') ||
+    (navigator.userAgent || '').includes('彩云笔记');
 
   const handleBind = async () => {
     if (!user || !clientId.trim() || !clientSecret.trim()) {
@@ -2247,90 +2618,85 @@ const InviteManagementModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
     clearDebug();
 
     try {
-      // 步骤1：调用 onedrive-bind 获取授权 URL
-      addDebug('① 调用 onedrive-bind', 'pending', '发送请求...');
-      const body = {
-        user_id: user.id,
-        client_id: clientId.trim(),
-        client_secret: clientSecret.trim(),
-        cloud_type: cloudType,
-        tenant_id: cloudType === '世纪互联' ? tenantId.trim() : undefined,
-      };
-      addDebug('① 调用 onedrive-bind', 'pending', `请求体: ${JSON.stringify({ ...body, client_secret: '***' })}`);
+      // 步骤1：调用本地后端获取授权 URL
+      addDebug('① 获取授权 URL', 'pending', '发送请求...');
 
-      const response = await fetch('https://mdtbszztcmmdbnvosvpl.supabase.co/functions/v1/onedrive-bind', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const respText = await response.text();
-      addDebug('① 调用 onedrive-bind', response.ok ? 'ok' : 'error',
-        `HTTP ${response.status} | ${respText.slice(0, 200)}`);
-
-      if (!response.ok) {
-        toast.error('获取授权失败');
-        setIsBinding(false);
-        return;
-      }
-
-      const data = JSON.parse(respText);
-      const authUrl = data.authUrl;
+      const result = await getOneDriveAuthUrl(clientId.trim(), clientSecret.trim(), cloudType, cloudType === '世纪互联' ? tenantId.trim() : undefined);
+      const authUrl = result.authUrl;
 
       if (!authUrl) {
-        addDebug('① 调用 onedrive-bind', 'error', `返回无 authUrl: ${respText}`);
+        addDebug('① 获取授权 URL', 'error', '返回无 authUrl');
         toast.error('获取授权 URL 失败');
         setIsBinding(false);
         return;
       }
 
-      addDebug('② 打开授权 popup', 'pending', `URL: ${authUrl.slice(0, 100)}...`);
+      addDebug('① 获取授权 URL', 'ok', `URL: ${authUrl.slice(0, 100)}...`);
 
-      // 步骤2：使用 iframe 打开授权页面（兼容 App 环境）
-      // 在回调页面加载完成后通过 postMessage 通知父窗口
-      addDebug('② 打开授权 iframe', 'pending', '创建隐藏 iframe...');
-      toast.success('正在打开授权页面...');
+      // Tauri APP：使用外部浏览器打开 + 轮询检查绑定状态
+      if (isTauriApp) {
+        addDebug('② 打开授权页', 'ok', '正在唤起系统浏览器...');
+        toast.success('正在打开系统浏览器，请完成授权后返回...');
+        // Tauri 中 window.open 会唤起系统浏览器
+        window.open(authUrl, '_blank');
+        setIsBinding(false);
 
-      // 创建隐藏的 iframe
-      const iframe = document.createElement('iframe');
-      iframe.src = authUrl;
-      iframe.style.cssText = 'position:fixed;top:0;left:0;width:600px;height:700px;border:none;z-index:99999;visibility:visible;background:white;';
-
-      // 显示加载提示
-      const loadingDiv = document.createElement('div');
-      loadingDiv.innerHTML = `
-        <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:32px;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.12);text-align:center;z-index:99998;">
-          <div style="font-size:24px;margin-bottom:16px;">⏳</div>
-          <div style="color:#333;font-size:16px;margin-bottom:8px;">正在等待授权...</div>
-          <div style="color:#666;font-size:14px;">请在弹出的窗口中完成授权</div>
-          <button id="cancel-bind-btn" style="margin-top:20px;padding:8px 24px;background:#f3f4f6;border:none;border-radius:8px;cursor:pointer;">取消</button>
-        </div>
-      `;
-      document.body.appendChild(loadingDiv);
-
-      // 取消按钮处理
-      const cancelBtn = document.getElementById('cancel-bind-btn');
-      if (cancelBtn) {
-        cancelBtn.onclick = () => {
-          document.body.removeChild(iframe);
-          document.body.removeChild(loadingDiv);
-          setIsBinding(false);
-          addDebug('② 授权取消', 'error', '用户点击了取消');
-        };
+        // 轮询检查绑定状态（每3秒检查一次，最多60秒）
+        let pollCount = 0;
+        const maxPoll = 20;
+        const tauriPollTimer = setInterval(async () => {
+          pollCount++;
+          addDebug('③ 检查绑定', 'pending', `第 ${pollCount}/${maxPoll} 次检查...`);
+          const checkResult = await checkOneDriveBinding();
+          if (checkResult.bound) {
+            clearInterval(tauriPollTimer);
+            addDebug('③ 授权成功', 'ok', '检测到绑定状态');
+            toast.success('OneDrive 绑定成功！');
+            setIsBound(true);
+            setActiveTab('files');
+            loadAttachments();
+          } else if (pollCount >= maxPoll) {
+            clearInterval(tauriPollTimer);
+            addDebug('③ 授权超时', 'error', '60秒内未检测到绑定');
+            toast.error('授权超时，请重试');
+          }
+        }, 3000);
+        return;
       }
 
-      // 将 iframe 添加到 body
-      document.body.appendChild(iframe);
+      // 浏览器：使用弹窗 + postMessage 方案
+      // 先同步打开空白弹窗（必须在用户点击的同步上下文中，否则会被浏览器拦截）
+      const popup = window.open('about:blank', 'onedrive_auth', 'width=600,height=700,left=200,top=100,toolbar=no,menubar=no');
+
+      if (!popup) {
+        addDebug('② 打开授权窗口', 'error', '弹窗被浏览器拦截');
+        toast.error('弹窗被浏览器拦截，请允许弹窗后重试');
+        setIsBinding(false);
+        return;
+      }
+
+      // 步骤2：在已打开的弹窗中导航到授权 URL
+      addDebug('② 导航到授权页', 'ok', '弹窗已打开，正在跳转...');
+      toast.success('正在打开授权页面，请在弹窗中完成授权...');
+      popup.location.href = authUrl;
       setIsBinding(false);
 
-      // 监听 postMessage（授权成功/失败）
+      // 轮询检测弹窗是否关闭（用户手动关闭的场景）
+      const pollTimer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(pollTimer);
+          window.removeEventListener('message', messageHandler);
+        }
+      }, 500);
+
+      // 监听 postMessage（授权成功/失败，由回调页面通过 window.opener.postMessage 发送）
       const messageHandler = (event: MessageEvent) => {
         if (!event.data || typeof event.data !== 'object') return;
         if (event.data.type !== 'onedrive_success' && event.data.type !== 'onedrive_error') return;
 
+        clearInterval(pollTimer);
         window.removeEventListener('message', messageHandler);
-        if (iframe && iframe.parentNode) document.body.removeChild(iframe);
-        if (loadingDiv.parentNode) document.body.removeChild(loadingDiv);
+        if (!popup.closed) popup.close();
 
         if (event.data.type === 'onedrive_success') {
           addDebug('③ 授权成功', 'ok', '收到 postMessage');
@@ -2353,12 +2719,12 @@ const InviteManagementModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
 
   const handleDownload = async (attachment: Attachment) => {
     if (!user) return;
-    const result = await downloadFromOneDrive(user.id, attachment.id);
+    const result = await downloadFromOneDrive(attachment.id);
     if (result.success && result.blob) {
       const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = attachment.file_name;
+      a.download = result.fileName || attachment.file_name;
       a.click();
       URL.revokeObjectURL(url);
     } else {
@@ -2373,7 +2739,7 @@ const InviteManagementModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
       title: '删除附件',
       message: `确定要删除 "${attachment.file_name}" 吗？`,
       onConfirm: async () => {
-        const result = await deleteAttachment(user.id, attachment.id);
+        const result = await deleteAttachment(attachment.id);
         if (result.success) {
           toast.success('删除成功');
           loadAttachments();
@@ -2625,7 +2991,7 @@ const InviteManagementModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
                   <div className="space-y-1.5">
                     <p className="font-semibold text-amber-800">第四步：配置 Redirect URI</p>
                     <p>左侧 <strong>"身份验证"</strong> → <strong>"+ 添加平台"</strong> → <strong>"Web"</strong></p>
-                    <code className="block bg-amber-100 p-1 rounded text-blue-700 break-all">https://mdtbszztcmmdbnvosvpl.supabase.co/functions/v1/onedrive-callback</code>
+                    <code className="block bg-amber-100 p-1 rounded text-blue-700 break-all">http://49.235.160.8:3011/api/onedrive/callback</code>
                     <p>勾选<strong>"ID 令牌"</strong>和<strong>"访问令牌"</strong>，点击配置</p>
                   </div>
 

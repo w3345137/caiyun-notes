@@ -64,14 +64,14 @@ export function parseMdFile(content: string, fileName: string): ParsedNote | nul
       return null;
     }
 
-    const meta = yaml.load(match[1]) as any;
+    const meta = yaml.load(match[1], { schema: yaml.DEFAULT_SAFE_SCHEMA }) as any;
     if (!meta) {
       console.error(`[导入] 文件 ${fileName} frontmatter 解析失败`);
       return null;
     }
 
     return {
-      id: meta.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: meta.id || `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
       title: meta.title || fileName.replace('.md', ''),
       type: meta.type === 'notebook' ? 'notebook' : meta.type === 'section' ? 'section' : 'page',
       parentId: meta.parentId || null,
@@ -284,13 +284,13 @@ export async function importNote(
     let noteId = note.id;
     if (existingIds && existingIds.has(noteId)) {
       // ID 冲突，生成新 ID
-      noteId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      noteId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     } else if (!existingIds) {
       // 没有传入集合时，用 API 查询
       const treeResult = await apiLoadFullTree();
       if (treeResult.success && treeResult.data) {
         if (treeResult.data.some((n: any) => n.id === noteId)) {
-          noteId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          noteId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
         }
       }
     }

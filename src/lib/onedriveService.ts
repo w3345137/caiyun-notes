@@ -1,23 +1,13 @@
 /**
- * OneDrive 服务
+ * OneDrive 服务（本地后端版）
  * 处理 OneDrive 绑定、上传、下载等操作
+ * 所有请求走本地后端 /api/onedrive/*
  */
-
-import { supabase } from './supabase';
-
-const SUPABASE_URL = 'https://mdtbszztcmmdbnvosvpl.supabase.co';
-const FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`;
 
 export interface OneDriveAccount {
   id: string;
-  user_id: string;
-  access_token: string;
-  refresh_token: string;
-  token_expires_at: string;
-  drive_id: string;
-  drive_type: string;
-  created_at: string;
-  updated_at: string;
+  display_name?: string;
+  cloud_type?: string;
 }
 
 export interface Attachment {
@@ -35,15 +25,61 @@ export interface Attachment {
   created_at: string;
 }
 
+// 获取本地 JWT token
+function getAuthToken(): string {
+  const token = localStorage.getItem('notesapp_token');
+  if (!token) return '';
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      localStorage.removeItem('notesapp_token');
+      return '';
+    }
+    return token;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 获取 OneDrive 授权 URL
+ */
+export async function getOneDriveAuthUrl(
+  clientId: string,
+  clientSecret: string,
+  cloudType: string = 'international',
+  tenantId?: string
+): Promise<{ authUrl: string; state: string; cloud: string }> {
+  const token = getAuthToken();
+  const response = await fetch('/api/onedrive/auth-url', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      cloud_type: cloudType,
+      tenant_id: tenantId,
+    }),
+  });
+
+  const data = await response.json();
+  if (data.error) throw new Error(data.error);
+  return { authUrl: data.authUrl, state: data.state, cloud: data.cloud };
+}
+
 /**
  * 检查用户是否已绑定 OneDrive
  */
-export async function checkOneDriveBinding(userId: string): Promise<{ bound: boolean; account?: OneDriveAccount }> {
+export async function checkOneDriveBinding(): Promise<{ bound: boolean; account?: OneDriveAccount }> {
   try {
-    const response = await fetch(`${FUNCTIONS_URL}/onedrive-check?user_id=${userId}`, {
+    const token = getAuthToken();
+    const response = await fetch('/api/onedrive/check', {
       method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
     });
-
     const data = await response.json();
     return { bound: data.bound, account: data.account };
   } catch (error) {
@@ -53,60 +89,62 @@ export async function checkOneDriveBinding(userId: string): Promise<{ bound: boo
 }
 
 /**
- * 获取 OneDrive 授权 URL
+ * 检查笔记本所有者是否绑定了 OneDrive（共享用户无需自己绑定）
  */
-export async function getOneDriveAuthUrl(): Promise<{ authUrl: string; codeVerifier: string }> {
-  const response = await fetch(`${FUNCTIONS_URL}/onedrive-bind`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to get auth URL');
+export async function checkNotebookOnedrive(noteId: string): Promise<{ bound: boolean; isOwner: boolean; access: string }> {
+  try {
+    const token = getAuthToken();
+    const response = await fetch(`/api/onedrive/check-notebook?note_id=${encodeURIComponent(noteId)}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await response.json();
+    return { bound: data.bound, isOwner: data.is_owner, access: data.access };
+  } catch (error) {
+    console.error('Check notebook OneDrive error:', error);
+    return { bound: false, isOwner: false, access: 'none' };
   }
+}
 
-  const data = await response.json();
-  return { authUrl: data.authUrl, codeVerifier: data.codeVerifier };
+export async function checkNotebooksStorageBatch(notebookIds: string[]): Promise<Map<string, boolean>> {
+  const result = new Map<string, boolean>();
+  if (!notebookIds.length) return result;
+  try {
+    const token = getAuthToken();
+    const response = await fetch(`/api/onedrive/check-notebooks-batch?notebook_ids=${encodeURIComponent(notebookIds.join(','))}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await response.json();
+    if (data.data && Array.isArray(data.data)) {
+      for (const item of data.data) {
+        result.set(item.notebook_id, item.bound);
+      }
+    }
+  } catch (error) {
+    console.error('Batch check notebooks storage error:', error);
+  }
+  return result;
 }
 
 /**
- * 处理 OneDrive OAuth 回调
- * 从 URL 中提取 token 并存储
+ * 解绑 OneDrive
  */
-export async function handleOneDriveCallback(
-  userId: string,
-  accessToken: string,
-  refreshToken: string,
-  expiresIn: number
-): Promise<{ success: boolean; error?: string }> {
+export async function unbindOneDrive(): Promise<{ success: boolean; error?: string }> {
   try {
-    const response = await fetch(`${FUNCTIONS_URL}/onedrive-token`, {
+    const token = getAuthToken();
+    const response = await fetch('/api/onedrive/unbind', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        user_id: userId,
-        access_token: accessToken,
-        refresh_token: refreshToken,
-        expires_in: expiresIn,
-        drive_id: 'me/drive',
-        drive_type: 'personal',
-      }),
     });
-
     const data = await response.json();
-
-    if (data.error) {
-      return { success: false, error: data.error };
-    }
-
-    return { success: true };
+    return { success: data.success, error: data.error };
   } catch (error) {
-    console.error('Handle OneDrive callback error:', error);
-    return { success: false, error: 'Network error' };
+    console.error('Unbind OneDrive error:', error);
+    return { success: false, error: '解绑失败' };
   }
 }
 
@@ -114,29 +152,24 @@ export async function handleOneDriveCallback(
  * 上传文件到 OneDrive
  */
 export async function uploadToOneDrive(
-  userId: string,
-  noteId: string | null,
   file: File,
+  noteId?: string | null,
   folderPath: string = '/',
   folderName: string = '根目录'
 ): Promise<{ success: boolean; data?: Attachment; error?: string }> {
   try {
-    // 获取当前 session token
-    const { data: { session } } = await supabase.auth.getSession();
-    const authToken = session?.access_token || '';
-
+    const token = getAuthToken();
     // 将文件转换为 base64
     const base64 = await fileToBase64(file);
 
-    const response = await fetch(`${FUNCTIONS_URL}/onedrive-upload`, {
+    const response = await fetch('/api/onedrive/upload', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`,
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({
-        user_id: userId,
-        note_id: noteId,
+        note_id: noteId || null,
         file_name: file.name,
         file_content: base64,
         folder_path: folderPath,
@@ -144,26 +177,18 @@ export async function uploadToOneDrive(
       }),
     });
 
-    // 错误时可能返回 HTML debug 页面，需要容错处理
     let data: any = {};
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       data = await response.json();
     } else {
-      // HTML 页面，提取错误信息
       const html = await response.text();
-      const titleMatch = html.match(/<h2[^>]*>([^<]+)<\/h2>/);
-      const debugMatch = html.match(/<div class="debug">([\s\S]+?)<\/div>/);
-      const errorMsg = titleMatch ? titleMatch[1] : '上传失败';
-      const debugInfo = debugMatch ? debugMatch[1].replace(/<[^>]+>/g, '') : '';
-      console.error('Upload failed HTML:', errorMsg, debugInfo);
-      return { success: false, error: errorMsg + (debugInfo ? '\n' + debugInfo : '') };
+      console.error('Upload got non-JSON:', html.substring(0, 200));
+      return { success: false, error: '上传失败：服务器返回非 JSON 响应' };
     }
 
     if (data.error) {
-      if (data.needBind) {
-        return { success: false, error: '请先绑定 OneDrive 账号' };
-      }
+      if (data.needBind) return { success: false, error: '请先绑定 OneDrive 账号' };
       return { success: false, error: data.error };
     }
 
@@ -178,37 +203,30 @@ export async function uploadToOneDrive(
  * 从 OneDrive 下载文件
  */
 export async function downloadFromOneDrive(
-  userId: string,
   attachmentId: string
-): Promise<{ success: boolean; blob?: Blob; error?: string }> {
+): Promise<{ success: boolean; blob?: Blob; fileName?: string; error?: string }> {
   try {
-    // 获取当前 session token
-    const { data: { session } } = await supabase.auth.getSession();
-    const authToken = session?.access_token || '';
-
-    const response = await fetch(
-      `${FUNCTIONS_URL}/onedrive-download?user_id=${userId}&attachment_id=${attachmentId}`,
-      {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-      }
-    );
+    const token = getAuthToken();
+    const response = await fetch(`/api/onedrive/download?attachment_id=${attachmentId}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
 
     if (!response.ok) {
       const data = await response.json();
-      if (data.needBind) {
-        return { success: false, error: '请先绑定 OneDrive 账号' };
-      }
-      return { success: false, error: data.error || 'Download failed' };
+      if (data.needBind) return { success: false, error: '请先绑定 OneDrive 账号' };
+      return { success: false, error: data.error || '下载失败' };
     }
 
     const blob = await response.blob();
-    return { success: true, blob };
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const fileNameMatch = disposition.match(/filename="(.+?)"/);
+    const fileName = fileNameMatch ? decodeURIComponent(fileNameMatch[1]) : 'download';
+
+    return { success: true, blob, fileName };
   } catch (error) {
     console.error('Download from OneDrive error:', error);
-    return { success: false, error: 'Download failed' };
+    return { success: false, error: '下载失败' };
   }
 }
 
@@ -216,29 +234,28 @@ export async function downloadFromOneDrive(
  * 获取附件列表
  */
 export async function getAttachments(
-  userId: string,
   noteId?: string,
   folderPath?: string
 ): Promise<{ success: boolean; data?: Attachment[]; error?: string }> {
   try {
-    let url = `${FUNCTIONS_URL}/onedrive-list?user_id=${userId}`;
-    if (noteId) url += `&note_id=${noteId}`;
-    if (folderPath) url += `&folder_path=${encodeURIComponent(folderPath)}`;
+    const token = getAuthToken();
+    let url = '/api/onedrive/list';
+    const params: string[] = [];
+    if (noteId) params.push(`note_id=${noteId}`);
+    if (folderPath) params.push(`folder_path=${encodeURIComponent(folderPath)}`);
+    if (params.length) url += '?' + params.join('&');
 
     const response = await fetch(url, {
       method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
     });
 
     const data = await response.json();
-
-    if (data.error) {
-      return { success: false, error: data.error };
-    }
-
+    if (data.error) return { success: false, error: data.error };
     return { success: true, data: data.data };
   } catch (error) {
     console.error('Get attachments error:', error);
-    return { success: false, error: 'Failed to get attachments' };
+    return { success: false, error: '获取附件列表失败' };
   }
 }
 
@@ -246,48 +263,37 @@ export async function getAttachments(
  * 删除附件
  */
 export async function deleteAttachment(
-  userId: string,
   attachmentId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // 获取当前 session token
-    const { data: { session } } = await supabase.auth.getSession();
-    const authToken = session?.access_token || '';
-
-    const response = await fetch(`${FUNCTIONS_URL}/onedrive-delete`, {
+    const token = getAuthToken();
+    const response = await fetch('/api/onedrive/delete', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`,
+        'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        attachment_id: attachmentId,
-        user_id: userId,
-      }),
+      body: JSON.stringify({ attachment_id: attachmentId }),
     });
 
     const data = await response.json();
-
-    if (data.error) {
-      return { success: false, error: data.error };
-    }
-
+    if (data.error) return { success: false, error: data.error };
     return { success: true };
   } catch (error) {
     console.error('Delete attachment error:', error);
-    return { success: false, error: 'Delete failed' };
+    return { success: false, error: '删除失败' };
   }
 }
 
 /**
- * 将文件转换为 base64
+ * 将文件转换为 base64（无前缀）
  */
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // 移除 data:image/...;base64, 前缀
+      // 移除 data:xxx;base64, 前缀
       const base64 = result.split(',')[1];
       resolve(base64);
     };
@@ -316,4 +322,18 @@ export function getFileIconType(mimeType: string): 'image' | 'video' | 'audio' |
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType.includes('pdf') || mimeType.includes('document') || mimeType.includes('spreadsheet') || mimeType.includes('presentation')) return 'document';
   return 'other';
+}
+
+/**
+ * 获取文件图标 emoji
+ */
+export function getFileIcon(mimeType: string): string {
+  const type = getFileIconType(mimeType);
+  switch (type) {
+    case 'image': return '🖼️';
+    case 'video': return '🎬';
+    case 'audio': return '🎵';
+    case 'document': return '📄';
+    default: return '📎';
+  }
 }

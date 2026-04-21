@@ -1,13 +1,9 @@
 import React from 'react';
 
-/**
- * 骨架屏动画样式 - 轻微渐入闪烁
- */
 const skeletonClass = `
   animate-pulse-skeleton
 `;
 
-// 添加全局动画样式
 if (typeof document !== 'undefined') {
   const styleId = 'skeleton-animation-style';
   if (!document.getElementById(styleId)) {
@@ -27,9 +23,10 @@ if (typeof document !== 'undefined') {
   }
 }
 
-/**
- * 笔记本骨架屏 - 灰色长条+折叠图标样式
- */
+const SKELETON_WIDTHS = ['45%', '55%', '65%', '50%', '60%', '70%', '48%', '58%', '68%'];
+const SECTION_WIDTHS = ['55%', '60%', '65%', '52%', '62%', '72%', '58%', '68%'];
+const PAGE_WIDTHS = ['65%', '70%', '75%', '68%', '72%', '78%', '62%', '74%', '80%'];
+
 export const NotebookSkeleton: React.FC<{ count?: number }> = ({ count = 1 }) => {
   return (
     <>
@@ -39,25 +36,22 @@ export const NotebookSkeleton: React.FC<{ count?: number }> = ({ count = 1 }) =>
           className={`flex items-center px-3 py-1.5 mx-2 my-0.5 rounded-lg ${skeletonClass}`}
           style={{
             backgroundColor: '#f3f4f6',
-            height: '36px', // 与实际笔记本行高一致
+            height: '36px',
           }}
         >
-          {/* 折叠图标占位 */}
           <div
             className="w-4 h-4 rounded flex-shrink-0 mr-2"
             style={{ backgroundColor: '#d1d5db' }}
           />
-          {/* 颜色条占位 */}
           <div
             className="w-1 h-5 rounded mr-2 flex-shrink-0"
             style={{ backgroundColor: '#e5e7eb' }}
           />
-          {/* 标题占位 */}
           <div
             className="h-4 rounded flex-1"
             style={{
               backgroundColor: '#d1d5db',
-              width: `${40 + Math.random() * 40}%`,
+              width: SKELETON_WIDTHS[i % SKELETON_WIDTHS.length],
             }}
           />
         </div>
@@ -66,9 +60,6 @@ export const NotebookSkeleton: React.FC<{ count?: number }> = ({ count = 1 }) =>
   );
 };
 
-/**
- * 分区骨架屏 - 缩进+图标+标题
- */
 export const SectionSkeleton: React.FC<{ count?: number }> = ({ count = 2 }) => {
   return (
     <>
@@ -77,20 +68,18 @@ export const SectionSkeleton: React.FC<{ count?: number }> = ({ count = 2 }) => 
           key={i}
           className={`flex items-center px-3 py-1.5 pl-6 ${skeletonClass}`}
           style={{
-            height: '32px', // 与实际分区行高一致
+            height: '32px',
           }}
         >
-          {/* 图标占位 */}
           <div
             className="w-4 h-4 rounded flex-shrink-0 mr-2"
             style={{ backgroundColor: '#d1d5db' }}
           />
-          {/* 标题占位 */}
           <div
             className="h-3.5 rounded flex-1"
             style={{
               backgroundColor: '#e5e7eb',
-              width: `${50 + Math.random() * 30}%`,
+              width: SECTION_WIDTHS[i % SECTION_WIDTHS.length],
             }}
           />
         </div>
@@ -99,9 +88,6 @@ export const SectionSkeleton: React.FC<{ count?: number }> = ({ count = 2 }) => 
   );
 };
 
-/**
- * 页面骨架屏 - 缩进+图标+标题
- */
 export const PageSkeleton: React.FC<{ count?: number }> = ({ count = 3 }) => {
   return (
     <>
@@ -110,20 +96,18 @@ export const PageSkeleton: React.FC<{ count?: number }> = ({ count = 3 }) => {
           key={i}
           className={`flex items-center px-3 py-1.5 pl-6 ${skeletonClass}`}
           style={{
-            height: '32px', // 与实际页面行高一致
+            height: '32px',
           }}
         >
-          {/* 图标占位 */}
           <div
             className="w-4 h-4 rounded flex-shrink-0 mr-2"
             style={{ backgroundColor: '#d1d5db' }}
           />
-          {/* 标题占位 */}
           <div
             className="h-3.5 rounded flex-1"
             style={{
               backgroundColor: '#e5e7eb',
-              width: `${60 + Math.random() * 25}%`,
+              width: PAGE_WIDTHS[i % PAGE_WIDTHS.length],
             }}
           />
         </div>
