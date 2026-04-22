@@ -1520,6 +1520,17 @@ export const NoteEditor: React.FC = () => {
       return;
     }
 
+    // 检查大模型是否支持语音转写（需要 OpenAI 兼容协议，MiniMax 不支持）
+    const config = llmResult.config;
+    if (config && (config.provider === 'minimax' || config.base_url?.includes('minimax'))) {
+      toast.error('MiniMax 暂不支持语音转写。如需使用录音转写，请配置 OpenAI、DeepSeek 或其他支持 Whisper API 的模型。');
+      return;
+    }
+    if (config && config.protocol !== 'openai' && config.protocol !== 'custom') {
+      toast.error('当前大模型不支持语音转写。请使用 OpenAI 兼容协议的模型。');
+      return;
+    }
+
     if (editor) {
       editor.chain().focus().insertAudioBlock({ noteId: selectedNote.id }).run();
     }
