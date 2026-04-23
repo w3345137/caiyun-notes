@@ -77,7 +77,7 @@ export async function signOut() {
 }
 
 // UTF-8 安全的 JWT payload 解码
-function parseJWTPayload(token: string): any | null {
+export function parseJWTPayload(token: string): any | null {
   try {
     const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
     const decoded = decodeURIComponent(

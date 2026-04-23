@@ -4,6 +4,8 @@
  * 所有请求走本地后端 /api/onedrive/*
  */
 
+import { parseJWTPayload } from './auth';
+
 export interface OneDriveAccount {
   id: string;
   display_name?: string;
@@ -30,8 +32,8 @@ function getAuthToken(): string {
   const token = localStorage.getItem('notesapp_token');
   if (!token) return '';
   try {
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+    const payload = parseJWTPayload(token);
+    if (payload?.exp && payload.exp < Math.floor(Date.now() / 1000)) {
       localStorage.removeItem('notesapp_token');
       return '';
     }
@@ -46,7 +48,6 @@ function getAuthToken(): string {
  */
 export async function getOneDriveAuthUrl(
   clientId: string,
-  clientSecret: string,
   cloudType: string = 'international',
   tenantId?: string
 ): Promise<{ authUrl: string; state: string; cloud: string }> {
@@ -59,7 +60,6 @@ export async function getOneDriveAuthUrl(
     },
     body: JSON.stringify({
       client_id: clientId,
-      client_secret: clientSecret,
       cloud_type: cloudType,
       tenant_id: tenantId,
     }),
@@ -158,6 +158,10 @@ export async function uploadToOneDrive(
   folderName: string = '根目录'
 ): Promise<{ success: boolean; data?: Attachment; error?: string }> {
   try {
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      return { success: false, error: `文件大小超过限制（最大50MB），当前文件: ${(file.size / 1024 / 1024).toFixed(1)}MB` };
+    }
     const token = getAuthToken();
     // 将文件转换为 base64
     const base64 = await fileToBase64(file);

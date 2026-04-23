@@ -16,6 +16,14 @@ async function call(path: string, payload: any = {}): Promise<any> {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ userId: getCurrentUserId(), ...payload })
     });
+    if (res.status === 401) {
+      localStorage.removeItem('notesapp_token');
+      return { success: false, error: '登录已过期，请重新登录' };
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { success: false, error: data.error || `请求失败(${res.status})` };
+    }
     return await res.json();
   } catch (e: any) { return { success: false, error: e.message }; }
 }

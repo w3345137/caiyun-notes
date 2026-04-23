@@ -1,3 +1,5 @@
+import { parseJWTPayload } from './auth';
+
 export interface LLMConfig {
   id?: string;
   provider: string;
@@ -12,8 +14,8 @@ function getAuthToken(): string {
   const token = localStorage.getItem('notesapp_token');
   if (!token) return '';
   try {
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+    const payload = parseJWTPayload(token);
+    if (payload?.exp && payload.exp < Math.floor(Date.now() / 1000)) {
       localStorage.removeItem('notesapp_token');
       return '';
     }
@@ -114,6 +116,7 @@ export async function testLLMConnection(config: { protocol: string; api_key: str
 export async function transcribeAudio(noteId: string, audioHex: string): Promise<{ success: boolean; text?: string; provider?: string; error?: string }> {
   try {
     const token = getAuthToken();
+    console.log('[llmService] transcribeAudio request, noteId:', noteId, 'hexLen:', audioHex.length);
     const response = await fetch('/api/llm/transcribe', {
       method: 'POST',
       headers: {
@@ -122,10 +125,13 @@ export async function transcribeAudio(noteId: string, audioHex: string): Promise
       },
       body: JSON.stringify({ note_id: noteId, audio_hex: audioHex }),
     });
-    const data = await response.json();
+    console.log('[llmService] transcribeAudio response status:', response.status, 'type:', response.headers.get('content-type'));
+    const text = await response.text();
+    console.log('[llmService] transcribeAudio response body (first 500):', text.substring(0, 500));
+    const data = JSON.parse(text);
     return data;
   } catch (error) {
-    console.error('Transcribe audio error:', error);
+    console.error('[llmService] transcribeAudio error:', error);
     return { success: false, error: '转写请求失败' };
   }
 }

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Download, Trash2, FileText, Image, Video, Volume2, FileCode, Cloud, Upload, FolderOpen, Loader2, Plus, X, Eye } from 'lucide-react';
 import { downloadFromOneDrive, uploadToOneDrive, formatFileSize, getFileIconType, getAttachments } from '../lib/onedriveService';
 import { useAuth } from '../components/AuthProvider';
+import { useNoteStore } from '../store/noteStore';
 import { toast } from 'sonner';
 
 interface FolderFile {
@@ -134,6 +135,7 @@ const FolderBlockView: React.FC<{
 }> = ({ node, deleteNode }) => {
   const { user } = useAuth();
   const attrs = node.attrs;
+  const folderRefreshTrigger = useNoteStore((state) => state.folderRefreshTrigger);
   const [files, setFiles] = useState<FolderFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -145,6 +147,10 @@ const FolderBlockView: React.FC<{
   useEffect(() => {
     loadFiles();
   }, [attrs.noteId]);
+
+  useEffect(() => {
+    if (folderRefreshTrigger > 0) loadFiles();
+  }, [folderRefreshTrigger]);
 
   // 清理预览blob
   useEffect(() => {
@@ -233,6 +239,7 @@ const FolderBlockView: React.FC<{
   };
 
   const handleDeleteFile = async (file: FolderFile) => {
+    if (!confirm(`确定删除文件「${file.file_name}」？此操作不可撤销。`)) return;
     try {
       const { deleteAttachment } = await import('../lib/onedriveService');
       const result = await deleteAttachment(file.id);
@@ -298,7 +305,12 @@ const FolderBlockView: React.FC<{
             className="hidden"
           />
           <button
-            onClick={deleteNode}
+            onClick={() => {
+              const msg = files.length > 0
+                ? `该文件夹中有 ${files.length} 个文件，移除文件夹不会删除文件。确定移除？`
+                : '确定移除文件夹？';
+              if (confirm(msg)) deleteNode();
+            }}
             className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
             title="移除文件夹"
           >

@@ -7,7 +7,7 @@
  * - API 请求: 不缓存（走 Realtime 同步）
  */
 
-const CACHE_NAME = 'caiyun-notes-v2.1-p4';
+const CACHE_NAME = 'caiyun-notes-v2.1-p5';
 
 // 不缓存的路径模式
 const NO_CACHE_PATTERNS = [

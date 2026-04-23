@@ -4,7 +4,7 @@ export interface Note {
   content: string; // Tiptap JSON content - 纯文本/Markdown
   mindmapData?: string | null; // 思维导图 JSON 数据，与 content 完全分离
   parentId: string | null;
-  type: 'notebook' | 'section' | 'page';
+  type: 'notebook' | 'email_notebook' | 'section' | 'email_account' | 'page';
   createdAt: string;
   updatedAt: string;
   order: number;

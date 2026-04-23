@@ -382,10 +382,8 @@ async function getBackupsIndexedDB(noteId: string): Promise<BackupRecord[]> {
  * 获取单个备份详情
  */
 export async function getBackup(backupId: string): Promise<BackupRecord | null> {
-  // Tauri 环境：从文件读取
   if (isTauri()) {
-    // backupId 格式：noteId-timestamp
-    const [noteId] = backupId.split('-');
+    const noteId = backupId.replace(/-\d+$/, '');
     const backups = await getBackupsTauri(noteId);
     return backups.find(b => b.id === backupId) || null;
   }
@@ -418,12 +416,10 @@ export async function getBackup(backupId: string): Promise<BackupRecord | null> 
  * 删除单个备份
  */
 export async function deleteBackup(backupId: string): Promise<{ success: boolean }> {
-  // Tauri 环境
   if (isTauri()) {
     try {
       if (!window.__TAURI__) return { success: false };
-      // backupId 格式：noteId-timestamp
-      const [noteId] = backupId.split('-');
+      const noteId = backupId.replace(/-\d+$/, '');
       const noteDir = getTauriNoteDir(noteId);
       const dirExists = await tauriExists(noteDir);
       if (!dirExists) return { success: false };

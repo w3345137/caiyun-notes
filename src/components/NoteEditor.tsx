@@ -21,7 +21,7 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import { getActiveInternalEditor } from '../lib/nodeViewEditorManager';
 import { ListKeymap } from '@tiptap/extension-list-keymap';
-import { useNoteStore, markNoteAsEditing, markNoteAsEditingEnd } from '../store/noteStore';
+import { useNoteStore, markNoteAsEditing, markNoteAsEditingEnd, SSENotification } from '../store/noteStore';
 import { useAuth } from '../components/AuthProvider';
 import { MindmapExtension, getActiveMindmapActions } from '../extensions/MindmapExtension';
 import { RouteBlock } from '../extensions/RouteBlock.tsx';
@@ -992,6 +992,8 @@ export const NoteEditor: React.FC = () => {
   const lockNote = useNoteStore((state) => state.lockNote);
   const unlockNote = useNoteStore((state) => state.unlockNote);
   const isNoteLockedByOther = useNoteStore((state) => state.isNoteLockedByOther);
+  const sseNotifications = useNoteStore((state) => state.sseNotifications);
+  const clearSSENotifications = useNoteStore((state) => state.clearSSENotifications);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showAutoSaveIndicator, setShowAutoSaveIndicator] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -1078,7 +1080,7 @@ export const NoteEditor: React.FC = () => {
       }
 
       // 找到父笔记本
-      const notebook = notes.find((n) => n.id === section.parentId && n.type === 'notebook');
+      const notebook = notes.find((n) => n.id === section.parentId && (n.type === 'notebook' || n.type === 'email_notebook'));
       if (!notebook) {
         setIsSharedNotebook(false);
         return;
@@ -1192,15 +1194,16 @@ export const NoteEditor: React.FC = () => {
           view.dispatch(tr);
           // 异步上传替换
           uploadImageToServer(file).then(url => {
-            const { state } = editorRef.current?.view || {};
-            if (!state) return;
+            const currentView = editorRef.current?.view;
+            if (!currentView) return;
+            const { state } = currentView;
             const { tr: replaceTr } = state;
             state.doc.descendants((n, p) => {
               if (n.type.name === 'image' && n.attrs.src === tempSrc) {
                 replaceTr.setNodeMarkup(p, undefined, { ...n.attrs, src: url });
               }
             });
-            if (replaceTr.docChanged) view.dispatch(replaceTr);
+            if (replaceTr.docChanged) currentView.dispatch(replaceTr);
             URL.revokeObjectURL(tempSrc);
           }).catch(err => console.error('拖放图片上传失败:', err));
         }
@@ -1221,14 +1224,16 @@ export const NoteEditor: React.FC = () => {
             view.dispatch(tr);
             // 异步上传替换
             uploadImageToServer(file).then(url => {
-              const { state } = view;
+              const currentView = editorRef.current?.view;
+              if (!currentView) return;
+              const { state } = currentView;
               const { tr: replaceTr } = state;
               state.doc.descendants((n, p) => {
                 if (n.type.name === 'image' && n.attrs.src === tempSrc) {
                   replaceTr.setNodeMarkup(p, undefined, { ...n.attrs, src: url });
                 }
               });
-              if (replaceTr.docChanged) view.dispatch(replaceTr);
+              if (replaceTr.docChanged) currentView.dispatch(replaceTr);
               URL.revokeObjectURL(tempSrc);
             }).catch(err => console.error('粘贴图片上传失败:', err));
             return true;
@@ -1240,9 +1245,8 @@ export const NoteEditor: React.FC = () => {
     immediatelyRender: false, // Safari 兼容性修复
     onUpdate: ({ editor }) => {
       if (selectedNoteId && !isLoadingRef.current) {
-        // 检查页面是否被其他用户锁定
-        if (isLockedByOther) {
-          // 页面被锁定时，清除 pending 的 auto-save，避免触发保存
+        const currentLockedByOther = useNoteStore.getState().isNoteLockedByOther(selectedNoteId, userId);
+        if (currentLockedByOther) {
           if (autoSaveTimeoutRef.current) {
             clearTimeout(autoSaveTimeoutRef.current);
             autoSaveTimeoutRef.current = null;
@@ -1251,22 +1255,18 @@ export const NoteEditor: React.FC = () => {
           return;
         }
         const content = JSON.stringify(editor.getJSON());
-        // 计算字数
         const count = calculateWordCount(editor.getJSON());
         setWordCount(count);
 
-        // 标记笔记正在被编辑（防止远程数据覆盖）
         markNoteAsEditing(selectedNoteId);
 
-        // 内容变化时，重置 debounce 定时器（1秒后保存）
         if (content !== lastSavedContentRef.current) {
           pendingContentRef.current = content;
           if (autoSaveTimeoutRef.current) {
             clearTimeout(autoSaveTimeoutRef.current);
           }
           autoSaveTimeoutRef.current = setTimeout(() => {
-            // 再次检查页面是否被锁定，避免在等待期间被锁定的情况
-            if (isNoteLockedByOther(selectedNoteId, userId)) {
+            if (useNoteStore.getState().isNoteLockedByOther(selectedNoteId, userId)) {
               console.log('[AutoSave] 页面已被锁定，取消保存');
               pendingContentRef.current = null;
               return;
@@ -1520,14 +1520,11 @@ export const NoteEditor: React.FC = () => {
       return;
     }
 
-    // 检查大模型是否支持语音转写（需要 OpenAI 兼容协议，MiniMax 不支持）
+    // 检查大模型是否支持语音转写（MiniMax 通过 Assistants API 支持，其他需要 OpenAI 兼容协议）
     const config = llmResult.config;
-    if (config && (config.provider === 'minimax' || config.base_url?.includes('minimax'))) {
-      toast.error('MiniMax 暂不支持语音转写。如需使用录音转写，请配置 OpenAI、DeepSeek 或其他支持 Whisper API 的模型。');
-      return;
-    }
-    if (config && config.protocol !== 'openai' && config.protocol !== 'custom') {
-      toast.error('当前大模型不支持语音转写。请使用 OpenAI 兼容协议的模型。');
+    const isMinimax = config && (config.provider === 'minimax' || config.base_url?.includes('minimax'));
+    if (!isMinimax && config && config.protocol !== 'openai' && config.protocol !== 'custom') {
+      toast.error('当前大模型不支持语音转写。请使用 OpenAI 兼容协议的模型或 MiniMax。');
       return;
     }
 
@@ -1598,6 +1595,43 @@ export const NoteEditor: React.FC = () => {
         </div>
         <span className="text-gray-400">按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">Ctrl+S</kbd> / <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">⌘+S</kbd> 保存到云端</span>
       </div>
+      {/* SSE 通知提示条 */}
+      {sseNotifications.filter((n: SSENotification) => n.noteId === selectedNoteId).length > 0 && (
+        <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 text-sm text-blue-700">
+            <AlertCircle className="w-4 h-4" />
+            <span>
+              {sseNotifications
+                .filter((n: SSENotification) => n.noteId === selectedNoteId)
+                .map((n: SSENotification) => {
+                  if (n.type === 'note_updated') return '此页面已被其他用户更新';
+                  if (n.type === 'note_deleted') return '此页面已被其他用户删除';
+                  return '';
+                })
+                .filter(Boolean)
+                .join('、')}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const loadFromCloud = useNoteStore.getState().loadFromCloud;
+                loadFromCloud();
+                clearSSENotifications(selectedNoteId);
+              }}
+              className="px-3 py-1 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+            >
+              刷新查看
+            </button>
+            <button
+              onClick={() => clearSSENotifications(selectedNoteId)}
+              className="px-3 py-1 text-xs text-blue-500 hover:bg-blue-100 rounded-md transition-colors"
+            >
+              忽略
+            </button>
+          </div>
+        </div>
+      )}
       {/* 编辑区 - flex-1 填充剩余空间，overflow-auto 内部滚动 */}
       <div
         className="flex-1 min-h-0 pl-9 px-5 pt-6 overflow-auto editor-scroll"

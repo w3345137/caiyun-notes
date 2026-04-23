@@ -105,18 +105,35 @@ const AudioBlockView: React.FC<{
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        }
+      });
+      console.log('[AudioBlock] getUserMedia success, tracks:', stream.getTracks().length, stream.getTracks().map(t => t.label));
+
       const mimeType = getSupportedMimeType();
+      console.log('[AudioBlock] using mimeType:', mimeType);
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
       chunksRef.current = [];
       recorder.ondataavailable = (e) => {
+        console.log('[AudioBlock] dataavailable, size:', e.data.size);
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
+        console.log('[AudioBlock] recording stopped, chunks:', chunksRef.current.length, 'blob size:', blob.size);
+        if (blob.size < 100) {
+          toast.error('录音数据异常，请检查麦克风权限');
+          setIsTranscribing(false);
+          setIsUploading(false);
+          return;
+        }
         await processRecording(blob, mimeType || 'audio/webm');
       };
 
@@ -129,8 +146,9 @@ const AudioBlockView: React.FC<{
       timerRef.current = setInterval(() => {
         setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       }, 1000);
-    } catch (err) {
-      toast.error('无法访问麦克风，请检查权限设置');
+    } catch (err: any) {
+      console.error('[AudioBlock] startRecording error:', err);
+      toast.error('无法访问麦克风：' + (err.message || '请检查权限设置'));
     }
   };
 
@@ -156,13 +174,18 @@ const AudioBlockView: React.FC<{
 
     blobToHex(blob).then(async (hex) => {
       try {
+        console.log('[AudioBlock] transcribeAudio start, noteId:', attrs.noteId, 'hex length:', hex.length);
         const result = await transcribeAudio(attrs.noteId, hex);
+        console.log('[AudioBlock] transcribeAudio result:', JSON.stringify(result));
         if (result.success && result.text) {
+          console.log('[AudioBlock] setting transcriptionText:', result.text);
           updateAttributes({ transcriptionText: result.text });
         } else {
+          console.warn('[AudioBlock] transcribe failed:', result.error);
           toast.error(result.error || '转写失败');
         }
       } catch (e) {
+        console.error('[AudioBlock] transcribe exception:', e);
         toast.error('转写请求失败');
       } finally {
         setIsTranscribing(false);

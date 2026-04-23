@@ -187,15 +187,15 @@ export const ImportTargetSelector: React.FC<ImportTargetSelectorProps> = ({
             <div className="space-y-1 max-h-32 overflow-y-auto">
               {notes.map(note => (
                 <div key={note.id} className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 rounded px-3 py-2">
-                  {note.type === 'notebook' ? (
+                  {note.type === 'notebook' || note.type === 'email_notebook' ? (
                     <BookOpen className="w-4 h-4 text-purple-500" />
-                  ) : note.type === 'section' ? (
+                  ) : note.type === 'section' || note.type === 'email_account' ? (
                     <Folder className="w-4 h-4 text-blue-500" />
                   ) : (
                     <FileText className="w-4 h-4 text-gray-400" />
                   )}
                   <span className="truncate">{note.title}</span>
-                  <span className="text-xs text-gray-400">({note.type === 'notebook' ? '笔记本' : note.type === 'section' ? '分区' : '页面'})</span>
+                  <span className="text-xs text-gray-400">({note.type === 'notebook' || note.type === 'email_notebook' ? '笔记本' : note.type === 'section' || note.type === 'email_account' ? '分区' : '页面'})</span>
                 </div>
               ))}
             </div>
@@ -248,9 +248,9 @@ export const ImportTargetSelector: React.FC<ImportTargetSelectorProps> = ({
                       key={note.id}
                       className={`flex items-center gap-2 px-4 py-3 ${canUse ? 'bg-green-50' : 'bg-red-50'}`}
                     >
-                      {note.type === 'notebook' ? (
+                      {note.type === 'notebook' || note.type === 'email_notebook' ? (
                         <BookOpen className={`w-4 h-4 ${canUse ? 'text-green-500' : 'text-red-400'}`} />
-                      ) : note.type === 'section' ? (
+                      ) : note.type === 'section' || note.type === 'email_account' ? (
                         <Folder className={`w-4 h-4 ${canUse ? 'text-green-500' : 'text-red-400'}`} />
                       ) : (
                         <FileText className={`w-4 h-4 ${canUse ? 'text-green-500' : 'text-red-400'}`} />

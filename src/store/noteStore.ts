@@ -11,9 +11,17 @@ import { Note } from '../types';
 import {
   loadFullTree, saveNoteToCloud, deleteNoteFromCloud,
   apiLockNote, apiUnlockNote, apiGetPageLock,
-  saveSidebarState, loadSidebarState,
+  saveSidebarState, loadSidebarState, apiGetNotebookInfo,
 } from '../lib/edgeApi';
 import { createBackup, getBackupConfig } from '../lib/localBackup';
+
+export interface SSENotification {
+  type: 'note_updated' | 'note_deleted' | 'note_locked' | 'note_unlocked';
+  noteId: string;
+  updatedBy?: string;
+  lockedBy?: string;
+  lockedByName?: string;
+}
 
 // === 全局缓存 ===
 let _updateLogsCache: any[] = [];
@@ -51,6 +59,8 @@ function sanitizeNote(n: any): any {
     is_locked: n.is_locked || false,
     locked_by: n.locked_by || n.lockedBy || null,
     lockedBy: n.lockedBy || n.locked_by || null,
+    locked_by_name: n.locked_by_name || n.lockedByName || null,
+    lockedByName: n.lockedByName || n.locked_by_name || null,
     version: n.version || 1,
     rootNotebookId: n.rootNotebookId || n.root_notebook_id || '',
     root_notebook_id: n.root_notebook_id || n.rootNotebookId || ''
@@ -126,6 +136,8 @@ export const useNoteStore = create<any>((set, get) => ({
   loadingProgress: 0,
   dbReady: true,
   dbError: null,
+  sseNotifications: [] as SSENotification[],
+  folderRefreshTrigger: 0,
 
   loadFromCloud: async () => {
     set({ isLoading: true, syncError: null, loadingStatus: '正在加载...', loadingProgress: 0 });
@@ -185,25 +197,23 @@ export const useNoteStore = create<any>((set, get) => ({
     set((state: any) => {
       const now = new Date().toISOString();
       const newNotes = state.notes.map((n: Note) => n.id === id ? { ...n, ...updates, updatedAt: now, updated_at: now } : n);
-      const updatedNote = newNotes.find((n: Note) => n.id === id);
+      return { notes: newNotes };
+    });
+    
+    if (updates.content !== undefined) {
+      const count = (_editCounters.get(id) || 0) + 1;
+      _editCounters.set(id, count);
       
-      if (updatedNote && updates.content !== undefined) {
-        // 累加编辑计数器
-        const count = (_editCounters.get(id) || 0) + 1;
-        _editCounters.set(id, count);
-        
-        // 达到阈值自动保存
-        if (count >= AUTO_SAVE_THRESHOLD) {
-          _editCounters.set(id, 0); // 重置计数器
-          // 异步保存，不阻塞 UI
-          saveSingleNote(updatedNote);
-          tryCreateBackup(updatedNote);
+      if (count >= AUTO_SAVE_THRESHOLD) {
+        _editCounters.set(id, 0);
+        const note = get().notes.find((n: Note) => n.id === id);
+        if (note) {
+          saveSingleNote(note);
+          tryCreateBackup(note);
           console.log(`[Store] 编辑量达阈值(${AUTO_SAVE_THRESHOLD})，自动保存: ${id.substring(0, 12)}...`);
         }
       }
-      
-      return { notes: newNotes };
-    });
+    }
   },
 
   setSyncError: (err: string | null) => set({ syncError: err }),
@@ -229,22 +239,25 @@ export const useNoteStore = create<any>((set, get) => ({
       set({ selectedNoteId: newNote.id });
       debouncedSaveSidebarState(get().expandedNodes, newNote.id);
     }
-    // 新建笔记立即保存到云端
-    saveSingleNote(newNote);
+    saveSingleNote(newNote).catch(() => {
+      set((state: any) => ({ notes: state.notes.filter((n: Note) => n.id !== newNote.id) }));
+      console.error('[Store] 新建笔记保存失败，已回滚:', newNote.id);
+    });
     return newNote.id;
   },
 
   deleteNote: async (id: string) => {
-    const res = await deleteNoteFromCloud(id);
-    if (res && !res.success) {
-      console.error('[Store] 删除笔记失败:', res.error);
-      return res;
-    }
-    // 清理编辑计数器
+    const deletedNotes = get().notes.filter((n: Note) => n.id === id || n.parent_id === id || n.parentId === id);
     _editCounters.delete(id);
     set((state: any) => ({
       notes: state.notes.filter((n: Note) => n.id !== id && n.parent_id !== id && n.parentId !== id)
     }));
+    const res = await deleteNoteFromCloud(id);
+    if (res && !res.success) {
+      set((state: any) => ({ notes: [...state.notes, ...deletedNotes] }));
+      console.error('[Store] 删除笔记失败，已恢复:', res.error);
+      return res;
+    }
     return res;
   },
 
@@ -257,41 +270,26 @@ export const useNoteStore = create<any>((set, get) => ({
     });
   },
 
-  reorderPages: (notebookId: string, newOrderIds: string[]) => {
+  reorderPages: (parentId: string, newOrderIds: string[]) => {
     set((state: any) => ({
       notes: state.notes.map((n: Note) => {
-        if (n.parent_id === notebookId || n.parentId === notebookId) {
+        if (n.parent_id === parentId || n.parentId === parentId) {
           const idx = newOrderIds.indexOf(n.id);
           return idx >= 0 ? { ...n, order_index: idx, order: idx } : n;
         }
         return n;
       })
     }));
-    // 排序变化后 debounce 保存
     const notes = get().notes;
     const changed = notes.filter((n: Note) =>
-      (n.parent_id === notebookId || n.parentId === notebookId) &&
+      (n.parent_id === parentId || n.parentId === parentId) &&
       newOrderIds.includes(n.id)
     );
     changed.forEach(n => debouncedCloudSave(n));
   },
 
-  reorderSections: (notebookId: string, newOrderIds: string[]) => {
-    set((state: any) => ({
-      notes: state.notes.map((n: Note) => {
-        if (n.parent_id === notebookId || n.parentId === notebookId) {
-          const idx = newOrderIds.indexOf(n.id);
-          return idx >= 0 ? { ...n, order_index: idx, order: idx } : n;
-        }
-        return n;
-      })
-    }));
-    const notes = get().notes;
-    const changed = notes.filter((n: Note) =>
-      (n.parent_id === notebookId || n.parentId === notebookId) &&
-      newOrderIds.includes(n.id)
-    );
-    changed.forEach(n => debouncedCloudSave(n));
+  reorderSections: (parentId: string, newOrderIds: string[]) => {
+    get().reorderPages(parentId, newOrderIds);
   },
 
   // 锁管理
@@ -299,7 +297,7 @@ export const useNoteStore = create<any>((set, get) => ({
     const res = await apiLockNote(noteId, userName);
     if (res.success) {
       set((state: any) => ({
-        notes: state.notes.map((n: Note) => n.id === noteId ? { ...n, is_locked: true, locked_by: userId } : n)
+        notes: state.notes.map((n: Note) => n.id === noteId ? { ...n, is_locked: true, locked_by: userId, lockedBy: userId, locked_by_name: userName, lockedByName: userName } : n)
       }));
     }
     return res;
@@ -309,7 +307,7 @@ export const useNoteStore = create<any>((set, get) => ({
     const res = await apiUnlockNote(noteId);
     if (res.success) {
       set((state: any) => ({
-        notes: state.notes.map((n: Note) => n.id === noteId ? { ...n, is_locked: false, locked_by: null } : n)
+        notes: state.notes.map((n: Note) => n.id === noteId ? { ...n, is_locked: false, locked_by: null, lockedBy: null, locked_by_name: null, lockedByName: null } : n)
       }));
     }
     return res;
@@ -325,7 +323,72 @@ export const useNoteStore = create<any>((set, get) => ({
   getNoteById: (id: string) => get().notes.find((n: Note) => n.id === id),
   setSidebarCollapsed: (v: boolean) => set({ sidebarCollapsed: v }),
   setActiveTab: (v: string) => set({ activeTab: v }),
-  setSearchQuery: (v: string) => set({ searchQuery: v })
+  setSearchQuery: (v: string) => set({ searchQuery: v }),
+
+  isNoteEditing: (noteId: string) => {
+    return _editingNotes.has(noteId);
+  },
+
+  upsertNote: (note: any) => {
+    const sanitized = sanitizeNote(note);
+    set((state: any) => {
+      const exists = state.notes.some((n: Note) => n.id === sanitized.id);
+      if (exists) {
+        return {
+          notes: state.notes.map((n: Note) => n.id === sanitized.id ? { ...n, ...sanitized } : n)
+        };
+      }
+      return { notes: [...state.notes, sanitized] };
+    });
+  },
+
+  fetchAndUpsertNote: async (noteId: string) => {
+    try {
+      const res = await apiGetNotebookInfo(noteId);
+      if (res.success && res.data) {
+        get().upsertNote(res.data);
+      }
+    } catch (e) {
+      console.error('[Store] fetchAndUpsertNote 失败:', e);
+    }
+  },
+
+  removeNoteFromStore: (noteId: string) => {
+    set((state: any) => ({
+      notes: state.notes.filter((n: Note) => n.id !== noteId),
+      selectedNoteId: state.selectedNoteId === noteId ? null : state.selectedNoteId
+    }));
+  },
+
+  updateNoteLock: (noteId: string, isLocked: boolean, lockedBy: string | null, lockedByName: string | null) => {
+    set((state: any) => ({
+      notes: state.notes.map((n: Note) =>
+        n.id === noteId
+          ? { ...n, is_locked: isLocked, locked_by: lockedBy, lockedBy: lockedBy, locked_by_name: lockedByName, lockedByName: lockedByName }
+          : n
+      )
+    }));
+  },
+
+  addSSENotification: (notification: SSENotification) => {
+    set((state: any) => ({
+      sseNotifications: [...state.sseNotifications, notification]
+    }));
+  },
+
+  clearSSENotifications: (noteId?: string) => {
+    if (noteId) {
+      set((state: any) => ({
+        sseNotifications: state.sseNotifications.filter((n: SSENotification) => n.noteId !== noteId)
+      }));
+    } else {
+      set({ sseNotifications: [] });
+    }
+  },
+
+  triggerFolderRefresh: () => {
+    set((state: any) => ({ folderRefreshTrigger: state.folderRefreshTrigger + 1 }));
+  },
 }));
 
 // 导出缓存和编辑标记

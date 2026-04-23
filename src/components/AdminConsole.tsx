@@ -411,11 +411,11 @@ function NotesTab() {
                 <td className="px-4 py-3 font-medium text-gray-800 max-w-[200px] truncate">{n.title}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    n.type === 'notebook' ? 'bg-indigo-50 text-indigo-600' :
-                    n.type === 'section' ? 'bg-amber-50 text-amber-600' :
+                    n.type === 'notebook' || n.type === 'email_notebook' ? 'bg-indigo-50 text-indigo-600' :
+                    n.type === 'section' || n.type === 'email_account' ? 'bg-amber-50 text-amber-600' :
                     'bg-green-50 text-green-600'
                   }`}>
-                    {n.type === 'notebook' ? '笔记本' : n.type === 'section' ? '分区' : '页面'}
+                    {n.type === 'notebook' || n.type === 'email_notebook' ? '笔记本' : n.type === 'section' || n.type === 'email_account' ? '分区' : '页面'}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs font-mono max-w-[150px] truncate">{n.owner_email}</td>

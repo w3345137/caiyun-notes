@@ -57,6 +57,18 @@ function noteToMarkdown(note: any): string {
   return frontmatter + content;
 }
 
+function buildNodeMapFromTree(nodes: TreeNode[]): Map<string, TreeNode> {
+  const nodeMap = new Map<string, TreeNode>();
+  const walk = (list: TreeNode[]) => {
+    list.forEach(n => {
+      nodeMap.set(n.id, n);
+      walk(n.children);
+    });
+  };
+  walk(nodes);
+  return nodeMap;
+}
+
 // 根据节点构建文件名前缀：笔记本名-分区名-页面名-id
 function buildFilePrefix(node: any, allNodes: Map<string, any>): string {
   const parts: string[] = [];
@@ -139,7 +151,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
 
       // 2. 获取当前用户拥有的笔记本 ID
       const ownedNotebookIds = new Set(
-        allData.filter((n: any) => n.owner_id === user.id && n.type === 'notebook').map((n: any) => n.id)
+        allData.filter((n: any) => n.owner_id === user.id && (n.type === 'notebook' || n.type === 'email_notebook')).map((n: any) => n.id)
       );
 
       // 3. 获取分享给当前用户的笔记本 ID
@@ -198,7 +210,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
       map.forEach(node => {
         if (!node.parentId || !map.has(node.parentId)) {
           // 这是根节点
-          if ((node.type === 'notebook') &&
+          if ((node.type === 'notebook' || node.type === 'email_notebook') &&
               (ownedNotebookIds.has(node.id) || sharedNotebookIds.has(node.id))) {
             roots.push(node);
           }
@@ -265,7 +277,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
   const renderTreeNode = (node: TreeNode, depth: number = 0) => {
     const isSelected = selectedIds.has(node.id);
     const isIndeterminate = !isSelected && isNodeOrDescendantSelected(node);
-    const Icon = node.type === 'notebook' ? BookOpen : node.type === 'section' ? Folder : FileText;
+    const Icon = node.type === 'notebook' || node.type === 'email_notebook' ? BookOpen : node.type === 'section' || node.type === 'email_account' ? Folder : FileText;
     
     return (
       <div key={node.id}>
@@ -292,7 +304,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
           />
           <Icon className="w-4 h-4 text-gray-400" />
           <span className="text-sm text-gray-700 truncate flex-1">{node.title}</span>
-          <span className="text-xs text-gray-400">{node.type === 'notebook' ? '笔记本' : node.type === 'section' ? '分区' : '页面'}</span>
+          <span className="text-xs text-gray-400">{node.type === 'notebook' || node.type === 'email_notebook' ? '笔记本' : node.type === 'section' || node.type === 'email_account' ? '分区' : '页面'}</span>
         </div>
         {node.expanded && node.children.map(child => renderTreeNode(child, depth + 1))}
       </div>
@@ -339,33 +351,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
       const sortedNodes = [...byType('notebook'), ...byType('section'), ...byType('page')];
       
       // 为每个笔记本创建文件夹，其他直接下载
-      const notebooks = sortedNodes.filter(n => n.type === 'notebook');
+      const notebooks = sortedNodes.filter(n => n.type === 'notebook' || n.type === 'email_notebook');
       
       if (notebooks.length === 1) {
-        // 只有一个笔记本，使用笔记本名-xxx格式下载
-        // 构建所有节点的map用于buildFilePrefix
-        const nodeMap = new Map<string, TreeNode>();
-        const buildNodeMap = (nodes: TreeNode[]) => {
-          nodes.forEach(n => {
-            nodeMap.set(n.id, n);
-            buildNodeMap(n.children);
-          });
-        };
-        buildNodeMap(exportTree);
+        const nodeMap = buildNodeMapFromTree(exportTree);
 
         const content = sortedNodes.map(note => noteToMarkdown(note)).join('\n\n');
         const filename = buildFilePrefix(notebooks[0], nodeMap);
         downloadFile(filename, content);
       } else if (notebooks.length > 1) {
-        // 多个笔记本，依次下载每个笔记本及其内容
-        const nodeMap = new Map<string, TreeNode>();
-        const buildNodeMap = (nodes: TreeNode[]) => {
-          nodes.forEach(n => {
-            nodeMap.set(n.id, n);
-            buildNodeMap(n.children);
-          });
-        };
-        buildNodeMap(exportTree);
+        const nodeMap = buildNodeMapFromTree(exportTree);
 
         for (const nb of notebooks) {
           const collectAllDescendants = (node: TreeNode): TreeNode[] => {
@@ -384,15 +379,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
           }
         }
       } else {
-        // 没有笔记本，只有页面，直接下载
-        const nodeMap = new Map<string, TreeNode>();
-        const buildNodeMap = (nodes: TreeNode[]) => {
-          nodes.forEach(n => {
-            nodeMap.set(n.id, n);
-            buildNodeMap(n.children);
-          });
-        };
-        buildNodeMap(exportTree);
+        const nodeMap = buildNodeMapFromTree(exportTree);
 
         const content = sortedNodes.map(note => noteToMarkdown(note)).join('\n\n');
         const filename = buildFilePrefix(sortedNodes[0], nodeMap);
@@ -611,7 +598,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
       if (success > 0) {
         toast.success(`成功导入 ${success} 个笔记`);
         onImportComplete?.();
-        setTimeout(() => window.location.reload(), 1500);
+        useNoteStore.getState().loadFromCloud();
       } else if (failed > 0) {
         toast.error(`导入完成但有 ${failed} 个失败，请查看详情`);
       }
@@ -644,7 +631,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
       for (const note of sortedNotes) {
         let targetParentId: string | null = null;
 
-        if (note.type === 'notebook') {
+        if (note.type === 'notebook' || note.type === 'email_notebook') {
           // 笔记本：放到目标笔记本下（变成顶级分区或子笔记本）
           targetParentId = targetNotebookId;
         } else if (note.parentId && batchIds.has(note.parentId)) {
@@ -678,7 +665,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
       if (success > 0) {
         toast.success(`成功导入 ${success} 个笔记`);
         onImportComplete?.();
-        setTimeout(() => window.location.reload(), 1500);
+        useNoteStore.getState().loadFromCloud();
       } else if (failed > 0) {
         toast.error(`导入完成但有 ${failed} 个失败，请查看详情`);
       }
@@ -784,9 +771,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
                     <p className="text-sm font-medium text-gray-700">待导入笔记 ({parsedNotes.length})</p>
                     {parsedNotes.map((note, idx) => (
                       <div key={idx} className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-2">
-                        {note.type === 'notebook' ? (
+                        {note.type === 'notebook' || note.type === 'email_notebook' ? (
                           <BookOpen className="w-4 h-4 text-purple-500 flex-shrink-0" />
-                        ) : note.type === 'section' ? (
+                        ) : note.type === 'section' || note.type === 'email_account' ? (
                           <Folder className="w-4 h-4 text-blue-500 flex-shrink-0" />
                         ) : (
                           <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -794,7 +781,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
                         <div className="flex-1 min-w-0">
                           <p className="text-gray-700 truncate">{note.title}</p>
                           <p className="text-xs text-gray-400">
-                            类型: {note.type === 'notebook' ? '笔记本' : note.type === 'section' ? '分区' : '页面'}
+                            类型: {note.type === 'notebook' || note.type === 'email_notebook' ? '笔记本' : note.type === 'section' || note.type === 'email_account' ? '分区' : '页面'}
                             {note.parentId && ` · 父节点: ${note.parentId.substring(0, 20)}...`}
                           </p>
                         </div>

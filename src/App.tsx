@@ -8,6 +8,7 @@ import { useNoteStore, setUpdateLogsCache } from './store/noteStore';
 import toast, { Toaster } from 'react-hot-toast';
 import { signIn } from './lib/auth';
 import { getUpdateLogs } from './lib/initDatabase';
+import { sseService } from './lib/sseService';
 import logoUrl from '/logo.png';
 import './App.css';
 
@@ -48,17 +49,18 @@ function AppContent() {
   // 用户登录后加载数据
   // 【已修复】只在用户真正变化时加载，跳过 token 刷新的中间状态
   useEffect(() => {
-    // 如果 user 存在（不是 null），则加载数据
     if (user && user.id) {
       loadFromCloud();
-      // 预加载更新日志（只缓存非空结果，空结果不缓存避免阻塞 Modal 自身查询）
+      sseService.connect();
       getUpdateLogs().then(logs => {
         if (logs && logs.length > 0) {
           setUpdateLogsCache(logs);
         }
       }).catch(() => {});
+    } else {
+      sseService.disconnect();
     }
-  }, [user?.id, loadFromCloud]); // 改为监听 user.id 变化，跳过 token 刷新
+  }, [user?.id, loadFromCloud]);
 
   // 监听刷新笔记事件
   useEffect(() => {

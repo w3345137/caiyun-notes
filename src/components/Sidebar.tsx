@@ -3,6 +3,7 @@ import { Search, BookOpen, ChevronDown, ChevronRight, Folder, MoreHorizontal, Tr
 import { useNoteStore } from '../store/noteStore';
 import { useAuth } from './AuthProvider';
 import { signOut } from '../lib/auth';
+import EmailAccountModal from './EmailAccountModal';
 import { isAdminEmail } from '../lib/adminApi';
 import { AdminConsole } from './AdminConsole';
 import { ExportModal } from './ExportModal';
@@ -1217,6 +1218,8 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   const toggleExpanded = useNoteStore((state) => state.toggleExpanded);
   const reorderPages = useNoteStore((state) => state.reorderPages);
   const reorderSections = useNoteStore((state) => state.reorderSections);
+  const saveNoteById = useNoteStore((state) => state.saveNoteById);
+  const loadFromCloud = useNoteStore((state) => state.loadFromCloud);
 
   const [search, setSearch] = useState('');
   const [activeSection, setActiveSection] = useState<string | null>(null);
@@ -1230,6 +1233,8 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showOneDriveModal, setShowOneDriveModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailNotebookId, setEmailNotebookId] = useState<string | null>(null);
   const [showLLMConfigModal, setShowLLMConfigModal] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [showBackupConfig, setShowBackupConfig] = useState(false);
@@ -1258,7 +1263,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
 
   // 加载共享笔记本列表（优化：一次批量查询替代 N 次串行调用）
   const notebookIds = useMemo(() => {
-    return notes.filter((n) => n.type === 'notebook').map((n) => n.id).sort().join(',');
+    return notes.filter((n) => n.type === 'notebook' || n.type === 'email_notebook').map((n) => n.id).sort().join(',');
   }, [notes]);
 
   useEffect(() => {
@@ -1280,7 +1285,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   useEffect(() => {
     const loadStorageStatus = async () => {
       try {
-        const ids = notes.filter((n) => n.type === 'notebook').map((n) => n.id);
+        const ids = notes.filter((n) => n.type === 'notebook' || n.type === 'email_notebook').map((n) => n.id);
         const result = await checkNotebooksStorageBatch(ids);
         const boundSet = new Set<string>();
         result.forEach((bound, nid) => { if (bound) boundSet.add(nid); });
@@ -1334,7 +1339,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
     } else if (note.type === 'page') {
       // 选中页面，设置 activeSection 为其父分区
       setActiveSection(note.parentId);
-    } else if (note.type === 'notebook') {
+    } else if (note.type === 'notebook' || note.type === 'email_notebook') {
       // 选中笔记本，重置 activeSection
       setActiveSection(null);
     }
@@ -1359,7 +1364,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   const userInitial = displayName.charAt(0).toUpperCase();
 
   // 获取所有笔记本（一级）
-  const notebooks = notes.filter((n) => n.type === 'notebook').sort((a, b) => a.order - b.order);
+  const notebooks = notes.filter((n) => n.type === 'notebook' || n.type === 'email_notebook').sort((a, b) => a.order - b.order);
 
   // 获取选中分区下的页面
   const activeSectionObj = activeSection ? notes.find((n) => n.id === activeSection) : null;
@@ -1423,6 +1428,17 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
     setShowUserMenu(false);
   }, [addNote]);
 
+  const handleAddEmailNotebook = useCallback(async () => {
+    const hasEmailNotebook = notes.some(n => n.type === 'email_notebook');
+    if (hasEmailNotebook) {
+      toast.error('已存在邮箱笔记本，每个用户只能添加一个');
+      return;
+    }
+    const notebookId = addNote(null, 'email_notebook', '邮箱管理');
+    updateNote(notebookId, { icon: 'mail' });
+    saveNoteById(notebookId);
+  }, [notes, addNote, updateNote, saveNoteById]);
+
   // 新建页面
   const handleAddPage = useCallback(() => {
     if (!activeSection) {
@@ -1434,15 +1450,18 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
 
   // 在指定笔记本下新建分区
   const handleAddSection = useCallback((notebookId: string) => {
-    // 确保笔记本已展开
+    const notebook = notes.find(n => n.id === notebookId);
+    if (notebook?.type === 'email_notebook') {
+      setEmailNotebookId(notebookId);
+      setShowEmailModal(true);
+      return;
+    }
     if (!expandedNodes.includes(notebookId)) {
       toggleExpanded(notebookId);
     }
-    // 新建分区（addNote已处理loadedNotebooks状态）
     const sectionId = addNote(notebookId, 'section', '新分区', { skipSelect: true });
-    // 设置活动分区（不自动新建页面，让用户自己新建）
     setActiveSection(sectionId);
-  }, [expandedNodes, toggleExpanded, addNote]);
+  }, [expandedNodes, toggleExpanded, addNote, notes]);
 
   // 打开分享设置
   const handleShareNotebook = useCallback((notebook: Note) => {
@@ -1522,7 +1541,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
               {/* 笔记本列表 */}
               <div className="flex-1 overflow-y-auto relative">
                 {notebooks.map((notebook, index) => {
-                  const notebookSections = notes.filter((n) => n.parentId === notebook.id && n.type === 'section');
+                  const notebookSections = notes.filter((n) => n.parentId === notebook.id && (n.type === 'section' || n.type === 'email_account'));
                   const isExpanded = expandedNodes.includes(notebook.id);
                   const isShared = sharedNotebookIds.has(notebook.id);
 
@@ -1686,7 +1705,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                     本地备份设置
                   </button>
 
-                  {user?.email?.includes('767493611') && (
+                  {user?.email === '767493611@qq.com' && (
                     <button
                       onClick={() => { setShowAdminConsole(true); setShowUserMenu(false); }}
                       className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-purple-700 hover:bg-purple-50"
@@ -1769,6 +1788,13 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                         >
                           <Plus className="w-4 h-4 text-purple-500" />
                           新建笔记本
+                        </button>
+                        <button
+                          onClick={() => { setShowAddMenu(false); handleAddEmailNotebook(); }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                        >
+                          <Mail className="w-4 h-4 text-blue-500" />
+                          邮箱笔记本
                         </button>
                         <button
                           onClick={() => { setShowAddMenu(false); setShowJoinModal(true); }}
@@ -1888,6 +1914,12 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
       {showOneDriveModal && (
         <OneDriveModal onClose={() => setShowOneDriveModal(false)} />
       )}
+      <EmailAccountModal
+        show={showEmailModal}
+        onClose={() => { setShowEmailModal(false); setEmailNotebookId(null); }}
+        onSuccess={() => { loadFromCloud(); }}
+        notebookId={emailNotebookId || undefined}
+      />
 
       {/* 大模型配置弹窗 */}
       {showLLMConfigModal && (
@@ -2544,6 +2576,14 @@ const LLMConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [loading, setLoading] = useState(false);
     const [showGuide, setShowGuide] = useState(false);
+    const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null);
+    useEffect(() => {
+      return () => {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        if (messageHandlerRef.current) window.removeEventListener('message', messageHandlerRef.current);
+      };
+    }, []);
     // 确认弹窗
     const [confirmModal, setConfirmModal] = useState<{
       isOpen: boolean;
@@ -2621,7 +2661,7 @@ const LLMConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       // 步骤1：调用本地后端获取授权 URL
       addDebug('① 获取授权 URL', 'pending', '发送请求...');
 
-      const result = await getOneDriveAuthUrl(clientId.trim(), clientSecret.trim(), cloudType, cloudType === '世纪互联' ? tenantId.trim() : undefined);
+      const result = await getOneDriveAuthUrl(clientId.trim(), cloudType, cloudType === '世纪互联' ? tenantId.trim() : undefined);
       const authUrl = result.authUrl;
 
       if (!authUrl) {
@@ -2650,6 +2690,7 @@ const LLMConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           const checkResult = await checkOneDriveBinding();
           if (checkResult.bound) {
             clearInterval(tauriPollTimer);
+            pollTimerRef.current = null;
             addDebug('③ 授权成功', 'ok', '检测到绑定状态');
             toast.success('OneDrive 绑定成功！');
             setIsBound(true);
@@ -2657,10 +2698,12 @@ const LLMConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             loadAttachments();
           } else if (pollCount >= maxPoll) {
             clearInterval(tauriPollTimer);
+            pollTimerRef.current = null;
             addDebug('③ 授权超时', 'error', '60秒内未检测到绑定');
             toast.error('授权超时，请重试');
           }
         }, 3000);
+        pollTimerRef.current = tauriPollTimer;
         return;
       }
 
@@ -2685,17 +2728,23 @@ const LLMConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       const pollTimer = setInterval(() => {
         if (popup.closed) {
           clearInterval(pollTimer);
-          window.removeEventListener('message', messageHandler);
+          pollTimerRef.current = null;
+          if (messageHandlerRef.current) {
+            window.removeEventListener('message', messageHandlerRef.current);
+            messageHandlerRef.current = null;
+          }
         }
       }, 500);
+      pollTimerRef.current = pollTimer;
 
-      // 监听 postMessage（授权成功/失败，由回调页面通过 window.opener.postMessage 发送）
       const messageHandler = (event: MessageEvent) => {
         if (!event.data || typeof event.data !== 'object') return;
         if (event.data.type !== 'onedrive_success' && event.data.type !== 'onedrive_error') return;
 
         clearInterval(pollTimer);
+        pollTimerRef.current = null;
         window.removeEventListener('message', messageHandler);
+        messageHandlerRef.current = null;
         if (!popup.closed) popup.close();
 
         if (event.data.type === 'onedrive_success') {
@@ -2710,6 +2759,7 @@ const LLMConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         }
       };
       window.addEventListener('message', messageHandler);
+      messageHandlerRef.current = messageHandler;
     } catch (error) {
       console.error('Bind error:', error);
       toast.error('绑定失败');

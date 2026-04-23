@@ -73,7 +73,7 @@ export function parseMdFile(content: string, fileName: string): ParsedNote | nul
     return {
       id: meta.id || `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
       title: meta.title || fileName.replace('.md', ''),
-      type: meta.type === 'notebook' ? 'notebook' : meta.type === 'section' ? 'section' : 'page',
+      type: meta.type === 'notebook' || meta.type === 'email_notebook' ? 'notebook' : meta.type === 'section' || meta.type === 'email_account' ? 'section' : 'page',
       parentId: meta.parentId || null,
       content: match[2] || '',
       icon: meta.icon || 'doc',
@@ -220,14 +220,14 @@ export async function getUserNotebooksAndSections(userId: string): Promise<{
     }
 
     // 过滤当前用户拥有的笔记本和分区
-    const userNotes = result.data.filter((n: any) => n.owner_id === userId && (n.type === 'notebook' || n.type === 'section'));
+    const userNotes = result.data.filter((n: any) => n.owner_id === userId && (n.type === 'notebook' || n.type === 'email_notebook' || n.type === 'section' || n.type === 'email_account'));
 
     const notebooks = userNotes
-      .filter((n: any) => n.type === 'notebook')
+      .filter((n: any) => n.type === 'notebook' || n.type === 'email_notebook')
       .map((n: any) => ({ id: n.id, title: n.title }));
 
     const sections = userNotes
-      .filter((n: any) => n.type === 'section')
+      .filter((n: any) => n.type === 'section' || n.type === 'email_account')
       .map((n: any) => ({ id: n.id, title: n.title, parentId: n.parent_id }));
 
     return { notebooks, sections };
