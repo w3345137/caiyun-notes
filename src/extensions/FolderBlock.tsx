@@ -1,7 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import React, { useState, useEffect, useRef } from 'react';
-import { Download, Trash2, FileText, Image, Video, Volume2, FileCode, Cloud, Upload, FolderOpen, Loader2, Plus, X, Eye } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Download, Trash2, FileText, Image, Video, Volume2, FileCode, Cloud, Upload, FolderOpen, Loader2, Plus, X, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { downloadFromOneDrive, uploadToOneDrive, formatFileSize, getFileIconType, getAttachments } from '../lib/onedriveService';
 import { useAuth } from '../components/AuthProvider';
 import { useNoteStore } from '../store/noteStore';
@@ -142,7 +142,33 @@ const FolderBlockView: React.FC<{
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<FolderFile | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'date-asc' | 'date-desc'>('name-asc');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const sortedFiles = useMemo(() => {
+    const sorted = [...files];
+    switch (sortBy) {
+      case 'name-asc': return sorted.sort((a, b) => a.file_name.localeCompare(b.file_name, 'zh'));
+      case 'name-desc': return sorted.sort((a, b) => b.file_name.localeCompare(a.file_name, 'zh'));
+      case 'date-asc': return sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      case 'date-desc': return sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+  }, [files, sortBy]);
+
+  const cycleSortBy = () => {
+    const order: typeof sortBy[] = ['name-asc', 'name-desc', 'date-asc', 'date-desc'];
+    const idx = order.indexOf(sortBy);
+    setSortBy(order[(idx + 1) % order.length]);
+  };
+
+  const sortLabel = () => {
+    switch (sortBy) {
+      case 'name-asc': return '名称↑';
+      case 'name-desc': return '名称↓';
+      case 'date-asc': return '日期↑';
+      case 'date-desc': return '日期↓';
+    }
+  };
 
   useEffect(() => {
     loadFiles();
@@ -290,6 +316,16 @@ const FolderBlockView: React.FC<{
             {loading ? '' : `${files.length} 个文件`}
           </span>
           <div className="flex-1" />
+          {files.length > 1 && (
+            <button
+              onClick={cycleSortBy}
+              className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] text-slate-500 bg-slate-100 rounded hover:bg-slate-200 transition-colors"
+              title="排序"
+            >
+              <ArrowUpDown className="w-2.5 h-2.5" />
+              {sortLabel()}
+            </button>
+          )}
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
@@ -331,7 +367,7 @@ const FolderBlockView: React.FC<{
               <span className="text-xs">暂无文件</span>
             </div>
           ) : (
-            files.map((file) => (
+            sortedFiles.map((file) => (
               <div key={file.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50/50 group border-b border-slate-50 last:border-b-0">
                 <div className="flex-shrink-0">{getFileIcon(file.mime_type)}</div>
                 <div className="flex-1 min-w-0 flex items-center gap-2">
