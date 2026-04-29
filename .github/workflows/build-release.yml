@@ -91,103 +91,107 @@ jobs:
       - name: Generate latest.json & organize files
         run: |
           TAG="${{ github.ref_name }}"
-          # 版本号：直接使用 tauri.conf.json 中的完整版本号格式 2.0.0-p1
-          # github.ref_name = p1，对应 tauri.conf.json version = 2.0.0-p1
           VERSION="2.0.0-${TAG}"
-          
-          mkdir -p staged/windows-x86_64 staged/darwin-x86_64 staged/linux-x86_64
-          
-          # 查找并移动各平台文件
+          BASE_URL="https://notes.binapp.top/updates"
+
+          export TAG VERSION BASE_URL
+
+          mkdir -p staged/windows-x86_64 staged/darwin-x86_64 staged/darwin-aarch64 staged/linux-x86_64
+
           echo "=== Downloads contents ==="
           ls -la downloads/ || true
-          
-          # Windows
-          for f in downloads/*x64*setup.nsis.zip*; do
-            [ -f "$f" ] && cp "$f" staged/windows-x86_64/ && echo "Windows: $(basename $f)"
-          done
-          
-          # macOS x86_64
-          for f in downloads/*x86_64*.app.tar.gz*; do
-            [ -f "$f" ] && cp "$f" staged/darwin-x86_64/ && echo "macOS x64: $(basename $f)"
-          done
-          # 如果没有明确的 x86_64 标识但有 .app.tar.gz 且不是 aarch64
-          if [ -z "$(ls staged/darwin-x86_64/*.tar.gz 2>/dev/null)" ]; then
-            for f in downloads/*.app.tar.gz; do
-              [[ "$f" != *"aarch64"* ]] && [ -f "$f" ] && cp "$f" staged/darwin-x86_64/ && echo "macOS x64 (fallback): $(basename $f)"
-            done
-          fi
-          
-          # macOS ARM
-          for f in downloads/*aarch64*.app.tar.gz*; do
-            [ -f "$f" ] && cp "$f" staged/darwin-aarch64/ && echo "macOS ARM: $(basename $f)"
-          done
-          
-          # Linux
-          for f in downloads/*.AppImage.tar.gz*; do
-            [ -f "$f" ] && cp "$f" staged/linux-x86_64/ && echo "Linux: $(basename $f)"
-          done
-          
-          BASE_URL="http://49.235.160.8:3011/updates"
-          
-          # 读取签名文件并导出环境变量给 python 使用
-          export VERSION TAG BASE_URL
-          export WINDOWS_SIG=$(cat staged/windows-x86_64/*.sig 2>/dev/null | head -1 || echo "")
-          export MACOS_X64_SIG=$(cat staged/darwin-x86_64/*.sig 2>/dev/null | head -1 || echo "")
-          export MACOS_ARM_SIG=$(cat staged/darwin-aarch64/*.sig 2>/dev/null | head -1 || echo "")
-          export LINUX_SIG=$(cat staged/linux-x86_64/*.sig 2>/dev/null | head -1 || echo "")
-          
-          # 获取文件名
-          export WINDOWS_FILE=$(ls staged/windows-x86_64/*.zip 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "")
-          export MACOS_X64_FILE=$(ls staged/darwin-x86_64/*.tar.gz 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "")
-          export MACOS_ARM_FILE=$(ls staged/darwin-aarch64/*.tar.gz 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "")
-          export LINUX_FILE=$(ls staged/linux-x86_64/*.tar.gz 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "")
-          
-          echo "=== Generating latest.json ==="
-          echo "Version: ${VERSION}"
-          echo "Windows: ${WINDOWS_FILE} sig=${WINDOWS_SIG:0:20}..."
-          echo "macOS x64: ${MACOS_X64_FILE} sig=${MACOS_X64_SIG:0:20}..."
-          echo "macOS ARM: ${MACOS_ARM_FILE} sig=${MACOS_ARM_SIG:0:20}..."
-          echo "Linux: ${LINUX_FILE} sig=${LINUX_SIG:0:20}..."
-          
-          # 生成 latest.json（使用 python 确保 JSON 合法）
+
+          # 使用 Python 完成所有文件操作，避免 shell glob 对 Unicode 文件名的处理问题
           python3 << 'PYEOF'
-          import json, datetime, os
+          import json, datetime, os, shutil, glob
+
           version = os.environ['VERSION']
           tag = os.environ['TAG']
           base_url = os.environ['BASE_URL']
-          windows_file = os.environ.get('WINDOWS_FILE', '')
-          macos_x64_file = os.environ.get('MACOS_X64_FILE', '')
-          macos_arm_file = os.environ.get('MACOS_ARM_FILE', '')
-          linux_file = os.environ.get('LINUX_FILE', '')
-          windows_sig = os.environ.get('WINDOWS_SIG', '')
-          macos_x64_sig = os.environ.get('MACOS_X64_SIG', '')
-          macos_arm_sig = os.environ.get('MACOS_ARM_SIG', '')
-          linux_sig = os.environ.get('LINUX_SIG', '')
 
+          downloads = list(glob.glob('downloads/*'))
+
+          # 平台分发规则：(目标目录, 匹配关键词列表)
+          # 文件名同时检查 .sig 和安装包
+          platform_rules = [
+              ('staged/windows-x86_64', ['x64-setup.nsis.zip', 'x64_en-us.msi', 'x64-setup.nsis.zip.sig', 'x64_en-us.msi.sig', 'x64-setup.exe', 'x64_en-us.msi']),
+              ('staged/darwin-x86_64',  ['x86_64.app.tar.gz', 'x64.app.tar.gz', 'x86_64.dmg', 'x64.dmg']),
+              ('staged/darwin-aarch64', ['aarch64.app.tar.gz', 'aarch64.dmg']),
+              ('staged/linux-x86_64',   ['amd64.AppImage.tar.gz', 'amd64.deb', 'amd64.AppImage.tar.gz.sig', 'amd64.deb.sig']),
+          ]
+          # macOS x64 fallback: .app.tar.gz 或 .dmg 且不含 aarch64
+          platform_fallbacks = [
+              ('staged/darwin-x86_64', lambda f: ('.app.tar.gz' in f or '.dmg' in f) and 'aarch64' not in f),
+          ]
+
+          platform_files = {r[0]: [] for r in platform_rules}
+          assigned = set()
+
+          for f in downloads:
+              fn = os.path.basename(f)
+              for dest, keywords in platform_rules:
+                  if any(k in fn for k in keywords):
+                      shutil.copy2(f, dest)
+                      platform_files[dest].append(f)
+                      assigned.add(f)
+                      print(f"[{dest}] {fn}")
+                      break
+
+          # fallback for darwin-x86_64
+          for f in downloads:
+              if f in assigned:
+                  continue
+              fn = os.path.basename(f)
+              for dest, pred in platform_fallbacks:
+                  if pred(fn):
+                      shutil.copy2(f, dest)
+                      platform_files[dest].append(f)
+                      assigned.add(f)
+                      print(f"[{dest}] (fallback) {fn}")
+
+          # 构建 latest.json
           data = {
-            'version': version,
-            'notes': f'彩云笔记 {tag} 更新',
-            'pub_date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'platforms': {}
+              'version': version,
+              'notes': f'彩云笔记 {tag} 更新',
+              'pub_date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'platforms': {}
           }
-          platforms = data['platforms']
-          if windows_file:
-            platforms['windows-x86_64'] = {'url': f'{base_url}/windows-x86_64/{windows_file}', 'signature': windows_sig}
-          if macos_x64_file:
-            platforms['darwin-x86_64'] = {'url': f'{base_url}/darwin-x86_64/{macos_x64_file}', 'signature': macos_x64_sig}
-          if macos_arm_file:
-            platforms['darwin-aarch64'] = {'url': f'{base_url}/darwin-aarch64/{macos_arm_file}', 'signature': macos_arm_sig}
-          if linux_file:
-            platforms['linux-x86_64'] = {'url': f'{base_url}/linux-x86_64/{linux_file}', 'signature': linux_sig}
-          with open('latest.json', 'w') as f:
-            json.dump(data, f, indent=2)
-          print(json.dumps(data, indent=2))
+
+          platform_ids = {
+              'staged/windows-x86_64': 'windows-x86_64',
+              'staged/darwin-x86_64': 'darwin-x86_64',
+              'staged/darwin-aarch64': 'darwin-aarch64',
+              'staged/linux-x86_64': 'linux-x86_64',
+          }
+
+          for staged_dir, pid in platform_ids.items():
+              files_in_dir = os.listdir(staged_dir)
+              # 找安装包（排除 .sig 和 .json）
+              pkgs = [x for x in files_in_dir if not x.endswith('.sig') and not x.endswith('.json')]
+              sigs = [x for x in files_in_dir if x.endswith('.sig')]
+              if pkgs:
+                  pkg_file = pkgs[0]
+                  sig_content = ''
+                  if sigs:
+                      sig_file = sigs[0]
+                      sig_path = os.path.join(staged_dir, sig_file)
+                      with open(sig_path, 'r') as sf:
+                          sig_content = sf.read().strip()
+                  data['platforms'][pid] = {
+                      'url': f'{base_url}/{pid}/{pkg_file}',
+                      'signature': sig_content,
+                  }
+                  print(f"[{pid}] pkg={pkg_file} sig={'YES' if sig_content else 'MISSING'}")
+
+          with open('latest.json', 'w', encoding='utf-8') as f:
+              json.dump(data, f, indent=2, ensure_ascii=False)
+          print("=== Generated latest.json ===")
+          print(json.dumps(data, indent=2, ensure_ascii=False))
+
+          # 复制 latest.json 到各平台子目录
+          for staged_dir in platform_ids:
+              shutil.copy2('latest.json', staged_dir)
           PYEOF
-          
-          # 把 latest.json 复制到每个平台目录
-          for dir in staged/*/; do
-            cp latest.json "$dir"
-          done
 
       - name: Upload to server
         uses: appleboy/scp-action@v0.1.7
@@ -195,9 +199,26 @@ jobs:
           host: 49.235.160.8
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "staged/*,staged/**/*,latest.json"
-          target: "/notesapp/updates"
+          source: "staged/**/*,latest.json"
+          target: "/notesapp/updates-tmp"
           strip_components: 1
+
+      - name: Move updates into place
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 49.235.160.8
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # 把各平台文件合并到正式目录
+            for dir in /notesapp/updates-tmp/*/; do
+              [ -d "$dir" ] && cp -r "$dir" /notesapp/updates/
+            done
+            # 把根 latest.json 放到正式目录
+            cp -f /notesapp/updates-tmp/latest.json /notesapp/updates/latest.json 2>/dev/null || true
+            rm -rf /notesapp/updates-tmp
+            echo "=== Updates directory after deploy ==="
+            find /notesapp/updates -type f | sort
 
       - name: Verify updates on server
         uses: appleboy/ssh-action@v1.0.3
@@ -206,11 +227,12 @@ jobs:
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            echo "=== Updates directory ==="
+            echo "=== Root latest.json ==="
+            cat /notesapp/updates/latest.json 2>/dev/null && echo "" || echo "CRITICAL: root latest.json MISSING"
+            echo "=== All update files ==="
             find /notesapp/updates -type f | sort
             echo ""
-            echo "=== latest.json ==="
-            cat /notesapp/updates/latest.json 2>/dev/null || echo "NOT FOUND"
-            echo ""
-            echo "=== Test updater endpoint ==="
-            curl -s http://127.0.0.1:3011/updates/latest.json | head -20 || echo "endpoint test failed"
+            echo "=== Endpoint test ==="
+            RESP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3011/updates/latest.json)
+            echo "HTTP Status: ${RESP}"
+            curl -s http://127.0.0.1:3011/updates/latest.json | python3 -m json.tool 2>/dev/null || echo "Invalid JSON"
