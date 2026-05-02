@@ -378,7 +378,17 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
 
   deleteNote: async (id: string) => {
     const deletedNotes = get().notes.filter((n) => n.id === id || n.parentId === id);
-    _editCounters.delete(id);
+    // 清除被删笔记及其子笔记的保存队列，防止未完成的保存请求将它们复活
+    for (const n of deletedNotes) {
+      _editCounters.delete(n.id);
+      _pendingSaves.delete(n.id);
+      _activeSavePromises.delete(n.id);
+      _debouncedSaveNotes.delete(n.id);
+      if (_saveTimers.has(n.id)) {
+        clearTimeout(_saveTimers.get(n.id)!);
+        _saveTimers.delete(n.id);
+      }
+    }
     set((state) => ({
       notes: state.notes.filter((n) => n.id !== id && n.parentId !== id)
     }));
@@ -414,7 +424,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const changed = notes.filter((n) =>
       n.parentId === parentId && newOrderIds.includes(n.id)
     );
-    changed.forEach(n => debouncedCloudSave(n));
+    changed.forEach(n => queueCloudSave(n));
   },
 
   reorderSections: (parentId: string, newOrderIds: string[]) => {
