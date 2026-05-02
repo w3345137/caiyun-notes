@@ -23,144 +23,8 @@ import { BackupHistoryModal } from './BackupHistoryModal';
 import { getBackupConfig } from '../lib/localBackup';
 import { canUserEditPage } from '../lib/lockService';
 
-// 智能定位下拉菜单组件 - 自动检测边界并调整位置
-const SmartDropdown: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  triggerRef: React.RefObject<HTMLDivElement>;
-  children: React.ReactNode;
-  minWidth?: number;
-}> = ({ isOpen, onClose, triggerRef, children, minWidth = 140 }) => {
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<'bottom' | 'top'>('bottom');
-  const [horizontalAlign, setHorizontalAlign] = useState<'right' | 'left'>('right');
-
-  useEffect(() => {
-    if (!isOpen || !triggerRef.current) return;
-
-    // 延迟执行确保dropdown已渲染
-    const timer = setTimeout(() => {
-      if (!triggerRef.current || !dropdownRef.current) return;
-
-      const triggerRect = triggerRef.current.getBoundingClientRect();
-      const dropdownRect = dropdownRef.current.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-
-      // 水平方向：检查是否超出右边界
-      const wouldOverflowRight = triggerRect.right + dropdownRect.width > viewportWidth - 8;
-      setHorizontalAlign(wouldOverflowRight ? 'left' : 'right');
-
-      // 垂直方向：检查是否超出下边界
-      const wouldOverflowBottom = triggerRect.bottom + dropdownRect.height > viewportHeight - 8;
-      setPosition(wouldOverflowBottom ? 'top' : 'bottom');
-    }, 10);
-
-    return () => clearTimeout(timer);
-  }, [isOpen, triggerRef]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div
-      ref={dropdownRef}
-      className={`absolute bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50`}
-      style={{
-        minWidth: `${minWidth}px`,
-        ...(position === 'bottom' 
-          ? { top: '100%', marginTop: '4px' } 
-          : { bottom: '100%', marginBottom: '4px' }),
-        ...(horizontalAlign === 'right' 
-          ? { right: 0 } 
-          : { left: 0 })
-      }}
-    >
-      {children}
-    </div>
-  );
-};
-
-// 智能定位图标选择器组件
-const SmartIconPicker: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  triggerRef: React.RefObject<HTMLDivElement>;
-  currentIcon: string;
-  onSelectIcon: (iconId: string) => void;
-}> = ({ isOpen, onClose, triggerRef, currentIcon, onSelectIcon }) => {
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<'bottom' | 'top'>('bottom');
-  const [horizontalAlign, setHorizontalAlign] = useState<'right' | 'left'>('right');
-
-  useEffect(() => {
-    if (!isOpen || !triggerRef.current) return;
-
-    // 延迟执行确保dropdown已渲染
-    const timer = setTimeout(() => {
-      if (!triggerRef.current || !dropdownRef.current) return;
-
-      const triggerRect = triggerRef.current.getBoundingClientRect();
-      const dropdownRect = dropdownRef.current.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-
-      // 水平方向检查
-      const wouldOverflowRight = triggerRect.right + dropdownRect.width > viewportWidth - 8;
-      setHorizontalAlign(wouldOverflowRight ? 'left' : 'right');
-
-      // 垂直方向检查
-      const wouldOverflowBottom = triggerRect.bottom + dropdownRect.height > viewportHeight - 8;
-      setPosition(wouldOverflowBottom ? 'top' : 'bottom');
-    }, 10);
-
-    return () => clearTimeout(timer);
-  }, [isOpen, triggerRef]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div
-      ref={dropdownRef}
-      className={`absolute bg-white rounded-xl shadow-2xl border border-gray-200 p-3 z-[99999]`}
-      style={{
-        minWidth: '220px',
-        ...(position === 'bottom' 
-          ? { top: '100%', marginTop: '4px' } 
-          : { bottom: '100%', marginBottom: '4px' }),
-        ...(horizontalAlign === 'right' 
-          ? { right: 0 } 
-          : { left: 0 })
-      }}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-medium text-gray-500">选择图标</p>
-        <button
-          onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="p-0.5 hover:bg-gray-100 rounded"
-        >
-          <X className="w-4 h-4 text-gray-400" />
-        </button>
-      </div>
-      <div className="grid grid-cols-4 gap-1.5 max-h-[300px] overflow-y-auto">
-        {PAGE_ICONS.map((iconData) => {
-          const IconComponent = iconData.icon;
-          return (
-            <button
-              key={iconData.id}
-              onClick={(e) => { e.stopPropagation(); onSelectIcon(iconData.id); }}
-              className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${
-                currentIcon === iconData.id ? 'bg-blue-50 ring-2 ring-blue-400' : ''
-              }`}
-              title={iconData.name}
-            >
-              <IconComponent className="w-5 h-5 mx-auto" style={{ color: iconData.color }} />
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
+import { SmartDropdown } from './SmartDropdown';
+import { SmartIconPicker, type IconOption } from './SmartIconPicker';
 
 // OneNote风格的彩虹色书签颜色
 const NOTEBOOK_COLORS = [
@@ -374,6 +238,7 @@ const SectionItem: React.FC<{
             triggerRef={menuRef}
             currentIcon={section.icon || 'folder'}
             onSelectIcon={(iconId) => { onIconChange(section.id, iconId); setShowIconPicker(false); setShowMenu(false); }}
+            icons={PAGE_ICONS}
           />
         )}
       </div>
@@ -633,6 +498,7 @@ const PageItem: React.FC<{
             triggerRef={menuRef}
             currentIcon={page.icon || 'doc'}
             onSelectIcon={(iconId) => { onIconChange(page.id, iconId); setShowIconPicker(false); setShowMenu(false); }}
+            icons={PAGE_ICONS}
           />
         )}
       </div>
@@ -1363,14 +1229,36 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   const displayName = user?.display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || '用户';
   const userInitial = displayName.charAt(0).toUpperCase();
 
-  // 获取所有笔记本（一级）
-  const notebooks = notes.filter((n) => n.type === 'notebook' || n.type === 'email_notebook').sort((a, b) => a.order - b.order);
+  // 获取所有笔记本（一级）- 使用 useMemo 缓存
+  const notebooks = useMemo(
+    () => notes.filter((n) => n.type === 'notebook' || n.type === 'email_notebook').sort((a, b) => a.order - b.order),
+    [notes]
+  );
 
-  // 获取选中分区下的页面
-  const activeSectionObj = activeSection ? notes.find((n) => n.id === activeSection) : null;
-  const pages = activeSection
-    ? notes.filter((n) => n.parentId === activeSection && n.type === 'page').sort((a, b) => a.order - b.order)
-    : [];
+  // 预计算 parentId → children 映射表，避免渲染时 O(n×m) filter
+  const notesByParent = useMemo(() => {
+    const map: Record<string, Note[]> = {};
+    for (const n of notes) {
+      const key = n.parentId;
+      if (key) {
+        if (!map[key]) map[key] = [];
+        map[key].push(n);
+      }
+    }
+    return map;
+  }, [notes]);
+
+  // 获取选中分区下的页面 - 使用 useMemo 缓存
+  const activeSectionObj = useMemo(
+    () => activeSection ? notes.find((n) => n.id === activeSection) : null,
+    [notes, activeSection]
+  );
+  const pages = useMemo(() => {
+    if (!activeSection) return [];
+    return (notesByParent[activeSection] || [])
+      .filter((n) => n.type === 'page')
+      .sort((a, b) => a.order - b.order);
+  }, [notesByParent, activeSection]);
 
   // 展开/折叠笔记本
   const toggleNotebook = useCallback((notebookId: string) => {
@@ -1499,7 +1387,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
       {/* 顶部 - Logo */}
       <div className="h-[47px] shrink-0 flex items-center px-3 bg-white border-b border-gray-100 justify-between">
         {!collapsed && (
-          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.1</span></span>
+          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.1.1</span></span>
         )}
         <div className={`flex items-center gap-1 ${collapsed ? 'w-full justify-center' : ''}`}>
           {!collapsed && (
@@ -1541,7 +1429,8 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
               {/* 笔记本列表 */}
               <div className="flex-1 overflow-y-auto relative">
                 {notebooks.map((notebook, index) => {
-                  const notebookSections = notes.filter((n) => n.parentId === notebook.id && (n.type === 'section' || n.type === 'email_account'));
+                  const notebookSections = (notesByParent[notebook.id] || [])
+                    .filter((n) => n.type === 'section' || n.type === 'email_account');
                   const isExpanded = expandedNodes.includes(notebook.id);
                   const isShared = sharedNotebookIds.has(notebook.id);
 

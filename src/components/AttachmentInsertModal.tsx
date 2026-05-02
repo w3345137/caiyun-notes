@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { uploadToOneDrive, formatFileSize, checkNotebookOnedrive } from '../lib/onedriveService';
 import { X, Upload, Cloud, FileText, Image, Video, Volume2, FileCode, Loader2, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import toast from 'react-hot-toast';
 
 interface AttachmentInsertModalProps {
   onClose: () => void;

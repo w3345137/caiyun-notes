@@ -3,6 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
 import { Table } from '@tiptap/extension-table';
+import { goToNextCell } from 'prosemirror-tables';
 import { TableWithDefaultWidth } from '../extensions/TableWithDefaultWidth';
 import { TableRowWithTextSelection } from '../extensions/TableRowWithTextSelection';
 import { TableCellWithColor } from '../extensions/TableCellWithColor';
@@ -28,7 +29,7 @@ import { RouteBlock } from '../extensions/RouteBlock.tsx';
 import { AttachmentBlock } from '../extensions/AttachmentBlock';
 import { FolderBlock } from '../extensions/FolderBlock';
 import { AudioBlock } from '../extensions/AudioBlock';
-import { AlertCircle, Plus, Minus, Table as TableIcon, ChevronDown, PaintBucket, Lock, Unlock, Bold, Italic, Strikethrough, List, ListOrdered, ListTodo, CirclePlus, Camera, Maximize2, Download, Image, FileText, Trash2, FolderOpen } from 'lucide-react';
+import { AlertCircle, Plus, Minus, Table as TableIcon, ChevronDown, PaintBucket, Lock, Unlock, Bold, Italic, Strikethrough, List, ListOrdered, ListTodo, CirclePlus, Camera, Maximize2, Download, Image, FileText, Trash2, FolderOpen, Braces } from 'lucide-react';
 import mermaid from 'mermaid';
 import toast from 'react-hot-toast';
 import html2canvas from 'html2canvas';
@@ -960,6 +961,18 @@ const EditorToolbar: React.FC<{
             )}
           </div>
 
+          {/* 概要 */}
+          <ToolbarButton
+            onClick={() => {
+              const actions = getActiveMindmapActions();
+              if (actions) actions.addSummary();
+            }}
+            disabled={disabled}
+            title="概要 - 为选中节点添加概括（按住 Ctrl 点击节点可多选）"
+          >
+            <Braces className="w-4 h-4" />
+          </ToolbarButton>
+
           {/* 分隔线 */}
           <div className="w-px h-4 bg-purple-300 mx-1" />
 
@@ -1261,22 +1274,13 @@ export const NoteEditor: React.FC = () => {
         markNoteAsEditing(selectedNoteId);
 
         if (content !== lastSavedContentRef.current) {
-          pendingContentRef.current = content;
           if (autoSaveTimeoutRef.current) {
             clearTimeout(autoSaveTimeoutRef.current);
+            autoSaveTimeoutRef.current = null;
           }
-          autoSaveTimeoutRef.current = setTimeout(() => {
-            if (useNoteStore.getState().isNoteLockedByOther(selectedNoteId, userId)) {
-              console.log('[AutoSave] 页面已被锁定，取消保存');
-              pendingContentRef.current = null;
-              return;
-            }
-            if (pendingContentRef.current !== null && pendingContentRef.current !== lastSavedContentRef.current) {
-              lastSavedContentRef.current = pendingContentRef.current;
-              updateNote(selectedNoteId, { content: pendingContentRef.current }, { silent: true });
-              pendingContentRef.current = null;
-            }
-          }, 1000);
+          pendingContentRef.current = null;
+          lastSavedContentRef.current = content;
+          updateNote(selectedNoteId, { content }, { silent: true });
         }
       }
     },
@@ -1348,6 +1352,13 @@ export const NoteEditor: React.FC = () => {
       }
       // Tab: 列表缩进
       if (event.key === 'Tab' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (editor.isActive('table')) {
+          event.preventDefault();
+          goToNextCell(event.shiftKey ? -1 : 1)(editor.state, editor.view.dispatch, editor.view);
+          editor.view.focus();
+          return;
+        }
+
         const inListItem = editor.isActive('listItem');
         if (event.shiftKey) {
           // Shift+Tab: 提升层级
@@ -1360,7 +1371,10 @@ export const NoteEditor: React.FC = () => {
           editor.chain().focus().sinkListItem('listItem').run();
           return;
         }
-        // 不在列表内时，不拦截，让浏览器默认处理（插入tab或切换焦点）
+
+        event.preventDefault();
+        editor.chain().focus().insertContent('    ').run();
+        return;
       }
     };
 

@@ -100,7 +100,7 @@
     "react-router-dom": "^6",
     "recharts": "^2.12.4",
     "simple-mind-map": "^0.14.0-fix.2",
-    "sonner": "^1.7.2",
+
     "sortablejs": "^1.15.7",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",

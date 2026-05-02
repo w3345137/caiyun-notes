@@ -8,9 +8,14 @@ import Export from 'simple-mind-map/src/plugins/Export.js';
 import RainbowLines from 'simple-mind-map/src/plugins/RainbowLines.js';
 import './MindmapExtension.css';
 
+// simple-mind-map 的 usePlugin 是普通插件注册 API，不是 React Hook。
+// eslint-disable-next-line react-hooks/rules-of-hooks
 MindMap.usePlugin(Drag);
+// eslint-disable-next-line react-hooks/rules-of-hooks
 MindMap.usePlugin(Select);
+// eslint-disable-next-line react-hooks/rules-of-hooks
 MindMap.usePlugin(Export);
+// eslint-disable-next-line react-hooks/rules-of-hooks
 MindMap.usePlugin(RainbowLines);
 
 export interface MindmapActions {
@@ -21,6 +26,7 @@ export interface MindmapActions {
   toggleFullscreen: () => void;
   exportImage: () => void;
   exportMarkdown: () => void;
+  addSummary: () => void;
 }
 
 const mindmapRegistry = new Map<string, MindmapActions>();
@@ -57,7 +63,9 @@ function normalizeToSmm(raw: string): SmmNodeData {
       const c = (n: any): SmmNodeData => ({ data: { text: n.text || n.topic || '主题', uid: n.id || generateId() }, children: (n.children || []).map(c) });
       return c(p[0]);
     }
-  } catch {}
+  } catch {
+    // 非 JSON/旧格式内容按默认思维导图处理。
+  }
   return createDefaultSmmData();
 }
 
@@ -66,7 +74,7 @@ const CAIYUN_THEME_CONFIG = {
   root: { shape: 'rectangle', fillColor: '#2c3e50', color: '#ffffff', fontSize: 17, fontWeight: 'bold', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif', borderColor: '#1a252f', borderWidth: 3, borderRadius: 8, paddingX: 20, paddingY: 10, marginX: 100, marginY: 40 },
   second: { shape: 'rectangle', fillColor: '#ffffff', color: '#333333', fontSize: 16, fontWeight: '600', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif', borderColor: '#94a3b8', borderWidth: 1.5, borderRadius: 6, paddingX: 14, paddingY: 6, marginX: 80, marginY: 20 },
   node: { shape: 'rectangle', fillColor: '#f8fafc', color: '#475569', fontSize: 14, fontWeight: 'normal', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif', borderColor: 'transparent', borderWidth: 0, borderRadius: 4, paddingX: 10, paddingY: 4, marginX: 60, marginY: 10 },
-  generalization: { fillColor: '#f1f5f9', color: '#64748b', fontSize: 13, fontWeight: 'normal', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 4 },
+  generalization: { shape: 'rectangle', fillColor: '#ffffff', color: '#000000', fontSize: 14, fontWeight: '600', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif', borderColor: '#cccccc', borderWidth: 1.5, borderRadius: 6, paddingX: 12, paddingY: 5 },
 };
 
 export const MindmapExtension = Node.create({
@@ -151,10 +159,21 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
     const link = document.createElement('a'); link.download = `mindmap-${Date.now()}.md`; link.href = URL.createObjectURL(blob); link.click(); URL.revokeObjectURL(link.href);
   }, []);
 
+  const handleAddSummary = useCallback(() => {
+    const mm = mmRef.current;
+    if (!mm) return;
+    const activeNodes = mm.renderer?.activeNodeList || [];
+    if (activeNodes.length === 0) {
+      alert('请先选中一个或多个节点（按住 Ctrl 点击节点可多选）');
+      return;
+    }
+    mm.renderer.addGeneralization({ text: '概要' }, true);
+  }, []);
+
   useEffect(() => {
-    registryIdRef.current = registerMindmap({ addChild: handleAddChild, addSibling: handleAddSibling, removeSelected: handleRemoveSelected, deleteMindmap: handleDeleteMindmap, toggleFullscreen, exportImage: handleExportImage, exportMarkdown: handleExportMarkdown });
+    registryIdRef.current = registerMindmap({ addChild: handleAddChild, addSibling: handleAddSibling, removeSelected: handleRemoveSelected, deleteMindmap: handleDeleteMindmap, toggleFullscreen, exportImage: handleExportImage, exportMarkdown: handleExportMarkdown, addSummary: handleAddSummary });
     return () => { if (registryIdRef.current) unregisterMindmap(registryIdRef.current); };
-  }, [handleAddChild, handleAddSibling, handleRemoveSelected, handleDeleteMindmap, toggleFullscreen, handleExportImage, handleExportMarkdown]);
+  }, [handleAddChild, handleAddSibling, handleRemoveSelected, handleDeleteMindmap, toggleFullscreen, handleExportImage, handleExportMarkdown, handleAddSummary]);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -193,12 +212,60 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
         addHistoryOnInit: true, maxHistoryCount: 500, addHistoryTime: 100,
         openRealtimeRenderOnNodeTextEdit: false, enableDragModifyNodeWidth: true,
         minNodeTextModifyWidth: 20, textAutoWrapWidth: 500, disableMouseWheelZoom: false, isDisableDrag: false, readonly: false,
+        generalizationLineWidth: 3, generalizationLineColor: '#000000', generalizationLineMargin: 12, generalizationNodeMargin: 36,
         rainbowLinesConfig: { open: true, colorsList: ['rgb(192,57,43)', 'rgb(212,160,23)', 'rgb(39,174,96)', 'rgb(41,128,185)', 'rgb(142,68,173)', 'rgb(230,126,34)', 'rgb(22,160,133)'] },
       });
 
       mmRef.current = mm;
       lastSavedContentRef.current = content;
       initDoneRef.current = true;
+
+      // 补丁：将概要的连接线改为大括号 } 样式（顶部/底部弧形钩 + 中间小指针指向标签）
+      // 注意：simple-mind-map 实际使用的是 mm.renderer.layout，不是 mm.layout
+      const layoutInstance: any = (mm as any).renderer.layout;
+      layoutInstance.renderGeneralization = function (list: any[]) {
+        list.forEach((item: any) => {
+          const isLeft = item.node.dir === 'left';
+          const bounds = layoutInstance.getNodeGeneralizationRenderBoundaries(item, 'h');
+          const { top, bottom, left, right, generalizationLineMargin, generalizationNodeMargin } = bounds;
+          const x = isLeft ? left - generalizationLineMargin : right + generalizationLineMargin;
+          const dir = isLeft ? -1 : 1;
+          const midY = (top + bottom) / 2;
+
+          // 大括号样式参数
+          const armCp = 50 * dir;      // 上下端的曲率控制点（外凸距离）
+          const spineCp = 4 * dir;     // 接近中点处的控制点（贴近垂直线）
+          const cpVyBase = 6;          // 控制点的纵向偏移（贴近端点）
+          const notchTipX = 18 * dir;  // 中间小指针的外凸距离
+          const notchHMax = 14;        // 中间小指针的纵向间距上限
+
+          // 适配较短的概要范围：若整体高度太小，自动收紧 notch 与控制点
+          const totalH = bottom - top;
+          const notchH = Math.min(notchHMax, totalH * 0.3);
+          const upperEnd = midY - notchH / 2;
+          const lowerStart = midY + notchH / 2;
+          const upperSegH = upperEnd - top;
+          const lowerSegH = bottom - lowerStart;
+          const upperVy = Math.min(cpVyBase, Math.max(0, upperSegH * 0.4));
+          const lowerVy = Math.min(cpVyBase, Math.max(0, lowerSegH * 0.4));
+
+          const path =
+            `M ${x},${top}` +
+            ` C ${x + armCp},${top + upperVy}` +
+            ` ${x + spineCp},${upperEnd - upperVy}` +
+            ` ${x},${upperEnd}` +
+            ` L ${x + notchTipX},${midY}` +
+            ` L ${x},${lowerStart}` +
+            ` C ${x + spineCp},${lowerStart + lowerVy}` +
+            ` ${x + armCp},${bottom - lowerVy}` +
+            ` ${x},${bottom}`;
+          item.generalizationLine.plot(path);
+
+          item.generalizationNode.left =
+            x + (isLeft ? -generalizationNodeMargin : generalizationNodeMargin) - (isLeft ? item.generalizationNode.width : 0);
+          item.generalizationNode.top = top + (bottom - top - item.generalizationNode.height) / 2;
+        });
+      };
 
       let saveTimer: ReturnType<typeof setTimeout> | null = null;
       const saveHandler = () => {
@@ -209,16 +276,20 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
       mm.on('node_active', saveHandler);
       mm.on('data_change', saveHandler);
       mm.on('before_show_text_edit', () => {
+        // 进入编辑前：若有未完成的防抖保存，立即同步一次，避免新增节点/概要等结构性变更被丢弃
+        if (saveTimer) {
+          clearTimeout(saveTimer);
+          saveTimer = null;
+          saveDataRef.current();
+        }
         isEditingRef.current = true;
-        if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
       });
       mm.on('hide_text_edit', () => {
         isEditingRef.current = false;
-        if (pendingSaveRef.current) {
-          pendingSaveRef.current = false;
-          if (saveTimer) clearTimeout(saveTimer);
-          saveTimer = setTimeout(() => { saveTimer = null; saveDataRef.current(); }, 800);
-        }
+        // 编辑结束后无条件触发一次保存（文本变更总是通过 hide_text_edit 提交）
+        if (saveTimer) clearTimeout(saveTimer);
+        pendingSaveRef.current = false;
+        saveTimer = setTimeout(() => { saveTimer = null; saveDataRef.current(); }, 300);
       });
 
       setTimeout(() => { container.focus(); }, 100);
@@ -229,7 +300,7 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
       const oldMm = mmRef.current;
       console.log('[MM-DEBUG] EFFECT 1 CLEANUP, mm exists:', !!oldMm);
       if (oldMm) {
-        try { oldMm.destroy(); } catch {}
+        try { oldMm.destroy(); } catch (e) { console.warn('[MM-DEBUG] destroy failed:', e); }
         mmRef.current = null;
       }
       initDoneRef.current = false;
@@ -281,6 +352,20 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
     };
     container.addEventListener('keydown', handleKeyDown, true);
     return () => container.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
+  // === Effect 4: 左键拖画布时鼠标变抓手 ===
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onDown = (e: MouseEvent) => { if (e.button === 0) container.classList.add('grabbing'); };
+    const onUp = () => { container.classList.remove('grabbing'); };
+    container.addEventListener('mousedown', onDown);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      container.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mouseup', onUp);
+    };
   }, []);
 
   return (

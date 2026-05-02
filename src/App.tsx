@@ -34,8 +34,10 @@ function AppContent() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const { user, loading } = useAuth();
+  const userId = user?.id;
   const loadFromCloud = useNoteStore((state) => state.loadFromCloud);
   const syncToCloud = useNoteStore((state) => state.syncToCloud);
+  const hasPendingSaves = useNoteStore((state) => state.hasPendingSaves);
   const isLoading = useNoteStore((state) => state.isLoading);
   const loadingStatus = useNoteStore((state) => state.loadingStatus);
   const loadingProgress = useNoteStore((state) => state.loadingProgress);
@@ -45,11 +47,11 @@ function AppContent() {
   const dbError = useNoteStore((state) => state.dbError);
   const syncError = useNoteStore((state) => state.syncError);
   const setSyncError = useNoteStore((state) => state.setSyncError);
+  const refreshInProgressRef = useRef(false);
 
   // 用户登录后加载数据
-  // 【已修复】只在用户真正变化时加载，跳过 token 刷新的中间状态
   useEffect(() => {
-    if (user && user.id) {
+    if (userId) {
       loadFromCloud();
       sseService.connect();
       getUpdateLogs().then(logs => {
@@ -60,19 +62,7 @@ function AppContent() {
     } else {
       sseService.disconnect();
     }
-  }, [user?.id, loadFromCloud]);
-
-  // 监听刷新笔记事件
-  useEffect(() => {
-    const handleRefresh = () => {
-      if (user && user.id) {
-        loadFromCloud();
-        toast.success('已刷新');
-      }
-    };
-    window.addEventListener('refresh-notes', handleRefresh);
-    return () => window.removeEventListener('refresh-notes', handleRefresh);
-  }, [user, loadFromCloud]);
+  }, [userId, loadFromCloud]);
 
   // 手动保存到云端
   const handleSave = useCallback(async () => {
@@ -98,7 +88,64 @@ function AppContent() {
     }
   }, [syncToCloud, dbReady]);
 
-  // 【Token检查】本地 JWT 有效期 7 天，检查是否即将过期
+  const saveBeforeReload = useCallback(async () => {
+    if (refreshInProgressRef.current) return;
+
+    if (!userId) {
+      window.location.reload();
+      return;
+    }
+
+    if (!dbReady) {
+      toast.error('数据库未就绪，已取消刷新以避免丢失编辑');
+      return;
+    }
+
+    refreshInProgressRef.current = true;
+    const toastId = 'save-before-refresh';
+    toast.loading('正在保存编辑...', { id: toastId });
+
+    try {
+      const result = await syncToCloud();
+      if (!result.success) {
+        refreshInProgressRef.current = false;
+        toast.error(`保存失败，已取消刷新: ${result.error || '请重试'}`, { id: toastId });
+        return;
+      }
+
+      toast.success('已保存，正在刷新', { id: toastId });
+      window.location.reload();
+    } catch {
+      refreshInProgressRef.current = false;
+      toast.error('保存失败，已取消刷新', { id: toastId });
+    }
+  }, [dbReady, syncToCloud, userId]);
+
+  // 监听应用内刷新事件：先保存，再重新拉取云端数据
+  useEffect(() => {
+    const handleRefresh = async () => {
+      if (!userId) return;
+      if (!dbReady) {
+        toast.error('数据库未就绪，已取消刷新以避免丢失编辑');
+        return;
+      }
+
+      const toastId = 'save-before-refresh-notes';
+      toast.loading('正在保存编辑...', { id: toastId });
+      const result = await syncToCloud();
+      if (!result.success) {
+        toast.error(`保存失败，已取消刷新: ${result.error || '请重试'}`, { id: toastId });
+        return;
+      }
+
+      await loadFromCloud();
+      toast.success('已保存并刷新', { id: toastId });
+    };
+    window.addEventListener('refresh-notes', handleRefresh);
+    return () => window.removeEventListener('refresh-notes', handleRefresh);
+  }, [userId, dbReady, syncToCloud, loadFromCloud]);
+
+  // Token 检查：本地 JWT 有效期 7 天，检查是否即将过期
   useEffect(() => {
     const checkToken = () => {
       if (!user) return;
@@ -113,13 +160,10 @@ function AppContent() {
         const exp = payload.exp * 1000;
         const now = Date.now();
         const remaining = exp - now;
-        // 如果 token 快过期了（< 1天），提示用户重新登录
         if (remaining < 24 * 60 * 60 * 1000 && remaining > 0) {
-          console.log('[TokenCheck] token 即将过期，请重新登录');
           toast('登录即将过期，请保存数据后重新登录', { icon: '⚠️', duration: 10000 });
         }
         if (remaining <= 0) {
-          console.log('[TokenCheck] token 已过期');
           localStorage.removeItem('notesapp_token');
           window.location.reload();
         }
@@ -128,12 +172,12 @@ function AppContent() {
       }
     };
 
-    const interval = setInterval(checkToken, 60 * 60 * 1000); // 每小时检查一次
-    checkToken(); // 初始检查
+    const interval = setInterval(checkToken, 60 * 60 * 1000);
+    checkToken();
     return () => clearInterval(interval);
   }, [user]);
 
-  // 【APP更新检查】检测新版本并下载安装（仅 APP 环境有效）
+  // APP 更新检查（仅 Tauri 环境有效）
   useEffect(() => {
     if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
       const checkAndUpdate = async () => {
@@ -142,7 +186,6 @@ function AppContent() {
           const { relaunch } = await import('@tauri-apps/plugin-process');
           const update = await check();
           if (update) {
-            console.log('[Updater] 发现新版本:', update.version);
             toast(`发现新版本 ${update.version}，正在下载...`, {
               icon: '🚀',
               duration: 5000,
@@ -150,17 +193,11 @@ function AppContent() {
             await update.downloadAndInstall((event) => {
               if (event.event === 'Started') {
                 console.log('[Updater] 开始下载...');
-              } else if (event.event === 'Progress') {
-                const downloaded = (event.data as any).chunkLength || 0;
-                console.log('[Updater] 下载中... 已下载:', downloaded, 'bytes');
               } else if (event.event === 'Finished') {
                 toast.success('下载完成，即将重启安装...', { duration: 3000 });
-                console.log('[Updater] 下载完成');
               }
             });
             await relaunch();
-          } else {
-            console.log('[Updater] 已是最新版本');
           }
         } catch (e) {
           console.error('[Updater] 检查更新失败:', e);
@@ -170,32 +207,32 @@ function AppContent() {
     }
   }, []);
 
-  // 【已关闭】自动保存定时器 - 暂时禁用，防止空内容覆盖笔记
-  // 保存改为仅在用户编辑时触发（NoteEditor onUpdate debounce）和 Ctrl+S
-  // useEffect(() => {
-  //   const autoSaveInterval = setInterval(() => {
-  //     if (dbReady && !isSyncing && user) {
-  //       syncToCloud().then(result => {
-  //         if (!result.success) {
-  //           console.log('自动保存失败:', result.error);
-  //         }
-  //       });
-  //     }
-  //   }, 10000);
-  //   return () => clearInterval(autoSaveInterval);
-  // }, [dbReady, isSyncing, syncToCloud, user]);
-
-  // Ctrl+S / Cmd+S 快捷键
+  // Ctrl+S / Cmd+S 保存，Ctrl+R / Cmd+R / F5 刷新前保存
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      const key = e.key.toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && key === 's') {
         e.preventDefault();
         await handleSave();
+      } else if (((e.metaKey || e.ctrlKey) && key === 'r') || e.key === 'F5') {
+        e.preventDefault();
+        await saveBeforeReload();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSave]);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [handleSave, saveBeforeReload]);
+
+  // 浏览器工具栏刷新/关闭无法可靠等待异步保存，只能在还有请求未完成时提示用户。
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!userId || !hasPendingSaves()) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasPendingSaves, userId]);
 
   // 未登录时显示登录页
   if (!user && !loading) {
@@ -213,8 +250,8 @@ function AppContent() {
           >
             登录 / 注册
           </button>
-          
-          {/* 测试账号快速登录 - 放在首页 */}
+
+          {/* 测试账号快速登录 */}
           <div className="mt-8 p-2.5 bg-amber-50 border border-amber-200 rounded-xl scale-80">
             <p className="text-[10px] text-amber-700 font-medium mb-1.5">快速体验</p>
             <button
@@ -233,8 +270,7 @@ function AppContent() {
             </button>
             <p className="text-[9px] text-amber-600 mt-1">测试账号：test01@notes.app / test123456</p>
           </div>
-          
-          {/* 版权信息 */}
+
           <p className="text-sm text-gray-400 mt-8">
             献给热爱知识管理的你——彬
           </p>
@@ -251,7 +287,7 @@ function AppContent() {
     );
   }
 
-  // 加载中 → 显示加载页面（进度条 + 状态文字）
+  // 加载中 → 显示加载页面
   if (loading || isLoading) {
     return <LoadingScreen progress={loadingProgress} status={loadingStatus || '正在初始化...'} />;
   }
@@ -292,7 +328,7 @@ function AppContent() {
           />
         </div>
 
-        {/* Main Content - 占剩余75% */}
+        {/* Main Content */}
         <div className="flex-1 min-w-0 shrink-0 h-full overflow-hidden">
           <NoteEditor />
         </div>
@@ -317,7 +353,7 @@ function AppContent() {
         </div>
       )}
 
-      {/* 同步/保存错误提示（如页面锁定） */}
+      {/* 同步/保存错误提示 */}
       {syncError && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-orange-500 text-white px-6 py-4 rounded-xl shadow-2xl z-[200] max-w-md">
           <div className="flex items-start gap-3">

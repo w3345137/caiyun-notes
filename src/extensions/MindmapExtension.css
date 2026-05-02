@@ -7,9 +7,8 @@
   background: #fafbfc;
   transition: all 0.2s ease;
   outline: none !important;
-  height: 60vh;
-  min-height: 350px;
-  max-height: calc(100vh - 200px);
+  height: calc(100vh - 260px);
+  min-height: 450px;
 }
 
 .mindmap-outer.mindmap-selected {
@@ -52,6 +51,14 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+.mindmap-container svg {
+  cursor: grab !important;
+}
+
+.mindmap-container.grabbing svg {
+  cursor: grabbing !important;
 }
 
 .mindmap-node-view {

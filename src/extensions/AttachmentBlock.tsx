@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Download, Trash2, FileText, Image, Video, Volume2, FileCode, Link, Cloud } from 'lucide-react';
 import { downloadFromOneDrive, formatFileSize, getFileIconType } from '../lib/onedriveService';
 import { useAuth } from '../components/AuthProvider';
-import { toast } from 'sonner';
+import toast from 'react-hot-toast';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {

@@ -5,7 +5,7 @@ import { Mic, Square, Trash2, Loader2, Volume2, Copy, Check } from 'lucide-react
 import { uploadToOneDrive, downloadFromOneDrive } from '../lib/onedriveService';
 import { transcribeAudio } from '../lib/llmService';
 import { useAuth } from '../components/AuthProvider';
-import { toast } from 'sonner';
+import toast from 'react-hot-toast';
 
 interface AudioBlockAttrs {
   noteId: string;

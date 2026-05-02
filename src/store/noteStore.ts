@@ -1,8 +1,8 @@
 /**
  * 笔记状态管理 (v5 - 精简保存版)
  * 核心改动：
- * - updateNote 只更新 store，不自动保存
- * - 累计编辑量达到阈值后自动保存当前页面
+ * - updateNote 更新 store 后立即排队保存
+ * - 同一笔记的高频保存串行化，刷新前可等待队列刷完
  * - syncToCloud 只保存当前选中页面（手动 Ctrl+S）
  * - 去掉定时保存和全量同步
  */
@@ -23,88 +23,210 @@ export interface SSENotification {
   lockedByName?: string;
 }
 
+export interface NoteStore {
+  // State
+  notes: Note[];
+  selectedNoteId: string | null;
+  isLoading: boolean;
+  isSyncing: boolean;
+  lastSyncedAt: Date | null;
+  syncError: string | null;
+  expandedNodes: string[];
+  sidebarCollapsed: boolean;
+  activeTab: string;
+  searchQuery: string;
+  loadingStatus: string;
+  loadingProgress: number;
+  dbReady: boolean;
+  dbError: string | null;
+  sseNotifications: SSENotification[];
+  folderRefreshTrigger: number;
+
+  // Actions
+  loadFromCloud: () => Promise<void>;
+  syncToCloud: () => Promise<{ success: boolean; error?: string }>;
+  hasPendingSaves: () => boolean;
+  selectNote: (id: string | null) => void;
+  updateNote: (id: string, updates: Partial<Note>, opts?: { silent?: boolean; save?: boolean }) => void;
+  setSyncError: (err: string | null) => void;
+  saveNoteById: (id: string) => Promise<void>;
+  addNote: (parentId: string | null, type?: string, title?: string, opts?: { skipSelect?: boolean }) => string;
+  deleteNote: (id: string) => Promise<{ success?: boolean; error?: string } | undefined>;
+  toggleExpanded: (id: string) => void;
+  reorderPages: (parentId: string, newOrderIds: string[]) => void;
+  reorderSections: (parentId: string, newOrderIds: string[]) => void;
+  lockNote: (noteId: string, userId: string, userName: string) => Promise<{ success?: boolean; error?: string }>;
+  unlockNote: (noteId: string) => Promise<{ success?: boolean; error?: string }>;
+  isNoteLockedByOther: (noteId: string, userId: string) => boolean;
+  clearLocalCache: () => void;
+  getNoteById: (id: string) => Note | undefined;
+  setSidebarCollapsed: (v: boolean) => void;
+  setActiveTab: (v: string) => void;
+  setSearchQuery: (v: string) => void;
+  isNoteEditing: (noteId: string) => boolean;
+  upsertNote: (note: Record<string, unknown>) => void;
+  fetchAndUpsertNote: (noteId: string) => Promise<void>;
+  removeNoteFromStore: (noteId: string) => void;
+  updateNoteLock: (noteId: string, isLocked: boolean, lockedBy: string | null, lockedByName: string | null) => void;
+  addSSENotification: (notification: SSENotification) => void;
+  clearSSENotifications: (noteId?: string) => void;
+  triggerFolderRefresh: () => void;
+}
+
 // === 全局缓存 ===
 let _updateLogsCache: any[] = [];
-let _editingNotes = new Set<string>();
+const _editingNotes = new Set<string>();
 
 // 编辑量追踪：记录每个笔记未保存的编辑次数
 const _editCounters = new Map<string, number>();
-// 编辑量阈值：累积 2 次编辑自动保存（静默，不弹提示）
-const AUTO_SAVE_THRESHOLD = 2;
 
-// 云端保存 debounce：避免短时间大量请求
+// 云端保存 debounce：用于排序这类高频批量操作
 const _saveTimers = new Map<string, NodeJS.Timeout>();
+const _debouncedSaveNotes = new Map<string, Note>();
+const _pendingSaves = new Map<string, Note>();
+const _activeSavePromises = new Map<string, Promise<void>>();
 
-function sanitizeNote(n: any): any {
-  if (!n) return {};
+function sanitizeNote(n: any): Note {
+  if (!n) return {} as Note;
+  const parentId = n.parentId || n.parent_id || null;
+  const order = n.order ?? n.order_index ?? 0;
+  const createdAt = n.created_at || n.createdAt || new Date().toISOString();
+  const updatedAt = n.updatedAt || n.updated_at || new Date().toISOString();
+  const ownerId = n.owner_id || n.ownerId || '';
+  const lockedBy = n.lockedBy || n.locked_by || null;
+  const lockedByName = n.lockedByName || n.locked_by_name || null;
+  const lockedAt = n.lockedAt || n.locked_at || null;
+  const isLocked = n.is_locked || n.isLocked || false;
+  const rootNotebookId = n.rootNotebookId || n.root_notebook_id || '';
+
   return {
     ...n,
     id: n.id || `gen-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     title: n.title || '无标题',
     content: n.content || '',
     type: n.type || 'page',
-    parent_id: n.parent_id || n.parentId || null,
-    parentId: n.parentId || n.parent_id || null,
-    owner_id: n.owner_id || '',
-    owner_email: n.owner_email || '',
-    order_index: n.order_index ?? n.order ?? 0,
-    order: n.order ?? n.order_index ?? 0,
+    parent_id: parentId,
+    parentId,
+    owner_id: ownerId,
+    ownerId,
+    order_index: order,
+    order,
     icon: n.icon || '',
-    created_at: n.created_at || new Date().toISOString(),
-    updated_at: n.updated_at || n.updatedAt || new Date().toISOString(),
-    updatedAt: n.updatedAt || n.updated_at || new Date().toISOString(),
-    tags: Array.isArray(n.tags) ? n.tags : [],
-    path: n.path || '',
-    shared_with: n.shared_with || n.shared_users || [],
-    is_locked: n.is_locked || false,
-    locked_by: n.locked_by || n.lockedBy || null,
-    lockedBy: n.lockedBy || n.locked_by || null,
-    locked_by_name: n.locked_by_name || n.lockedByName || null,
-    lockedByName: n.lockedByName || n.locked_by_name || null,
+    tag: n.tag || n.tags?.[0] || '',
+    created_at: createdAt,
+    createdAt,
+    updated_at: updatedAt,
+    updatedAt,
+    locked_by: lockedBy,
+    lockedBy,
+    locked_by_name: lockedByName,
+    lockedByName,
+    locked_at: lockedAt,
+    lockedAt,
+    is_locked: isLocked,
+    isLocked,
     version: n.version || 1,
-    rootNotebookId: n.rootNotebookId || n.root_notebook_id || '',
-    root_notebook_id: n.root_notebook_id || n.rootNotebookId || ''
+    root_notebook_id: rootNotebookId,
+    rootNotebookId,
+    createdBy: n.createdBy || n.created_by || '',
+    createdByName: n.createdByName || n.created_by_name || '',
+    updatedBy: n.updatedBy || n.updated_by || '',
+    updatedByName: n.updatedByName || n.updated_by_name || '',
   };
 }
 
 /**
  * 立即保存单个笔记到云端
  */
-async function saveSingleNote(note: any) {
+async function saveSingleNote(note: Note) {
   try {
-    await saveNoteToCloud(note);
+    const result = await saveNoteToCloud(note);
+    if (result && !result.success) {
+      throw new Error(result.error || '保存失败');
+    }
     console.log(`[Store] 云端保存成功: ${note.id.substring(0, 12)}...`);
+    return result;
   } catch (e) {
     console.error(`[Store] 云端保存失败: ${note.id}`, e);
+    throw e;
   }
+}
+
+async function queueCloudSave(note: Note) {
+  _pendingSaves.set(note.id, note);
+
+  const active = _activeSavePromises.get(note.id);
+  if (active) return active;
+
+  const promise = (async () => {
+    try {
+      while (_pendingSaves.has(note.id)) {
+        const latest = _pendingSaves.get(note.id)!;
+        _pendingSaves.delete(note.id);
+        await saveSingleNote(latest);
+      }
+    } finally {
+      _activeSavePromises.delete(note.id);
+    }
+  })();
+
+  _activeSavePromises.set(note.id, promise);
+  return promise;
+}
+
+async function flushCloudSaves(note?: Note) {
+  if (note) {
+    _pendingSaves.set(note.id, note);
+  }
+
+  for (const [id, timer] of _saveTimers) {
+    clearTimeout(timer);
+    _saveTimers.delete(id);
+    const delayedNote = _debouncedSaveNotes.get(id);
+    _debouncedSaveNotes.delete(id);
+    if (delayedNote) {
+      _pendingSaves.set(id, delayedNote);
+    }
+  }
+
+  const ids = new Set([..._pendingSaves.keys(), ..._activeSavePromises.keys()]);
+  await Promise.all(Array.from(ids).map((id) => {
+    const pending = _pendingSaves.get(id);
+    if (pending) {
+      return queueCloudSave(pending);
+    }
+    return _activeSavePromises.get(id);
+  }).filter(Boolean) as Promise<void>[]);
 }
 
 /**
  * debounce 保存单个笔记（2秒内同一笔记只保存一次）
- * 用于 reorderPages 等批量操作场景
  */
-function debouncedCloudSave(note: any) {
+function debouncedCloudSave(note: Note) {
   const id = note.id;
   if (_saveTimers.has(id)) {
     clearTimeout(_saveTimers.get(id)!);
   }
+  _debouncedSaveNotes.set(id, note);
   _saveTimers.set(id, setTimeout(async () => {
     _saveTimers.delete(id);
-    await saveSingleNote(note);
+    const latest = _debouncedSaveNotes.get(id) || note;
+    _debouncedSaveNotes.delete(id);
+    await queueCloudSave(latest);
   }, 2000));
 }
 
 /**
  * 创建本地备份（如果已开启）
  */
-async function tryCreateBackup(note: any) {
+async function tryCreateBackup(note: Note) {
   try {
     const config = getBackupConfig();
     if (!config.enabled) return;
     if (note.type !== 'page') return;
     const content = note.content || '';
     if (typeof content !== 'string' || content.length < 50) return;
-    await createBackup(note as Note, '');
+    await createBackup(note, '');
   } catch (e) {
     console.warn('[Store] 本地备份失败:', e);
   }
@@ -115,13 +237,24 @@ let _sidebarStateTimer: NodeJS.Timeout | null = null;
 function debouncedSaveSidebarState(expandedNodes: string[], selectedNoteId: string | null) {
   if (_sidebarStateTimer) clearTimeout(_sidebarStateTimer);
   _sidebarStateTimer = setTimeout(() => {
+    _sidebarStateTimer = null;
     saveSidebarState(expandedNodes, selectedNoteId).catch(e => {
       console.warn('[Store] 侧边栏状态保存失败:', e);
     });
   }, 1000);
 }
 
-export const useNoteStore = create<any>((set, get) => ({
+async function flushSidebarState(expandedNodes: string[], selectedNoteId: string | null) {
+  if (_sidebarStateTimer) {
+    clearTimeout(_sidebarStateTimer);
+    _sidebarStateTimer = null;
+  }
+  await saveSidebarState(expandedNodes, selectedNoteId).catch((e) => {
+    console.warn('[Store] 侧边栏状态保存失败:', e);
+  });
+}
+
+export const useNoteStore = create<NoteStore>((set, get) => ({
   notes: [],
   selectedNoteId: null,
   isLoading: false,
@@ -153,64 +286,62 @@ export const useNoteStore = create<any>((set, get) => ({
         if (sb.success && sb.data) {
           set({ expandedNodes: sb.data.expandedNodes || [], selectedNoteId: sb.data.selectedNoteId || null });
         }
-      } catch(e) {}
+      } catch (e) {
+        console.warn('[Store] 侧边栏状态加载失败:', e);
+      }
     } catch (e: any) { set({ isLoading: false, syncError: e.message, dbError: e.message }); }
   },
 
-  /**
-   * 保存当前选中页面到云端（Ctrl+S 使用）
-   * 只保存当前正在编辑的那一个页面
-   */
   syncToCloud: async () => {
     set({ isSyncing: true, loadingStatus: '保存中...' });
-    const state = get();
-    const selectedId = state.selectedNoteId;
-    
-    if (selectedId) {
-      const note = state.notes.find((n: Note) => n.id === selectedId);
-      if (note) {
-        await saveSingleNote(note);
-        // 同步保存本地备份
-        await tryCreateBackup(note);
-        // 重置编辑计数器
-        _editCounters.delete(selectedId);
+    try {
+      const state = get();
+      const selectedId = state.selectedNoteId;
+
+      if (selectedId) {
+        const note = state.notes.find((n) => n.id === selectedId);
+        if (note) {
+          await flushCloudSaves(note);
+          await tryCreateBackup(note);
+          _editCounters.delete(selectedId);
+        }
+      } else {
+        await flushCloudSaves();
       }
+
+      await flushSidebarState(state.expandedNodes, state.selectedNoteId);
+      set({ isSyncing: false, lastSyncedAt: new Date(), loadingStatus: '就绪', syncError: null });
+      return { success: true };
+    } catch (e: any) {
+      const message = e?.message || '保存失败';
+      set({ isSyncing: false, syncError: message, loadingStatus: '保存失败' });
+      return { success: false, error: message };
     }
-    
-    // 同时保存侧边栏状态
-    await saveSidebarState(state.expandedNodes, state.selectedNoteId).catch(() => {});
-    set({ isSyncing: false, lastSyncedAt: new Date(), loadingStatus: '就绪' });
-    return { success: true };
+  },
+
+  hasPendingSaves: () => {
+    return _pendingSaves.size > 0 || _activeSavePromises.size > 0 || _saveTimers.size > 0 || !!_sidebarStateTimer;
   },
 
   selectNote: (id: string | null) => {
     set({ selectedNoteId: id });
-    // 持久化选中状态
     debouncedSaveSidebarState(get().expandedNodes, id);
   },
 
-  /**
-   * 统一更新入口：更新 store
-   * 编辑量累计达到阈值后自动保存 + 本地备份
-   */
-  updateNote: (id: string, updates: any) => {
-    set((state: any) => {
+  updateNote: (id: string, updates: Partial<Note>, opts?: { silent?: boolean; save?: boolean }) => {
+    set((state) => {
       const now = new Date().toISOString();
-      const newNotes = state.notes.map((n: Note) => n.id === id ? { ...n, ...updates, updatedAt: now, updated_at: now } : n);
+      const newNotes = state.notes.map((n) => n.id === id ? { ...n, ...updates, updatedAt: now, updated_at: now } : n);
       return { notes: newNotes };
     });
-    
-    if (updates.content !== undefined) {
-      const count = (_editCounters.get(id) || 0) + 1;
-      _editCounters.set(id, count);
-      
-      if (count >= AUTO_SAVE_THRESHOLD) {
-        _editCounters.set(id, 0);
-        const note = get().notes.find((n: Note) => n.id === id);
-        if (note) {
-          saveSingleNote(note);
+
+    if (opts?.save !== false) {
+      const note = get().notes.find((n) => n.id === id);
+      if (note) {
+        queueCloudSave(note).catch(() => {});
+        if (updates.content !== undefined) {
           tryCreateBackup(note);
-          console.log(`[Store] 编辑量达阈值(${AUTO_SAVE_THRESHOLD})，自动保存: ${id.substring(0, 12)}...`);
+          _editCounters.delete(id);
         }
       }
     }
@@ -219,42 +350,41 @@ export const useNoteStore = create<any>((set, get) => ({
   setSyncError: (err: string | null) => set({ syncError: err }),
 
   saveNoteById: async (id: string) => {
-    const note = get().notes.find((n: Note) => n.id === id);
+    const note = get().notes.find((n) => n.id === id);
     if (note) {
-      await saveSingleNote(note);
+      await flushCloudSaves(note);
       tryCreateBackup(note);
       _editCounters.delete(id);
-      console.log(`[Store] 切换页面自动保存: ${id.substring(0, 12)}...`);
     }
   },
 
-  addNote: (parentId: string | null, type: string = 'page', title: string = '新笔记', opts: any = {}) => {
+  addNote: (parentId: string | null, type: string = 'page', title: string = '新笔记', opts: { skipSelect?: boolean } = {}) => {
     const newNote = sanitizeNote({
       id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
-      title, type, parent_id: parentId, parentId,
-      order_index: 0, order: 0
+      title, type, parent_id: parentId,
+      order_index: 0,
     });
-    set((state: any) => ({ notes: [...state.notes, newNote] }));
+    set((state) => ({ notes: [...state.notes, newNote] }));
     if (!opts.skipSelect) {
       set({ selectedNoteId: newNote.id });
       debouncedSaveSidebarState(get().expandedNodes, newNote.id);
     }
-    saveSingleNote(newNote).catch(() => {
-      set((state: any) => ({ notes: state.notes.filter((n: Note) => n.id !== newNote.id) }));
+    queueCloudSave(newNote).catch(() => {
+      set((state) => ({ notes: state.notes.filter((n) => n.id !== newNote.id) }));
       console.error('[Store] 新建笔记保存失败，已回滚:', newNote.id);
     });
     return newNote.id;
   },
 
   deleteNote: async (id: string) => {
-    const deletedNotes = get().notes.filter((n: Note) => n.id === id || n.parent_id === id || n.parentId === id);
+    const deletedNotes = get().notes.filter((n) => n.id === id || n.parentId === id);
     _editCounters.delete(id);
-    set((state: any) => ({
-      notes: state.notes.filter((n: Note) => n.id !== id && n.parent_id !== id && n.parentId !== id)
+    set((state) => ({
+      notes: state.notes.filter((n) => n.id !== id && n.parentId !== id)
     }));
     const res = await deleteNoteFromCloud(id);
     if (res && !res.success) {
-      set((state: any) => ({ notes: [...state.notes, ...deletedNotes] }));
+      set((state) => ({ notes: [...state.notes, ...deletedNotes] }));
       console.error('[Store] 删除笔记失败，已恢复:', res.error);
       return res;
     }
@@ -262,28 +392,27 @@ export const useNoteStore = create<any>((set, get) => ({
   },
 
   toggleExpanded: (id: string) => {
-    set((state: any) => {
+    set((state) => {
       const nodes = state.expandedNodes;
-      const newExpanded = nodes.includes(id) ? nodes.filter((x: string) => x !== id) : [...nodes, id];
+      const newExpanded = nodes.includes(id) ? nodes.filter((x) => x !== id) : [...nodes, id];
       debouncedSaveSidebarState(newExpanded, state.selectedNoteId);
       return { expandedNodes: newExpanded };
     });
   },
 
   reorderPages: (parentId: string, newOrderIds: string[]) => {
-    set((state: any) => ({
-      notes: state.notes.map((n: Note) => {
-        if (n.parent_id === parentId || n.parentId === parentId) {
+    set((state) => ({
+      notes: state.notes.map((n) => {
+        if (n.parentId === parentId) {
           const idx = newOrderIds.indexOf(n.id);
-          return idx >= 0 ? { ...n, order_index: idx, order: idx } : n;
+          return idx >= 0 ? { ...n, order: idx } : n;
         }
         return n;
       })
     }));
     const notes = get().notes;
-    const changed = notes.filter((n: Note) =>
-      (n.parent_id === parentId || n.parentId === parentId) &&
-      newOrderIds.includes(n.id)
+    const changed = notes.filter((n) =>
+      n.parentId === parentId && newOrderIds.includes(n.id)
     );
     changed.forEach(n => debouncedCloudSave(n));
   },
@@ -292,12 +421,11 @@ export const useNoteStore = create<any>((set, get) => ({
     get().reorderPages(parentId, newOrderIds);
   },
 
-  // 锁管理
   lockNote: async (noteId: string, userId: string, userName: string) => {
     const res = await apiLockNote(noteId, userName);
     if (res.success) {
-      set((state: any) => ({
-        notes: state.notes.map((n: Note) => n.id === noteId ? { ...n, is_locked: true, locked_by: userId, lockedBy: userId, locked_by_name: userName, lockedByName: userName } : n)
+      set((state) => ({
+        notes: state.notes.map((n) => n.id === noteId ? { ...n, isLocked: true, lockedBy: userId, lockedByName: userName } : n)
       }));
     }
     return res;
@@ -306,21 +434,21 @@ export const useNoteStore = create<any>((set, get) => ({
   unlockNote: async (noteId: string) => {
     const res = await apiUnlockNote(noteId);
     if (res.success) {
-      set((state: any) => ({
-        notes: state.notes.map((n: Note) => n.id === noteId ? { ...n, is_locked: false, locked_by: null, lockedBy: null, locked_by_name: null, lockedByName: null } : n)
+      set((state) => ({
+        notes: state.notes.map((n) => n.id === noteId ? { ...n, isLocked: false, lockedBy: null, lockedByName: null } : n)
       }));
     }
     return res;
   },
 
   isNoteLockedByOther: (noteId: string, userId: string) => {
-    const note = get().notes.find((n: Note) => n.id === noteId);
+    const note = get().notes.find((n) => n.id === noteId);
     if (!note) return false;
-    return note.is_locked && note.locked_by && note.locked_by !== userId;
+    return !!(note.isLocked && note.lockedBy && note.lockedBy !== userId);
   },
 
   clearLocalCache: () => set({ notes: [], selectedNoteId: null, expandedNodes: [], loadingStatus: '已清除缓存' }),
-  getNoteById: (id: string) => get().notes.find((n: Note) => n.id === id),
+  getNoteById: (id: string) => get().notes.find((n) => n.id === id),
   setSidebarCollapsed: (v: boolean) => set({ sidebarCollapsed: v }),
   setActiveTab: (v: string) => set({ activeTab: v }),
   setSearchQuery: (v: string) => set({ searchQuery: v }),
@@ -329,13 +457,13 @@ export const useNoteStore = create<any>((set, get) => ({
     return _editingNotes.has(noteId);
   },
 
-  upsertNote: (note: any) => {
+  upsertNote: (note: Record<string, unknown>) => {
     const sanitized = sanitizeNote(note);
-    set((state: any) => {
-      const exists = state.notes.some((n: Note) => n.id === sanitized.id);
+    set((state) => {
+      const exists = state.notes.some((n) => n.id === sanitized.id);
       if (exists) {
         return {
-          notes: state.notes.map((n: Note) => n.id === sanitized.id ? { ...n, ...sanitized } : n)
+          notes: state.notes.map((n) => n.id === sanitized.id ? { ...n, ...sanitized } : n)
         };
       }
       return { notes: [...state.notes, sanitized] };
@@ -354,32 +482,32 @@ export const useNoteStore = create<any>((set, get) => ({
   },
 
   removeNoteFromStore: (noteId: string) => {
-    set((state: any) => ({
-      notes: state.notes.filter((n: Note) => n.id !== noteId),
+    set((state) => ({
+      notes: state.notes.filter((n) => n.id !== noteId),
       selectedNoteId: state.selectedNoteId === noteId ? null : state.selectedNoteId
     }));
   },
 
   updateNoteLock: (noteId: string, isLocked: boolean, lockedBy: string | null, lockedByName: string | null) => {
-    set((state: any) => ({
-      notes: state.notes.map((n: Note) =>
+    set((state) => ({
+      notes: state.notes.map((n) =>
         n.id === noteId
-          ? { ...n, is_locked: isLocked, locked_by: lockedBy, lockedBy: lockedBy, locked_by_name: lockedByName, lockedByName: lockedByName }
+          ? { ...n, isLocked, lockedBy, lockedByName }
           : n
       )
     }));
   },
 
   addSSENotification: (notification: SSENotification) => {
-    set((state: any) => ({
+    set((state) => ({
       sseNotifications: [...state.sseNotifications, notification]
     }));
   },
 
   clearSSENotifications: (noteId?: string) => {
     if (noteId) {
-      set((state: any) => ({
-        sseNotifications: state.sseNotifications.filter((n: SSENotification) => n.noteId !== noteId)
+      set((state) => ({
+        sseNotifications: state.sseNotifications.filter((n) => n.noteId !== noteId)
       }));
     } else {
       set({ sseNotifications: [] });
@@ -387,7 +515,7 @@ export const useNoteStore = create<any>((set, get) => ({
   },
 
   triggerFolderRefresh: () => {
-    set((state: any) => ({ folderRefreshTrigger: state.folderRefreshTrigger + 1 }));
+    set((state) => ({ folderRefreshTrigger: state.folderRefreshTrigger + 1 }));
   },
 }));
 

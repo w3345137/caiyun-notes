@@ -2,7 +2,6 @@ import React from 'react';
 import {
   DndContext,
   closestCenter,
-  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -24,7 +23,6 @@ interface SortableWrapperProps {
 
 export const SortableWrapper: React.FC<SortableWrapperProps> = ({ id, children }) => {
   const {
-    attributes,
     listeners,
     setNodeRef,
     transform,
@@ -39,7 +37,7 @@ export const SortableWrapper: React.FC<SortableWrapperProps> = ({ id, children }
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} {...listeners}>
       {children}
     </div>
   );
@@ -62,8 +60,7 @@ export const SectionsDndArea: React.FC<SectionsDndAreaProps> = ({
   children,
 }) => {
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor)
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -102,8 +99,7 @@ export const PagesDndArea: React.FC<PagesDndAreaProps> = ({
   children,
 }) => {
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor)
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
   const handleDragEnd = (event: DragEndEvent) => {

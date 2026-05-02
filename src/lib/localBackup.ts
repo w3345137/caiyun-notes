@@ -383,7 +383,7 @@ async function getBackupsIndexedDB(noteId: string): Promise<BackupRecord[]> {
  */
 export async function getBackup(backupId: string): Promise<BackupRecord | null> {
   if (isTauri()) {
-    const noteId = backupId.replace(/-\d+$/, '');
+    const noteId = backupId.replace(/-\d{13}$/, '');
     const backups = await getBackupsTauri(noteId);
     return backups.find(b => b.id === backupId) || null;
   }
@@ -419,7 +419,7 @@ export async function deleteBackup(backupId: string): Promise<{ success: boolean
   if (isTauri()) {
     try {
       if (!window.__TAURI__) return { success: false };
-      const noteId = backupId.replace(/-\d+$/, '');
+      const noteId = backupId.replace(/-\d{13}$/, '');
       const noteDir = getTauriNoteDir(noteId);
       const dirExists = await tauriExists(noteDir);
       if (!dirExists) return { success: false };
@@ -513,7 +513,8 @@ async function cleanOldBackupsTauri(noteId: string, maxVersions: number): Promis
       const files = await tauriReadDir(noteDir);
       for (const file of files) {
         if (file.isDirectory || !file.name.endsWith('.json')) continue;
-        if (file.name.includes(backup.id.split('-')[1])) {
+        const timestamp = backup.id.replace(/^.*-(\d{13})$/, '$1');
+        if (file.name.includes(timestamp)) {
           try {
             await tauriRemove(`${noteDir}/${file.name}`);
             console.log('[Backup] 已删除旧备份:', file.name);

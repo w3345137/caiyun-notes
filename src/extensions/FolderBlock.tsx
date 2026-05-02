@@ -5,7 +5,7 @@ import { Download, Trash2, FileText, Image, Video, Volume2, FileCode, Cloud, Upl
 import { downloadFromOneDrive, uploadToOneDrive, formatFileSize, getFileIconType, getAttachments } from '../lib/onedriveService';
 import { useAuth } from '../components/AuthProvider';
 import { useNoteStore } from '../store/noteStore';
-import { toast } from 'sonner';
+import toast from 'react-hot-toast';
 
 interface FolderFile {
   id: string;
