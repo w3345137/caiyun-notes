@@ -38,6 +38,9 @@ import { AttachmentInsertModal } from '../components/AttachmentInsertModal';
 import { apiGetNotebookShares } from '../lib/edgeApi';
 import { PROSEMIRROR_CSS } from '../lib/editorStyles';
 import { checkNotebookOnedrive } from '../lib/onedriveService';
+import { checkNotebookBaidu } from '../lib/baiduService';
+import { checkNotebookQiniu } from '../lib/qiniuService';
+import { apiGetCloudProvider } from '../lib/edgeApi';
 import { getNotebookLLMConfig } from '../lib/llmService';
 
 // 延迟初始化 mermaid - Safari 兼容性修复
@@ -1436,19 +1439,41 @@ export const NoteEditor: React.FC = () => {
     }
   };
 
-  // 处理插入文件夹点击（检查笔记本所有者的 OneDrive 绑定状态）
+  // 获取笔记本的云存储提供商
+  const getNoteCloudProvider = useCallback(async (noteId: string): Promise<string> => {
+    try {
+      const cpRes = await apiGetCloudProvider(noteId);
+      return cpRes?.success ? cpRes.data?.cloud_provider : null;
+    } catch { return null; }
+  }, []);
+
+  // 检查指定云存储提供商是否可用
+  const checkCloudProvider = useCallback(async (noteId: string, provider: string | null): Promise<{ bound: boolean; isOwner: boolean; access: string }> => {
+    if (!provider || provider === 'onedrive') {
+      return checkNotebookOnedrive(noteId);
+    } else if (provider === 'baidu') {
+      return checkNotebookBaidu(noteId);
+    } else if (provider === 'qiniu') {
+      return checkNotebookQiniu(noteId);
+    }
+    return { bound: false, isOwner: false, access: 'none' };
+  }, []);
+
+  // 处理插入文件夹点击
   const handleAttachmentClick = async () => {
     if (!user || !selectedNote?.id) return;
-    const result = await checkNotebookOnedrive(selectedNote.id);
-    if (!result.bound) {
-      if (result.isOwner) {
-        toast.error('请先绑定 OneDrive 账号');
+    const cp = await getNoteCloudProvider(selectedNote.id);
+    const checkResult = await checkCloudProvider(selectedNote.id, cp);
+    const providerName = cp === 'baidu' ? '百度网盘' : cp === 'qiniu' ? '七牛云' : 'OneDrive';
+    if (!checkResult.bound) {
+      if (checkResult.isOwner) {
+        toast.error(`请先绑定 ${providerName} 账号`);
       } else {
-        toast.error('该笔记本所有者未绑定 OneDrive，无法使用文件夹功能');
+        toast.error(`该笔记本所有者未绑定 ${providerName}，无法使用文件夹功能`);
       }
       return;
     }
-    if (result.access === 'view') {
+    if (checkResult.access === 'view') {
       toast.error('只有查看权限，无法上传文件');
       return;
     }

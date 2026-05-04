@@ -70,3 +70,11 @@ export const deleteNoteFromCloud = apiDeleteNote;
 export const batchUpdateOrder = apiBatchUpdateOrder;
 export const loadSidebarState = apiLoadSidebarState;
 export const saveSidebarState = apiSaveSidebarState;
+
+// === 云存储切换 ===
+export const apiSetCloudProvider = async (notebookId: string, provider: string | null) => {
+  return call('/notes-query', { action: 'setCloudProvider', notebook_id: notebookId, provider });
+};
+export const apiGetCloudProvider = async (notebookId: string) => {
+  return call('/notes-query', { action: 'getCloudProvider', notebook_id: notebookId });
+};

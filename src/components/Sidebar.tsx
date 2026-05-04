@@ -25,6 +25,8 @@ import { InviteManagementModal } from './InviteManagementModal';
 import { LLMConfigModal } from './LLMConfigModal';
 import { CloudStorageHubModal } from './CloudStorageHubModal';
 import { checkNotebooksBaiduBatch } from '../lib/baiduService';
+import { checkNotebookOnedrive } from '../lib/onedriveService';
+import { apiGetCloudProvider, apiSetCloudProvider } from '../lib/edgeApi';
 import { getBackupConfig } from '../lib/localBackup';
 import { canUserEditPage } from '../lib/lockService';
 
@@ -284,6 +286,9 @@ const NotebookItem: React.FC<{
 }> = ({ notebook, sections, isExpanded, isActive, activeSection, onToggle, onSectionClick, onTitleChange, onDelete, onAddSection, onShare, onIconChange, onCopyId, onViewInvites, isShared = false, isOwner = false, hasStorage = false, hasBaiduStorage = false }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [dragOverSectionIndex, setDragOverSectionIndexLocal] = useState<number | null>(null);
+  const [showCloudSwitch, setShowCloudSwitch] = useState(false);
+  const [cloudProvider, setCloudProvider] = useState<string | null>(null);
+  const [cloudOptions, setCloudOptions] = useState<{key: string; label: string; icon: string; bound: boolean}[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // 点击外部关闭菜单
@@ -367,6 +372,33 @@ const NotebookItem: React.FC<{
                 <Folder className="w-4 h-4 text-blue-500" />
                 新建分区
               </button>
+              {isOwner && (
+                <button
+                  onClick={async () => {
+                    setShowCloudSwitch(true);
+                    // 检查可用云存储
+                    const [odRes, bdRes] = await Promise.all([
+                      checkNotebookOnedrive(notebook.id).catch(() => ({bound: false})),
+                      import('../lib/baiduService').then(m => m.checkNotebookBaidu(notebook.id)).catch(() => ({bound: false})),
+                    ]);
+                    const qnRes = await import('../lib/qiniuService').then(m => m.checkNotebookQiniu(notebook.id)).catch(() => ({bound: false}));
+                    // 获取当前设置
+                    const cpRes = await apiGetCloudProvider(notebook.id);
+                    const current = cpRes?.success ? cpRes.data?.cloud_provider : null;
+                    setCloudProvider(current);
+                    setCloudOptions([
+                      { key: '', label: '无（未设置）', icon: '', bound: true },
+                      { key: 'onedrive', label: 'OneDrive', icon: '☁️', bound: odRes.bound },
+                      { key: 'baidu', label: '百度网盘', icon: '💾', bound: bdRes.bound },
+                      { key: 'qiniu', label: '七牛云', icon: '🗄️', bound: qnRes.bound },
+                    ].filter(o => o.bound));
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <HardDrive className="w-4 h-4 text-orange-500" />
+                  切换云存储
+                </button>
+              )}
               {hasStorage && (
                 <div className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-500 cursor-default">
                   <HardDrive className="w-4 h-4" />
@@ -387,6 +419,29 @@ const NotebookItem: React.FC<{
                 删除
               </button>
             </SmartDropdown>
+          )}
+          {/* 云存储切换子菜单 */}
+          {showCloudSwitch && (
+            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[60] min-w-[160px]">
+              <div className="px-3 py-1.5 text-xs text-gray-400 border-b border-gray-100">选择云存储</div>
+              {cloudOptions.map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={async () => {
+                    await apiSetCloudProvider(notebook.id, opt.key || null);
+                    setCloudProvider(opt.key || null);
+                    setShowCloudSwitch(false);
+                    setShowMenu(false);
+                    toast.success(opt.key ? `已切换至 ${opt.label}` : '已取消云存储绑定');
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 ${cloudProvider === opt.key || (!cloudProvider && !opt.key) ? 'text-blue-600 font-medium' : 'text-gray-700'}`}
+                >
+                  <span>{opt.icon}</span>
+                  <span>{opt.label}</span>
+                  {(cloudProvider === opt.key || (!cloudProvider && !opt.key)) && <span className="ml-auto text-blue-500">✓</span>}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </div>
