@@ -193,15 +193,25 @@ jobs:
               shutil.copy2('latest.json', staged_dir)
           PYEOF
 
-      - name: Upload to server
+      - name: Upload platform files to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: 49.235.160.8
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "staged/**/*,latest.json"
+          source: "staged/**/*"
           target: "/notesapp/updates-tmp"
           strip_components: 1
+
+      - name: Upload latest.json to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 49.235.160.8
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "latest.json"
+          target: "/notesapp/updates-tmp"
+          strip_components: 0
 
       - name: Move updates into place
         uses: appleboy/ssh-action@v1.0.3

@@ -23,7 +23,7 @@ import { NotebookShareModal } from './NotebookShareModal';
 import { JoinNotebookModal } from './JoinNotebookModal';
 import { InviteManagementModal } from './InviteManagementModal';
 import { LLMConfigModal } from './LLMConfigModal';
-import { BaiduModal } from './BaiduModal';
+import { CloudStorageHubModal } from './CloudStorageHubModal';
 import { checkNotebooksBaiduBatch } from '../lib/baiduService';
 import { getBackupConfig } from '../lib/localBackup';
 import { canUserEditPage } from '../lib/lockService';
@@ -545,8 +545,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   const [showExportModal, setShowExportModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showOneDriveModal, setShowOneDriveModal] = useState(false);
-  const [showBaiduModal, setShowBaiduModal] = useState(false);
+  const [showCloudHub, setShowCloudHub] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailNotebookId, setEmailNotebookId] = useState<string | null>(null);
   const [showLLMConfigModal, setShowLLMConfigModal] = useState(false);
@@ -1031,18 +1030,11 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                     笔记导出/导入
                   </button>
                   <button
-                    onClick={() => { setShowOneDriveModal(true); setShowUserMenu(false); }}
+                    onClick={() => { setShowCloudHub(true); setShowUserMenu(false); }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
                   >
-                    <Cloud className="w-4 h-4 text-sky-500" />
-                    OneDrive 云盘
-                  </button>
-                  <button
-                    onClick={() => { setShowBaiduModal(true); setShowUserMenu(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <HardDrive className="w-4 h-4 text-green-500" />
-                    百度网盘
+                    <Cloud className="w-4 h-4 text-indigo-500" />
+                    绑定个人云盘
                   </button>
                   <button
                     onClick={() => { setShowLLMConfigModal(true); setShowUserMenu(false); }}
@@ -1264,14 +1256,9 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
         <InviteManagementModal onClose={() => setShowInviteModal(false)} />
       )}
 
-      {/* OneDrive 云盘弹窗 */}
-      {showOneDriveModal && (
-        <OneDriveModal onClose={() => setShowOneDriveModal(false)} />
-      )}
-
-      {/* 百度网盘弹窗 */}
-      {showBaiduModal && (
-        <BaiduModal onClose={() => setShowBaiduModal(false)} />
+      {/* 个人云盘绑定弹窗 */}
+      {showCloudHub && (
+        <CloudStorageHubModal onClose={() => setShowCloudHub(false)} />
       )}
 
       <EmailAccountModal
