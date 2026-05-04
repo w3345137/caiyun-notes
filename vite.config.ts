@@ -17,6 +17,11 @@ export default defineConfig(({ mode }) => {
       })
     ],
     base: isTest ? '/test/' : '/',
+    build: {
+      rollupOptions: {
+        external: ['@tauri-apps/plugin-shell'],
+      },
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

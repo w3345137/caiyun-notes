@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { Search, BookOpen, ChevronDown, ChevronRight, Folder, MoreHorizontal, Trash2, Edit2, Plus, User, Settings, Download, Info, Sun, Flower, Glasses, Star, Heart, Zap, Moon, Cloud, Music, Coffee, Book, Camera, Users, LogOut, Share2, X, Tag, Bell, Briefcase, Calendar, Flag, Globe, Home, Map, MessageSquare, Phone, ShoppingCart, Target, Trophy, Umbrella, Video, Volume2, Wallet, Award, BookMarked, BriefcaseBusiness, Building, Car, Clock, Code, Compass, DollarSign, Droplet, Feather, FileText, FolderOpen, Gift, Globe2, Hammer, Key, Lightbulb, Link, Lock, Mail, MapPin, Monitor, Notebook, Package, Palette, Pencil, PieChart, Plane, Printer, Puzzle, Rocket, Scissors, Shield, Smile, Smartphone, Snowflake, Stamp, SunMoon, Tent, Timer, TreePine, Truck, Tv, Wrench, FileCode, GitBranch, Send, CheckCircle, Bug, GripVertical, Upload, Copy, Eye, RefreshCw, HelpCircle, PanelLeftClose, PanelLeft, History } from 'lucide-react';
+import { Search, BookOpen, ChevronDown, ChevronRight, Folder, MoreHorizontal, Trash2, Plus, User, Settings, Download, Info, Sun, Flower, Glasses, Star, Heart, Zap, Moon, Cloud, Music, Coffee, Book, Camera, Users, LogOut, Share2, X, Tag, Bell, Briefcase, Calendar, Flag, Globe, Home, Map, MessageSquare, Phone, ShoppingCart, Target, Trophy, Umbrella, Video, Wallet, Award, BookMarked, BriefcaseBusiness, Building, Car, Clock, Code, Compass, DollarSign, Droplet, Feather, FileText, FolderOpen, Gift, Globe2, Hammer, Key, Lightbulb, Link, Lock, Mail, MapPin, Monitor, Notebook, Package, Palette, Pencil, PieChart, Plane, Printer, Puzzle, Rocket, Scissors, Shield, Smile, Smartphone, Snowflake, Stamp, SunMoon, Tent, Timer, TreePine, Truck, Tv, Wrench, Send, Bug, GripVertical, Upload, Copy, RefreshCw, PanelLeftClose, PanelLeft, History } from 'lucide-react';
 import { useNoteStore } from '../store/noteStore';
 import { useAuth } from './AuthProvider';
 import { signOut } from '../lib/auth';
@@ -9,17 +9,22 @@ import { AdminConsole } from './AdminConsole';
 import { ExportModal } from './ExportModal';
 import { Note } from '../types';
 import toast from 'react-hot-toast';
-import { shareNotebook, unshareNotebook, getNotebookShares, getSharedNotebookIds, getUpdateLogs, updateUpdateLog, addUpdateLog, deleteUpdateLog } from '../lib/initDatabase';
-import { getReceivedInvites, getMyInvites, getPendingInviteCount, createInvite, respondToInvite, cancelInvite, NotebookInvite } from '../lib/inviteService';
-import { getUpdateLogsCache, setUpdateLogsCache } from '../store/noteStore';
+import { getSharedNotebookIds } from '../lib/initDatabase';
+import { getPendingInviteCount } from '../lib/inviteService';
 import { NotebookSkeleton, SectionSkeleton, PageSkeleton } from './SkeletonItems';
 import { ConfirmModal } from './ConfirmModal';
 import { Cloud, HardDrive, Bot } from 'lucide-react';
-import { getAttachments, getOneDriveAuthUrl, uploadToOneDrive, deleteAttachment, downloadFromOneDrive, formatFileSize, getFileIconType, checkOneDriveBinding, checkNotebooksStorageBatch, Attachment } from '../lib/onedriveService';
-import { checkLLMConfig, saveLLMConfig, deleteLLMConfig, testLLMConnection } from '../lib/llmService';
-import { SectionsDndArea, SectionWrapper, PageWrapper, PagesDndArea, getPageIcon } from './DndComponents';
-import { BackupConfigModal } from './BackupConfigModal';
+import { uploadToOneDrive, getFileIconType, checkNotebooksStorageBatch } from '../lib/onedriveService';
+import { SectionsDndArea, SectionWrapper, PageWrapper, PagesDndArea } from './DndComponents';
 import { BackupHistoryModal } from './BackupHistoryModal';
+import { BackupConfigModal } from './BackupConfigModal';
+import { UpdateLogsModal } from './UpdateLogsModal';
+import { NotebookShareModal } from './NotebookShareModal';
+import { JoinNotebookModal } from './JoinNotebookModal';
+import { InviteManagementModal } from './InviteManagementModal';
+import { LLMConfigModal } from './LLMConfigModal';
+import { BaiduModal } from './BaiduModal';
+import { checkNotebooksBaiduBatch } from '../lib/baiduService';
 import { getBackupConfig } from '../lib/localBackup';
 import { canUserEditPage } from '../lib/lockService';
 
@@ -275,7 +280,8 @@ const NotebookItem: React.FC<{
   isShared?: boolean;
   isOwner?: boolean;
   hasStorage?: boolean;
-}> = ({ notebook, sections, isExpanded, isActive, activeSection, onToggle, onSectionClick, onTitleChange, onDelete, onAddSection, onShare, onIconChange, onCopyId, onViewInvites, isShared = false, isOwner = false, hasStorage = false }) => {
+  hasBaiduStorage?: boolean;
+}> = ({ notebook, sections, isExpanded, isActive, activeSection, onToggle, onSectionClick, onTitleChange, onDelete, onAddSection, onShare, onIconChange, onCopyId, onViewInvites, isShared = false, isOwner = false, hasStorage = false, hasBaiduStorage = false }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [dragOverSectionIndex, setDragOverSectionIndexLocal] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -364,7 +370,13 @@ const NotebookItem: React.FC<{
               {hasStorage && (
                 <div className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-500 cursor-default">
                   <HardDrive className="w-4 h-4" />
-                  已绑定储存空间
+                  已绑定OneDrive储存空间
+                </div>
+              )}
+              {hasBaiduStorage && (
+                <div className="w-full flex items-center gap-2 px-3 py-2 text-sm text-green-500 cursor-default">
+                  <HardDrive className="w-4 h-4" />
+                  已绑定百度网盘
                 </div>
               )}
               <button
@@ -506,571 +518,6 @@ const PageItem: React.FC<{
   );
 };
 
-// 更新日志弹窗组件
-const UpdateLogsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { user } = useAuth();
-  const userEmail = user?.email || '';
-  const isAdmin = userEmail === '767493611@qq.com';
-
-  const [updates, setUpdates] = useState<Array<{id?: string; version: string; date: string; items: string[]}>>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
-  const [editVersion, setEditVersion] = useState('');
-  const [editDate, setEditDate] = useState('');
-  const [newVersion, setNewVersion] = useState('');
-  const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
-  const [newItems, setNewItems] = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
-
-  // 按版本号排序（从新到旧）
-  const sortByVersion = (logs: any[]) => {
-    return [...logs].sort((a, b) => {
-      const parseVersion = (v: string) => {
-        const match = v.replace('v', '').split('.').map(Number);
-        while (match.length < 3) match.push(0);
-        return match;
-      };
-      const aParts = parseVersion(a.version);
-      const bParts = parseVersion(b.version);
-      for (let i = 0; i < 3; i++) {
-        if (aParts[i] !== bParts[i]) return bParts[i] - aParts[i];
-      }
-      return 0;
-    });
-  };
-
-  // 加载更新日志（始终优先从数据库读取，缓存仅作为加速）
-  useEffect(() => {
-    const loadLogs = async () => {
-      // 从数据库加载
-      const logs = await getUpdateLogs();
-      if (logs.length > 0) {
-        setUpdates(sortByVersion(logs));
-        setUpdateLogsCache(logs); // 写入缓存
-      } else {
-        // 数据库为空，写入默认数据
-        const defaultLogs = [
-          { version: 'v2.0.1', date: '2026-04-09', items: ['本地备份功能：保存时自动备份，每个页面保留10个版本', '备份恢复锁定检查：被锁页面无权限用户无法恢复', 'APP端备份路径：固定存储在应用数据目录', '删除意见反馈入口'] },
-          { version: 'v1.9', date: '2026-04-02', items: ['RLS 行级安全启用：所有数据库表启用 RLS 策略', '加载体验优化：去掉转圈动画，直接显示进度条', '加载进度细化：每个步骤显示具体操作，方便调试卡顿问题'] },
-          { version: 'v1.8.1.1', date: '2026-03-31', items: ['serviceClient 迁移完成：所有数据库操作改用 Edge Functions', 'initDatabase/sharing/lockService/inviteService/ExportModal/NoteEditor'] },
-          { version: 'v1.7.10', date: '2026-03-31', items: ['修复测试环境部署问题'] },
-          { version: 'v1.7.10', date: '2026-03-30', items: ['修复 App 端 confirm 对话框不显示问题，统一使用 React Modal', '修复 App 端 OneDrive 授权 window.open 不工作问题，改为 iframe 内嵌授权', '所有删除确认改用 ConfirmModal 组件'] },
-          { version: 'v1.7.8', date: '2026-03-30', items: ['错误通知区分数据库连接错误和同步/保存错误，添加 syncError 状态', '页面锁定错误静默跳过，不再闪烁报错', '同步时跳过被锁定的页面，避免阻塞其他笔记同步', '编辑器检测到页面被锁定时主动取消 auto-save'] },
-          { version: 'v1.7.7', date: '2026-03-30', items: ['下载 App 按钮启用，点击弹出百度网盘下载弹窗'] },
-          { version: 'v1.7.6', date: '2026-03-30', items: ['修复共享笔记本新增页面实时同步bug', '去掉锁定页面编辑区灰色蒙版，只保留工具栏禁用效果'] },
-          { version: 'v1.7.5', date: '2026-03-29', items: ['修复测试环境部署后 assets 404 问题：新增 build:test 脚本，正确设置 /test/assets/ 路径', 'OneDrive 绑定和世纪互联支持', '选中颜色调整为浅蓝，顶部 Logo 区域高度调为 47px'] },
-          { version: 'v1.8.4', date: '2026-03-29', items: ['修复 OneDrive callback 中文乱码：atob 返回 Latin-1，改用 TextDecoder 还原 UTF-8', '修复 callback 保存账号失败：client_id/client_secret 改为 DROP NOT NULL'] },
-          { version: 'v1.8.3', date: '2026-03-29', items: ['OneDrive 世纪互联改用 device code 流程（绕过 redirect_uri 注册问题）', '世纪互联 token 端点改为 login.partner.microsoftonline.cn', '世纪互联 scope 使用完整资源 URI 格式', '简化 Edge Functions：去掉 PKCE', 'callback 支持 device_code 轮询和 auth_code 回调两种方式'] },
-          { version: 'v1.8', date: '2026-03-29', items: ['新增 OneDrive 云盘功能：支持上传/下载/删除附件', '附件存储在 OneDrive /彩云笔记/ 目录', '工具栏状态实时跟随光标：加粗/斜体/删除线/列表/标题/字号/字色', '去掉笔记本左侧彩色竖条'] },
-          { version: 'v1.7', date: '2026-03-28', items: ['新增行程规划组件：集成高德地图', '支持地点搜索、驾车路线规划、时间计算', '支持拖拽排序、出发时间设置', '一键复制行程到笔记'] },
-          { version: 'v1.6.4', date: '2026-03-28', items: ['表格工具栏响应优化：用selectionUpdate事件驱动替代渲染时计算', '工具栏加边框，移除插入按钮右边竖线'] },
-          { version: 'v1.6.2', date: '2026-03-28', items: ['页签逻辑彻底简化：去掉onUpdate实时同步，改用onBlur一次性保存', 'TabGroupView添加TextAlign支持，表格单元格内可居中对齐', '点击空白分区时编辑器清空', '锁定按钮仅在共享笔记本的页面显示，非共享笔记本隐藏'] },
-          { version: 'v1.6.1', date: '2026-03-28', items: ['重构页签为单层组件', '所有Tab内容存在attrs.contents中，切换时只替换编辑器内容'] },
-          { version: 'v1.6', date: '2026-03-28', items: ['页签内容隔离', '每个TabItem独立容器，内容互不干扰'] },
-          { version: 'v1.5.4', date: '2026-03-28', items: ['修复页签点击行为', '点击标题切换Tab，点击箭头打开菜单', '修复重命名页签不生效问题', '修复新增页签后内容不显示问题'] },
-          { version: 'v1.5.1', date: '2026-03-28', items: ['新增页面锁功能', '可锁定页面防止他人编辑', '所有者可解锁他人锁定的页面', '24小时锁自动释放'] },
-          { version: 'v1.5', date: '2026-03-28', items: ['新增笔记本ID分享功能', '支持通过ID申请加入笔记本', '所有者可审批加入申请', '批准时可修改权限'] },
-          { version: 'v1.4', date: '2026-03-27', items: ['页签内编辑区增加内边距', '支持 Markdown 语法输入'] },
-          { version: 'v1.4.1.1', date: '2026-03-28', items: ['修复表格单元格内无法精准选择文字问题'] },
-          { version: 'v1.3.2.1', date: '2026-03-27', items: ['支持页面拖拽排序'] },
-          { version: 'v1.2.1', date: '2026-03-26', items: ['优化页面bug和排版'] },
-          { version: 'v1.2', date: '2026-03-26', items: ['支持笔记分享功能', '支持图片和附件', '支持代码高亮'] },
-          { version: 'v1.1', date: '2026-03-25', items: ['支持侧边栏状态持久化', '支持页面图标自定义'] },
-          { version: 'v1.0', date: '2026-03-25', items: ['初始版本发布'] },
-        ];
-        for (const log of defaultLogs) {
-          await addUpdateLog(log);
-        }
-        setUpdates(defaultLogs);
-        setUpdateLogsCache(defaultLogs);
-      }
-      setLoading(false);
-    };
-    loadLogs();
-  }, []);
-
-  const startEdit = (update: {id?: string; version: string; date: string; items: string[]}, index: number) => {
-    setEditingId(update.id || `new-${index}`);
-    setEditVersion(update.version);
-    setEditDate(update.date);
-    setEditText(update.items.join('\n'));
-  };
-
-  const saveEdit = async () => {
-    if (editingId === null) return;
-
-    const newItems = editText.split('\n').filter(s => s.trim());
-    const updateIndex = updates.findIndex(u => (u.id || '') === editingId);
-
-    if (updateIndex !== -1) {
-      const update = updates[updateIndex];
-      const result = await updateUpdateLog(update.id!, {
-        version: editVersion.trim(),
-        date: editDate.trim(),
-        items: newItems,
-      });
-
-      if (result.success) {
-        const updatedLogs = updates.map((u, i) =>
-          i === updateIndex ? { ...u, version: editVersion.trim(), date: editDate.trim(), items: newItems } : u
-        );
-        setUpdates(updatedLogs);
-        setUpdateLogsCache(updatedLogs);
-        toast.success('更新日志已保存');
-      } else {
-        toast.error('保存失败');
-      }
-    }
-
-    setEditingId(null);
-    setEditText('');
-    setEditVersion('');
-    setEditDate('');
-  };
-
-  const handleAddVersion = async () => {
-    if (!newVersion.trim() || !newDate.trim()) {
-      toast.error('请填写版本号和日期');
-      return;
-    }
-    const items = newItems.split('\n').filter(s => s.trim());
-    const result = await addUpdateLog({
-      version: newVersion.trim(),
-      date: newDate.trim(),
-      items,
-    });
-    if (result.success && result.data) {
-      const updatedLogs = sortByVersion([{ ...result.data, items }, ...updates]);
-      setUpdates(updatedLogs);
-      setUpdateLogsCache(updatedLogs);
-      setNewVersion('');
-      setNewDate(new Date().toISOString().split('T')[0]);
-      setNewItems('');
-      setShowAddForm(false);
-      toast.success('版本已添加');
-    } else {
-      toast.error('添加失败');
-    }
-  };
-
-  const handleDeleteVersion = async (id: string) => {
-    setConfirmModal({
-      isOpen: true,
-      title: '删除版本',
-      message: '确定要删除此版本吗？',
-      isDanger: true,
-      onConfirm: async () => {
-        const result = await deleteUpdateLog(id);
-        if (result.success) {
-          const updatedLogs = sortByVersion(updates.filter(u => u.id !== id));
-          setUpdates(updatedLogs);
-          setUpdateLogsCache(updatedLogs);
-          toast.success('版本已删除');
-        } else {
-          toast.error('删除失败');
-        }
-      }
-    });
-  };
-
-  if (loading) {
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-8 text-center">
-          <div className="animate-pulse">加载中...</div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden max-h-[80vh] flex flex-col">
-        <div className="bg-gradient-to-r from-purple-500 to-blue-600 px-6 py-5 flex justify-between items-center flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <GitBranch className="w-6 h-6 text-white" />
-            <div>
-              <h2 className="text-xl font-bold text-white">更新日志</h2>
-              <p className="text-purple-200 text-sm">了解最新功能和改进</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {isAdmin && !showAddForm && (
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="text-white/80 hover:text-white flex items-center gap-1 text-sm"
-              >
-                <Plus className="w-4 h-4" />
-                添加版本
-              </button>
-            )}
-            <button onClick={onClose} className="text-white/80 hover:text-white">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-3 space-y-3">
-          {/* 添加新版本表单 - 管理员可见 */}
-          {isAdmin && showAddForm && (
-            <div className="border-2 border-dashed border-purple-300 rounded-lg p-4 space-y-3 bg-purple-50">
-              <h3 className="text-sm font-semibold text-purple-700">添加新版本</h3>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newVersion}
-                  onChange={(e) => setNewVersion(e.target.value)}
-                  placeholder="版本号，如 v1.5"
-                  className="flex-1 text-xs border border-gray-300 rounded px-2 py-1.5"
-                />
-                <input
-                  type="date"
-                  value={newDate}
-                  onChange={(e) => setNewDate(e.target.value)}
-                  className="text-xs border border-gray-300 rounded px-2 py-1.5"
-                />
-              </div>
-              <textarea
-                value={newItems}
-                onChange={(e) => setNewItems(e.target.value)}
-                placeholder="更新内容（每行一条）"
-                className="w-full text-xs border border-gray-300 rounded p-2 resize-none"
-                rows={3}
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={handleAddVersion}
-                  className="text-xs bg-purple-500 text-white px-4 py-1.5 rounded hover:bg-purple-600"
-                >
-                  确定添加
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setNewVersion('');
-                    setNewItems('');
-                  }}
-                  className="text-xs bg-gray-200 text-gray-700 px-4 py-1.5 rounded hover:bg-gray-300"
-                >
-                  取消
-                </button>
-              </div>
-            </div>
-          )}
-
-          {updates.map((update, index) => (
-            <div key={update.id || index} className="border border-gray-200 rounded-lg p-3 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs font-semibold">
-                  {update.version}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">{update.date}</span>
-                  {isAdmin && (
-                    <button
-                      onClick={() => handleDeleteVersion(update.id!)}
-                      className="text-xs text-red-500 hover:text-red-700"
-                      title="删除版本"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {isAdmin && editingId !== (update.id || `new-${index}`) && (
-                    <button
-                      onClick={() => startEdit(update, index)}
-                      className="text-xs text-purple-600 hover:text-purple-800"
-                    >
-                      编辑
-                    </button>
-                  )}
-                </div>
-              </div>
-              {editingId === (update.id || `new-${index}`) ? (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={editVersion}
-                      onChange={(e) => setEditVersion(e.target.value)}
-                      placeholder="版本号"
-                      className="flex-1 text-xs border border-gray-300 rounded px-2 py-1"
-                    />
-                    <input
-                      type="date"
-                      value={editDate}
-                      onChange={(e) => setEditDate(e.target.value)}
-                      className="text-xs border border-gray-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <textarea
-                    value={editText}
-                    onChange={(e) => setEditText(e.target.value)}
-                    className="w-full text-xs border border-gray-300 rounded p-2 leading-relaxed resize-none"
-                    rows={4}
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={saveEdit}
-                      className="text-xs bg-purple-500 text-white px-3 py-1 rounded hover:bg-purple-600"
-                    >
-                      保存
-                    </button>
-                    <button
-                      onClick={() => setEditingId(null)}
-                      className="text-xs bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300"
-                    >
-                      取消
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <ul className="space-y-1">
-                  {update.items.map((item, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-xs text-gray-600 leading-relaxed">
-                      <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// 笔记本分享弹窗组件
-const NotebookShareModal: React.FC<{
-  notebook: Note;
-  onClose: () => void;
-}> = ({ notebook, onClose }) => {
-  const { user } = useAuth();
-  const [shares, setShares] = useState<any[]>([]);
-  const [newSharerEmail, setNewSharerEmail] = useState('');
-  const [newPermission, setNewPermission] = useState<'view' | 'edit'>('edit');
-  const [loading, setLoading] = useState(false);
-  const [loadingShares, setLoadingShares] = useState(true); // 加载共享者列表的状态
-  // 确认弹窗状态
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
-
-  const displayName = user?.display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || '未知用户';
-
-  // 从数据库加载分享列表
-  useEffect(() => {
-    const loadShares = async () => {
-      setLoadingShares(true);
-      try {
-        const data = await getNotebookShares(notebook.id);
-        setShares(data);
-      } catch (error) {
-        console.error('加载共享者列表失败:', error);
-      } finally {
-        setLoadingShares(false);
-      }
-    };
-    loadShares();
-  }, [notebook.id]);
-
-  const handleAddSharer = async () => {
-    if (!newSharerEmail) {
-      toast.error('请输入邮箱地址');
-      return;
-    }
-
-    // 验证邮箱格式
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newSharerEmail)) {
-      toast.error('请输入有效的邮箱地址');
-      return;
-    }
-
-    // 检查是否是自己
-    if (newSharerEmail === user?.email) {
-      toast.error('不能将自己添加为共享者');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await shareNotebook(notebook.id, newSharerEmail, newPermission);
-      if (result.success) {
-        toast.success(`已添加 ${newSharerEmail}，权限：${newPermission === 'edit' ? '可编辑' : '仅查看'}`);
-        // 重新加载分享列表
-        const data = await getNotebookShares(notebook.id);
-        setShares(data);
-        setNewSharerEmail('');
-      } else {
-        // 显示详细的错误信息
-        toast.error(result.error || '添加共享者失败，请重试');
-      }
-    } catch (error) {
-      console.error('添加共享者失败:', error);
-      toast.error('添加共享者失败，请重试');
-    }
-    setLoading(false);
-  };
-
-  const handleRemoveSharer = async (email: string) => {
-    setConfirmModal({
-      isOpen: true,
-      title: '取消共享',
-      message: `确定要取消共享给 ${email} 吗？`,
-      onConfirm: async () => {
-        try {
-          const result = await unshareNotebook(notebook.id, email);
-          if (result.success) {
-            toast.success(`已取消共享给 ${email}`);
-            const data = await getNotebookShares(notebook.id);
-            setShares(data);
-          } else {
-            toast.error(result.error || '取消共享失败，请重试');
-          }
-        } catch (error) {
-          console.error('取消共享失败:', error);
-          toast.error('取消共享失败，请重试');
-        }
-      }
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-        <div className="bg-gradient-to-r from-green-500 to-teal-600 px-6 py-5 flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold text-white">分享设置</h2>
-            <p className="text-green-100 text-sm truncate max-w-[200px]">{notebook.title}</p>
-          </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-4">
-          {/* 所有者 */}
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-sm text-gray-500 mb-1">所有者</p>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-                <span className="text-sm font-medium text-purple-600">{displayName.charAt(0).toUpperCase()}</span>
-              </div>
-              <span className="font-medium text-gray-800">{displayName}</span>
-            </div>
-          </div>
-
-          {/* 添加共享者 */}
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">添加共享者</p>
-            <div className="space-y-2">
-              <input
-                type="email"
-                value={newSharerEmail}
-                onChange={(e) => setNewSharerEmail(e.target.value)}
-                placeholder="输入邮箱地址"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-              />
-              <div className="flex gap-2">
-                <div className="flex-1 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNewPermission('edit')}
-                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      newPermission === 'edit'
-                        ? 'bg-green-500 text-white shadow-sm'
-                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                    }`}
-                  >
-                    可编辑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewPermission('view')}
-                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      newPermission === 'view'
-                        ? 'bg-blue-500 text-white shadow-sm'
-                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                    }`}
-                  >
-                    仅查看
-                  </button>
-                </div>
-                <button
-                  onClick={handleAddSharer}
-                  disabled={loading || !newSharerEmail}
-                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 text-sm"
-                >
-                  添加
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 共享者列表 */}
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">已共享 ({loadingShares ? '...' : shares.length})</p>
-            {loadingShares ? (
-              <div className="flex items-center justify-center py-4">
-                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-2"></div>
-                <span className="text-sm text-gray-500">加载中...</span>
-              </div>
-            ) : shares.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">暂无共享者</p>
-            ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {shares.map((share) => (
-                  <div key={share.id || share.shared_email} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
-                        <span className="text-xs text-blue-600">{(share.display_name || share.email || '?').charAt(0).toUpperCase()}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-sm text-gray-800 font-medium">{share.display_name || share.email}</span>
-                        <span className="text-xs text-gray-400">{share.email}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-1 rounded ${share.permission === 'edit' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                        {share.permission === 'edit' ? '可编辑' : '仅查看'}
-                      </span>
-                      <button
-                        onClick={() => handleRemoveSharer(share.email)}
-                        className="p-1 text-red-500 hover:bg-red-50 rounded"
-                        title="取消共享"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 确认弹窗 */}
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        onConfirm={() => {
-          confirmModal.onConfirm();
-          setConfirmModal({ ...confirmModal, isOpen: false });
-        }}
-        onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })}
-      />
-    </div>
-  );
-};
-
 export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = ({ collapsed, onToggle }) => {
   const { user } = useAuth();
   const notes = useNoteStore((state) => state.notes);
@@ -1099,6 +546,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showOneDriveModal, setShowOneDriveModal] = useState(false);
+  const [showBaiduModal, setShowBaiduModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailNotebookId, setEmailNotebookId] = useState<string | null>(null);
   const [showLLMConfigModal, setShowLLMConfigModal] = useState(false);
@@ -1117,6 +565,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
   const [sharedNotebookIds, setSharedNotebookIds] = useState<Set<string>>(new Set());
   const [storageBoundIds, setStorageBoundIds] = useState<Set<string>>(new Set());
+  const [baiduBoundIds, setBaiduBoundIds] = useState<Set<string>>(new Set());
   const [dragOverPageIndex, setDragOverPageIndex] = useState<number | null>(null);
   const [dragOverSectionIndex, setDragOverSectionIndex] = useState<{ [key: string]: number }>({});
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -1156,6 +605,11 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
         const boundSet = new Set<string>();
         result.forEach((bound, nid) => { if (bound) boundSet.add(nid); });
         setStorageBoundIds(boundSet);
+        // 同步检查百度网盘绑定
+        const baiduResult = await checkNotebooksBaiduBatch(ids);
+        const bdBoundSet = new Set<string>();
+        baiduResult.forEach((bound, nid) => { if (bound) bdBoundSet.add(nid); });
+        setBaiduBoundIds(bdBoundSet);
       } catch (e) {
         console.error('批量获取储存空间状态失败:', e);
       }
@@ -1357,23 +811,26 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   }, []);
 
   // 复制笔记本ID
-  const handleCopyNotebookId = useCallback((notebook: Note) => {
-    // 兼容 HTTP 环境的复制方法
-    const textArea = document.createElement('textarea');
-    textArea.value = notebook.id;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-9999px';
-    textArea.style.top = '-9999px';
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
+  const handleCopyNotebookId = useCallback(async (notebook: Note) => {
     try {
-      document.execCommand('copy');
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(notebook.id);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = notebook.id;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
       toast.success('笔记本ID已复制到剪贴板');
-    } catch (err) {
+    } catch {
       toast.error('复制失败');
     }
-    document.body.removeChild(textArea);
   }, []);
 
   // 打开查看申请弹窗
@@ -1457,6 +914,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                         isShared={isShared}
                         isOwner={notebook.owner_id === user?.id}
                         hasStorage={storageBoundIds.has(notebook.id)}
+                        hasBaiduStorage={baiduBoundIds.has(notebook.id)}
                       />
                     </div>
                   );
@@ -1578,6 +1036,13 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                   >
                     <Cloud className="w-4 h-4 text-sky-500" />
                     OneDrive 云盘
+                  </button>
+                  <button
+                    onClick={() => { setShowBaiduModal(true); setShowUserMenu(false); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <HardDrive className="w-4 h-4 text-green-500" />
+                    百度网盘
                   </button>
                   <button
                     onClick={() => { setShowLLMConfigModal(true); setShowUserMenu(false); }}
@@ -1717,7 +1182,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
 
       {/* 更新日志弹窗 */}
       {showUpdateLogs && (
-        <UpdateLogsModal onClose={() => setShowUpdateLogs(false)} />
+        <UpdateLogsModal isAdmin={user?.email === '767493611@qq.com'} onClose={() => setShowUpdateLogs(false)} />
       )}
 
       {/* 下载 App 弹窗 */}
@@ -1803,6 +1268,12 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
       {showOneDriveModal && (
         <OneDriveModal onClose={() => setShowOneDriveModal(false)} />
       )}
+
+      {/* 百度网盘弹窗 */}
+      {showBaiduModal && (
+        <BaiduModal onClose={() => setShowBaiduModal(false)} />
+      )}
+
       <EmailAccountModal
         show={showEmailModal}
         onClose={() => { setShowEmailModal(false); setEmailNotebookId(null); }}
@@ -2448,561 +1919,6 @@ const LLMConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           </div>
         </div>
       </div>
-    </div>
-  );
-};
-
-// OneDrive 云盘管理弹窗
-  const OneDriveModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { user } = useAuth();
-    const [activeTab, setActiveTab] = useState<'bind' | 'files'>('bind');
-    const [clientId, setClientId] = useState('');
-    const [clientSecret, setClientSecret] = useState('');
-    const [tenantId, setTenantId] = useState('');
-    const [cloudType, setCloudType] = useState<'international' | '世纪互联'>('世纪互联');
-    const [isBinding, setIsBinding] = useState(false);
-    const [isBound, setIsBound] = useState(false);
-    const [attachments, setAttachments] = useState<Attachment[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [showGuide, setShowGuide] = useState(false);
-    const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null);
-    useEffect(() => {
-      return () => {
-        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-        if (messageHandlerRef.current) window.removeEventListener('message', messageHandlerRef.current);
-      };
-    }, []);
-    // 确认弹窗
-    const [confirmModal, setConfirmModal] = useState<{
-      isOpen: boolean;
-      title: string;
-      message: string;
-      onConfirm: () => void;
-    }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
-    // 调试信息
-    const [showDebug, setShowDebug] = useState(false);
-    const [debugLog, setDebugLog] = useState<Array<{ step: string; status: 'pending' | 'ok' | 'error'; detail: string }>>([]);
-
-  useEffect(() => {
-    checkBindingStatus();
-  }, []);
-
-  const checkBindingStatus = async () => {
-    if (!user) return;
-    const result = await checkOneDriveBinding();
-    setIsBound(result.bound);
-    // 不自动跳转到文件管理，保持在绑定设置页
-  };
-
-  // 调试日志
-  const addDebug = (step: string, status: 'pending' | 'ok' | 'error', detail: string) => {
-    setDebugLog(prev => {
-      const filtered = prev.filter(d => d.step !== step);
-      return [...filtered, { step, status, detail }];
-    });
-  };
-  const clearDebug = () => setDebugLog([]);
-
-  // 检查绑定状态（popup 关闭后调用）
-  const checkBindStatus = async () => {
-    if (!user) return;
-    addDebug('检查绑定状态', 'pending', '查询数据库...');
-    const result = await getAttachments();
-    if (result.success && result.data && result.data.length >= 0) {
-      addDebug('检查绑定状态', 'ok', '数据库查询成功');
-      setIsBound(true);
-      setActiveTab('files');
-      loadAttachments();
-    } else {
-      addDebug('检查绑定状态', 'error', '查询失败或未绑定');
-    }
-  };
-
-  const loadAttachments = async () => {
-    if (!user) return;
-    setLoading(true);
-    const result = await getAttachments();
-    if (result.success) {
-      setAttachments(result.data || []);
-    }
-    setLoading(false);
-  };
-
-  // 检测是否在 Tauri APP 中
-  const isTauriApp = typeof (window as any).__TAURI__ !== 'undefined' ||
-    (navigator.userAgent || '').includes('Tauri') ||
-    (navigator.userAgent || '').includes('彩云笔记');
-
-  const handleBind = async () => {
-    if (!user || !clientId.trim() || !clientSecret.trim()) {
-      toast.error('请填写完整的 Client ID 和 Client Secret');
-      return;
-    }
-    if (cloudType === '世纪互联' && !tenantId.trim()) {
-      toast.error('请填写世纪互联的租户 ID');
-      return;
-    }
-    setIsBinding(true);
-    clearDebug();
-
-    try {
-      // 步骤1：调用本地后端获取授权 URL
-      addDebug('① 获取授权 URL', 'pending', '发送请求...');
-
-      const result = await getOneDriveAuthUrl(clientId.trim(), cloudType, cloudType === '世纪互联' ? tenantId.trim() : undefined);
-      const authUrl = result.authUrl;
-
-      if (!authUrl) {
-        addDebug('① 获取授权 URL', 'error', '返回无 authUrl');
-        toast.error('获取授权 URL 失败');
-        setIsBinding(false);
-        return;
-      }
-
-      addDebug('① 获取授权 URL', 'ok', `URL: ${authUrl.slice(0, 100)}...`);
-
-      // Tauri APP：使用外部浏览器打开 + 轮询检查绑定状态
-      if (isTauriApp) {
-        addDebug('② 打开授权页', 'ok', '正在唤起系统浏览器...');
-        toast.success('正在打开系统浏览器，请完成授权后返回...');
-        // Tauri 中 window.open 会唤起系统浏览器
-        window.open(authUrl, '_blank');
-        setIsBinding(false);
-
-        // 轮询检查绑定状态（每3秒检查一次，最多60秒）
-        let pollCount = 0;
-        const maxPoll = 20;
-        const tauriPollTimer = setInterval(async () => {
-          pollCount++;
-          addDebug('③ 检查绑定', 'pending', `第 ${pollCount}/${maxPoll} 次检查...`);
-          const checkResult = await checkOneDriveBinding();
-          if (checkResult.bound) {
-            clearInterval(tauriPollTimer);
-            pollTimerRef.current = null;
-            addDebug('③ 授权成功', 'ok', '检测到绑定状态');
-            toast.success('OneDrive 绑定成功！');
-            setIsBound(true);
-            setActiveTab('files');
-            loadAttachments();
-          } else if (pollCount >= maxPoll) {
-            clearInterval(tauriPollTimer);
-            pollTimerRef.current = null;
-            addDebug('③ 授权超时', 'error', '60秒内未检测到绑定');
-            toast.error('授权超时，请重试');
-          }
-        }, 3000);
-        pollTimerRef.current = tauriPollTimer;
-        return;
-      }
-
-      // 浏览器：使用弹窗 + postMessage 方案
-      // 先同步打开空白弹窗（必须在用户点击的同步上下文中，否则会被浏览器拦截）
-      const popup = window.open('about:blank', 'onedrive_auth', 'width=600,height=700,left=200,top=100,toolbar=no,menubar=no');
-
-      if (!popup) {
-        addDebug('② 打开授权窗口', 'error', '弹窗被浏览器拦截');
-        toast.error('弹窗被浏览器拦截，请允许弹窗后重试');
-        setIsBinding(false);
-        return;
-      }
-
-      // 步骤2：在已打开的弹窗中导航到授权 URL
-      addDebug('② 导航到授权页', 'ok', '弹窗已打开，正在跳转...');
-      toast.success('正在打开授权页面，请在弹窗中完成授权...');
-      popup.location.href = authUrl;
-      setIsBinding(false);
-
-      // 轮询检测弹窗是否关闭（用户手动关闭的场景）
-      const pollTimer = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(pollTimer);
-          pollTimerRef.current = null;
-          if (messageHandlerRef.current) {
-            window.removeEventListener('message', messageHandlerRef.current);
-            messageHandlerRef.current = null;
-          }
-        }
-      }, 500);
-      pollTimerRef.current = pollTimer;
-
-      const messageHandler = (event: MessageEvent) => {
-        if (!event.data || typeof event.data !== 'object') return;
-        if (event.data.type !== 'onedrive_success' && event.data.type !== 'onedrive_error') return;
-
-        clearInterval(pollTimer);
-        pollTimerRef.current = null;
-        window.removeEventListener('message', messageHandler);
-        messageHandlerRef.current = null;
-        if (!popup.closed) popup.close();
-
-        if (event.data.type === 'onedrive_success') {
-          addDebug('③ 授权成功', 'ok', '收到 postMessage');
-          toast.success('OneDrive 绑定成功！');
-          setIsBound(true);
-          setActiveTab('files');
-          loadAttachments();
-        } else {
-          addDebug('③ 授权失败', 'error', event.data.error || '未知错误');
-          toast.error(event.data.error || '授权失败');
-        }
-      };
-      window.addEventListener('message', messageHandler);
-      messageHandlerRef.current = messageHandler;
-    } catch (error) {
-      console.error('Bind error:', error);
-      toast.error('绑定失败');
-      setIsBinding(false);
-    }
-  };
-
-  const handleDownload = async (attachment: Attachment) => {
-    if (!user) return;
-    const result = await downloadFromOneDrive(attachment.id);
-    if (result.success && result.blob) {
-      const url = URL.createObjectURL(result.blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = result.fileName || attachment.file_name;
-      a.click();
-      URL.revokeObjectURL(url);
-    } else {
-      toast.error(result.error || '下载失败');
-    }
-  };
-
-  const handleDelete = async (attachment: Attachment) => {
-    if (!user) return;
-    setConfirmModal({
-      isOpen: true,
-      title: '删除附件',
-      message: `确定要删除 "${attachment.file_name}" 吗？`,
-      onConfirm: async () => {
-        const result = await deleteAttachment(attachment.id);
-        if (result.success) {
-          toast.success('删除成功');
-          loadAttachments();
-        } else {
-          toast.error(result.error || '删除失败');
-        }
-      }
-    });
-  };
-
-  const getFileIcon = (category: string) => {
-    switch (category) {
-      case 'image': return <Image className="w-5 h-5 text-pink-500" />;
-      case 'video': return <Video className="w-5 h-5 text-red-500" />;
-      case 'audio': return <Volume2 className="w-5 h-5 text-yellow-500" />;
-      case 'document': return <FileText className="w-5 h-5 text-blue-500" />;
-      default: return <FileCode className="w-5 h-5 text-gray-500" />;
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-[640px] max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-3 flex justify-between items-center flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <Cloud className="w-5 h-5 text-white" />
-            <span className="text-white font-medium">OneDrive 云盘</span>
-          </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Tab 切换 */}
-        <div className="flex border-b border-gray-200 flex-shrink-0">
-          <button
-            onClick={() => setActiveTab('bind')}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${activeTab === 'bind' ? 'text-blue-600 border-b-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            绑定设置
-          </button>
-          <button
-            onClick={() => { setActiveTab('files'); loadAttachments(); }}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${activeTab === 'files' ? 'text-blue-600 border-b-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            文件管理
-          </button>
-        </div>
-
-        {/* 绑定设置 Tab */}
-        {activeTab === 'bind' && (
-          <div className="flex flex-1 overflow-hidden">
-            {/* 左侧：表单/已绑定区域 */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {isBound ? (
-                /* 已绑定状态 */
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                    <CheckCircle className="w-8 h-8 text-green-500" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">OneDrive 已绑定</h3>
-                  <p className="text-sm text-gray-500 mb-6">你可以开始在笔记中插入附件了</p>
-                  <button
-                    onClick={() => { setActiveTab('files'); loadAttachments(); }}
-                    className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors"
-                  >
-                    查看附件
-                  </button>
-                </div>
-              ) : (
-                /* 未绑定，显示表单 */
-                <>
-                  {/* 云类型选择 */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      选择云版本
-                    </label>
-                    <div className="flex gap-3">
-                      <label className={`flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer transition-colors ${cloudType === '世纪互联' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}`}>
-                        <input
-                          type="radio"
-                          name="cloudType"
-                          value="世纪互联"
-                          checked={cloudType === '世纪互联'}
-                          onChange={() => setCloudType('世纪互联')}
-                          className="sr-only"
-                        />
-                        <span className={`text-sm ${cloudType === '世纪互联' ? 'text-blue-700 font-medium' : 'text-gray-600'}`}>☁️ OneDrive 世纪互联版</span>
-                      </label>
-                      <label className={`flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer transition-colors ${cloudType === 'international' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}`}>
-                        <input
-                          type="radio"
-                          name="cloudType"
-                          value="international"
-                          checked={cloudType === 'international'}
-                          onChange={() => setCloudType('international')}
-                          className="sr-only"
-                        />
-                        <span className={`text-sm ${cloudType === 'international' ? 'text-blue-700 font-medium' : 'text-gray-600'}`}>🌐 OneDrive 国际版</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* 一键粘贴说明 */}
-                  <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700">
-                    💡 <strong>一键粘贴：</strong>将 Azure 门户的三个值（应用程序 ID / 租户 ID / 客户端密码）用换行分隔，一次粘贴进来即可自动填入
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      应用程序(客户端) ID
-                    </label>
-                    <input
-                      type="text"
-                      value={clientId}
-                      onChange={e => setClientId(e.target.value)}
-                      onPaste={e => {
-                        const text = e.clipboardData.getData('text');
-                        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-                        if (lines.length >= 1) setClientId(lines[0]);
-                        if (lines.length >= 2) setTenantId(lines[1]);
-                        if (lines.length >= 3) setClientSecret(lines[2]);
-                        e.preventDefault();
-                      }}
-                      placeholder={'即 Azure 门户"应用程序(客户端) ID"（在概览页面复制）'}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  {/* 租户 ID（仅世纪互联需要） */}
-                  {cloudType === '世纪互联' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        目录(租户) ID
-                      </label>
-                      <input
-                        type="text"
-                        value={tenantId}
-                        onChange={e => setTenantId(e.target.value)}
-                        placeholder={'即 Azure 门户"概述"页面的"租户 ID"'}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      客户端密码值
-                    </label>
-                    <input
-                      type="text"
-                      value={clientSecret}
-                      onChange={e => setClientSecret(e.target.value)}
-                      placeholder={'即 Azure 门户"证书和密码"中的客户端密码值'}
-                      autoComplete="off"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      onClick={() => setShowGuide(!showGuide)}
-                      className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1"
-                    >
-                      <HelpCircle className="w-3.5 h-3.5" />
-                      {showGuide ? '收起配置指南' : '查看配置指南'}
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={handleBind}
-                    disabled={isBinding || !clientId.trim() || !clientSecret.trim() || (cloudType === '世纪互联' && !tenantId.trim())}
-                    className="w-full py-2.5 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                  >
-                    {isBinding ? (
-                      <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />授权中...</>
-                    ) : (
-                      <><Cloud className="w-4 h-4" />绑定 OneDrive 账号</>
-                    )}
-                  </button>
-
-                  {/* 调试面板 */}
-                  {debugLog.length > 0 && (
-                    <div className="mt-3">
-                      <button
-                        onClick={() => setShowDebug(!showDebug)}
-                        className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
-                      >
-                        🔧 调试信息 {showDebug ? '▲' : '▼'}
-                      </button>
-                      {showDebug && (
-                        <div className="mt-2 bg-gray-900 rounded-lg p-3 text-xs font-mono space-y-1.5 max-h-64 overflow-y-auto">
-                          {debugLog.map((d, i) => (
-                            <div key={i} className="flex items-start gap-2">
-                              <span className="flex-shrink-0 mt-0.5">
-                                {d.status === 'pending' ? '⏳' : d.status === 'ok' ? '✅' : '❌'}
-                              </span>
-                              <div className="min-w-0">
-                                <div className="text-gray-300">{d.step}</div>
-                                <div className={`mt-0.5 break-all ${d.status === 'pending' ? 'text-yellow-400' : d.status === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
-                                  {d.detail}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-
-            </div>
-
-            {/* 右侧：配置指南面板 */}
-            {showGuide && (
-              <div className="w-[280px] border-l border-gray-200 overflow-y-auto bg-amber-50 p-4 space-y-3 flex-shrink-0">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-amber-800">☁️ 配置指南（{cloudType === '世纪互联' ? '世纪互联版' : '国际版'}</p>
-                  <button onClick={() => setShowGuide(false)} className="text-gray-400 hover:text-gray-600">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="space-y-2 text-xs text-amber-700">
-                  <p>在 Azure 门户注册应用，授权本应用访问你的 OneDrive：</p>
-
-                  <div className="space-y-1.5">
-                    <p className="font-semibold text-amber-800">第一步：注册应用 ⚠️ 必须选择多租户</p>
-                    <p>1. 访问 <a href={cloudType === '世纪互联' ? 'https://portal.azure.cn' : 'https://portal.azure.com'} target="_blank" className="text-blue-600 underline">{cloudType === '世纪互联' ? 'portal.azure.cn' : 'portal.azure.com'}</a></p>
-                    <p>2. 搜索 <strong>"应用注册"</strong> → <strong>"+ 新注册"</strong></p>
-                    <p>3. 名称填 <code className="bg-amber-100 px-1 rounded">彩云笔记</code></p>
-                    <p className="text-red-600 font-semibold">⭐ 账户类型必须选 <strong>"任何目录(Microsoft Entra ID) - 多租户)"</strong></p>
-                    <p className="text-amber-600 text-[10px]">⚠️ 如果选"仅此组织目录"，会导致授权失败（AADSTS50194）</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <p className="font-semibold text-amber-800">第二步：获取 Client ID {cloudType === '世纪互联' ? '和租户 ID' : ''}</p>
-                    <p>应用<strong>"概述"</strong>页面 → 复制<strong>"应用程序(客户端) ID"</strong></p>
-                    {cloudType === '世纪互联' && (
-                      <p className="text-red-600">⭐ 同时复制<strong>"租户 ID"</strong>（用于下方表单填写）</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <p className="font-semibold text-amber-800">第三步：创建 Client Secret</p>
-                    <p>左侧 <strong>"证书和密码"</strong> → <strong>"+ 新建客户端密码"</strong> → 添加后复制<strong>"值"</strong></p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <p className="font-semibold text-amber-800">第四步：配置 Redirect URI</p>
-                    <p>左侧 <strong>"身份验证"</strong> → <strong>"+ 添加平台"</strong> → <strong>"Web"</strong></p>
-                    <code className="block bg-amber-100 p-1 rounded text-blue-700 break-all">http://49.235.160.8:3011/api/onedrive/callback</code>
-                    <p>勾选<strong>"ID 令牌"</strong>和<strong>"访问令牌"</strong>，点击配置</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <p className="font-semibold text-amber-800">第六步：配置 API 权限</p>
-                    <p>左侧 <strong>"API 权限"</strong> → <strong>"+ 添加权限"</strong> → <strong>"Microsoft Graph"</strong> → <strong>"委托的权限"</strong></p>
-                    <div className="ml-1 space-y-0.5">
-                      <p>• <code className="bg-amber-100 px-1 rounded">Files.ReadWrite.All</code></p>
-                      <p>• <code className="bg-amber-100 px-1 rounded">User.Read</code></p>
-                      <p>• <code className="bg-amber-100 px-1 rounded">offline_access</code></p>
-                    </div>
-                  </div>
-
-                  <p className="text-amber-600">⚠️ 如需管理员同意，请用个人账号或联系管理员审批</p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 文件管理 Tab */}
-        {activeTab === 'files' && (
-          <div className="flex-1 overflow-y-auto p-4">
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : attachments.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
-                <Cloud className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">暂无附件</p>
-                <p className="text-xs mt-1">在笔记中插入附件即可在此看到</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {attachments.map(attachment => (
-                  <div key={attachment.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors group">
-                    {getFileIcon(attachment.category)}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">{attachment.file_name}</p>
-                      <p className="text-xs text-gray-400">
-                        {formatFileSize(attachment.file_size)} · {new Date(attachment.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => handleDownload(attachment)} className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors" title="下载">
-                        <Download className="w-4 h-4 text-gray-500" />
-                      </button>
-                      <button onClick={() => handleDelete(attachment)} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors" title="删除">
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 确认弹窗 */}
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        isDanger={true}
-        onConfirm={() => {
-          confirmModal.onConfirm();
-          setConfirmModal({ ...confirmModal, isOpen: false });
-        }}
-        onCancel={() => setConfirmModal({ ...confirmModal, isOpen: false })}
-      />
     </div>
   );
 };

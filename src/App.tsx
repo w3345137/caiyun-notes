@@ -6,7 +6,7 @@ import { AuthProvider, useAuth } from './components/AuthProvider';
 import { AuthModal } from './components/AuthModal';
 import { useNoteStore, setUpdateLogsCache } from './store/noteStore';
 import toast, { Toaster } from 'react-hot-toast';
-import { signIn } from './lib/auth';
+import { signIn, parseJWTPayload } from './lib/auth';
 import { getUpdateLogs } from './lib/initDatabase';
 import { sseService } from './lib/sseService';
 import logoUrl from '/logo.png';
@@ -152,11 +152,8 @@ function AppContent() {
       try {
         const token = localStorage.getItem('notesapp_token');
         if (!token) return;
-        const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-        const decoded = decodeURIComponent(
-          atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
-        );
-        const payload = JSON.parse(decoded);
+        const payload = parseJWTPayload(token);
+        if (!payload) return;
         const exp = payload.exp * 1000;
         const now = Date.now();
         const remaining = exp - now;
