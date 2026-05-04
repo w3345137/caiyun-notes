@@ -55,7 +55,8 @@ export const apiGetReceivedInvites = () => call('/invites-manage', { action: 'ge
 export const apiGetMyInvites = () => call('/invites-manage', { action: 'getMyInvites' });
 export const apiGetPendingCount = () => call('/invites-manage', { action: 'getPendingInviteCount' });
 export const apiCreateInvite = (notebookId: string, inviteeUserId: string, permission: string) => call('/invites-manage', { action: 'createInvite', notebookId, inviteeUserId, permission });
-export const apiRespondToInvite = (inviteId: string, accept: boolean) => call('/invites-manage', { action: 'respondToInvite', inviteId, accept });
+export const apiRespondToInvite = (inviteId: string, accept: boolean, permission?: string) => 
+  call('/invites-manage', { action: 'respondToInvite', inviteId, accept, permission });
 export const apiCancelInvite = (inviteId: string) => call('/invites-manage', { action: 'cancelInvite', inviteId });
 export const apiGetNotebookInfo = async (id?: string) => {
   if (!id) return { success: false, data: null };

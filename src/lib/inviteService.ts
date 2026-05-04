@@ -108,7 +108,7 @@ export async function respondToInvite(
   grantedPermission?: 'view' | 'edit'
 ): Promise<{ success: boolean; error?: string }> {
   const accept = action === 'approve';
-  const result = await edgeApi.apiRespondToInvite(inviteId, accept);
+  const result = await edgeApi.apiRespondToInvite(inviteId, accept, grantedPermission);
   return result;
 }
 
