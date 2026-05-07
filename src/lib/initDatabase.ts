@@ -125,7 +125,7 @@ export async function saveNoteToCloud(note: Note, expectedVersion?: number): Pro
 
 export async function deleteNoteFromCloud(noteId: string, allDescendantIds?: Set<string>): Promise<{ success: boolean; error?: string }> {
   // 使用 Edge Function 删除笔记
-  const result = await edgeApi.apiDeleteNote(noteId, allDescendantIds);
+  const result = await edgeApi.apiDeleteNote(noteId, allDescendantIds ? Array.from(allDescendantIds) : undefined);
 
   if (!result.success) {
     console.error('[DB] 删除笔记失败:', result.error);

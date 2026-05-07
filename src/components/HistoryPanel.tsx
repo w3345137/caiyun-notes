@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Clock, User } from 'lucide-react';
 import { useNoteStore } from '../store/noteStore';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './authContext';
 import toast from 'react-hot-toast';
 
 interface HistoryEntry {

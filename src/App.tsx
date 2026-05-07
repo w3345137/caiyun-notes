@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { NoteEditor } from './components/NoteEditor';
-import { AuthProvider, useAuth } from './components/AuthProvider';
+import { AuthProvider } from './components/AuthProvider';
+import { useAuth } from './components/authContext';
 import { AuthModal } from './components/AuthModal';
 import { useNoteStore, setUpdateLogsCache } from './store/noteStore';
 import toast, { Toaster } from 'react-hot-toast';
@@ -34,6 +35,9 @@ function AppContent() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const { user, loading } = useAuth();
+  const quickLoginEmail = import.meta.env.VITE_TEST_LOGIN_EMAIL;
+  const quickLoginPassword = import.meta.env.VITE_TEST_LOGIN_PASSWORD;
+  const showQuickLogin = (import.meta.env.DEV || import.meta.env.VITE_SHOW_TEST_LOGIN === 'true') && quickLoginEmail && quickLoginPassword;
   const userId = user?.id;
   const loadFromCloud = useNoteStore((state) => state.loadFromCloud);
   const syncToCloud = useNoteStore((state) => state.syncToCloud);
@@ -189,8 +193,9 @@ function AppContent() {
             });
             await update.downloadAndInstall((event) => {
               if (event.event === 'Started') {
-                console.log('[Updater] 开始下载...');
+                toast.loading('正在下载更新...', { id: 'app-update-download' });
               } else if (event.event === 'Finished') {
+                toast.dismiss('app-update-download');
                 toast.success('下载完成，即将重启安装...', { duration: 3000 });
               }
             });
@@ -198,6 +203,7 @@ function AppContent() {
           }
         } catch (e) {
           console.error('[Updater] 检查更新失败:', e);
+          toast.error('检查更新失败，请稍后再试', { duration: 5000 });
         }
       };
       setTimeout(checkAndUpdate, 3000);
@@ -248,25 +254,25 @@ function AppContent() {
             登录 / 注册
           </button>
 
-          {/* 测试账号快速登录 */}
-          <div className="mt-8 p-2.5 bg-amber-50 border border-amber-200 rounded-xl scale-80">
-            <p className="text-[10px] text-amber-700 font-medium mb-1.5">快速体验</p>
-            <button
-              onClick={async () => {
-                try {
-                  await signIn('test01@notes.app', 'test123456');
-                  toast.success('测试账号登录成功');
-                } catch (error: any) {
-                  toast.error(error.message || '登录失败');
-                }
-              }}
-              className="w-full py-1.5 px-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 text-xs"
-            >
-              <span>👤</span>
-              <span>使用 test01 测试账号登录</span>
-            </button>
-            <p className="text-[9px] text-amber-600 mt-1">测试账号：test01@notes.app / test123456</p>
-          </div>
+          {showQuickLogin && (
+            <div className="mt-8 p-2.5 bg-amber-50 border border-amber-200 rounded-xl scale-80">
+              <p className="text-[10px] text-amber-700 font-medium mb-1.5">快速体验</p>
+              <button
+                onClick={async () => {
+                  try {
+                    await signIn(quickLoginEmail, quickLoginPassword);
+                    toast.success('测试账号登录成功');
+                  } catch (error: any) {
+                    toast.error(error.message || '登录失败');
+                  }
+                }}
+                className="w-full py-1.5 px-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 text-xs"
+              >
+                <span>👤</span>
+                <span>使用测试账号登录</span>
+              </button>
+            </div>
+          )}
 
           <p className="text-sm text-gray-400 mt-8">
             献给热爱知识管理的你——彬

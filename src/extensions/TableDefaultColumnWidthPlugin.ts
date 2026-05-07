@@ -12,14 +12,11 @@ export const TableDefaultColumnWidthPlugin = (defaultWidth: number = 220) => {
     key: new PluginKey('tableDefaultColumnWidth'),
 
     appendTransactions(transactions, prevState, nextState) {
-      console.log('[TablePlugin] appendTransactions called, transactions:', transactions.length);
       // 只处理有文档变化的 transaction
       const docChanges = transactions.filter(tr => tr.docChanged);
       if (docChanges.length === 0) {
-        console.log('[TablePlugin] No doc changes');
         return undefined;
       }
-      console.log('[TablePlugin] Doc changes detected');
 
       // 追踪本轮已处理的表格位置，避免重复
       const processedTables = new Set<string>();
@@ -29,8 +26,6 @@ export const TableDefaultColumnWidthPlugin = (defaultWidth: number = 220) => {
       nextState.doc.descendants((node, pos) => {
         if (node.type.name !== 'table') return;
         if (!node.firstChild) return;
-
-        console.log('[TablePlugin] Found table at pos:', pos);
 
         // 用表格的深拷贝作为唯一标识，避免重复处理
         const tableKey = `${pos}-${node.childCount}-${node.firstChild.childCount}`;
@@ -43,7 +38,6 @@ export const TableDefaultColumnWidthPlugin = (defaultWidth: number = 220) => {
         node.descendants((cell) => {
           if (cell.type.name === 'tableCell' || cell.type.name === 'tableHeader') {
             cellCount++;
-            console.log('[TablePlugin] Cell colwidth:', cell.attrs.colwidth);
             if (!cell.attrs.colwidth || cell.attrs.colwidth[0] === null) {
               needsInit = true;
             }

@@ -23,7 +23,7 @@ export interface OriginalLocationInfo {
 export interface ParsedNote {
   id: string;
   title: string;
-  type: 'notebook' | 'section' | 'page';
+  type: 'notebook' | 'email_notebook' | 'section' | 'email_account' | 'page';
   parentId: string | null;
   content: string;
   icon: string;
@@ -70,10 +70,15 @@ export function parseMdFile(content: string, fileName: string): ParsedNote | nul
       return null;
     }
 
+    const knownTypes: ParsedNote['type'][] = ['notebook', 'email_notebook', 'section', 'email_account', 'page'];
+    const type: ParsedNote['type'] = knownTypes.includes(meta.type)
+      ? meta.type
+      : 'page';
+
     return {
       id: meta.id || `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
       title: meta.title || fileName.replace('.md', ''),
-      type: meta.type === 'notebook' || meta.type === 'email_notebook' ? 'notebook' : meta.type === 'section' || meta.type === 'email_account' ? 'section' : 'page',
+      type,
       parentId: meta.parentId || null,
       content: match[2] || '',
       icon: meta.icon || 'doc',

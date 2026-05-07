@@ -14,6 +14,14 @@ import {
   saveSidebarState, loadSidebarState, apiGetNotebookInfo,
 } from '../lib/edgeApi';
 import { createBackup, getBackupConfig } from '../lib/localBackup';
+import {
+  clearAllNoteDrafts,
+  deleteNoteDraft,
+  flushNoteDrafts,
+  hasPendingDraftSaves,
+  mergeNotesWithLocalDrafts,
+  saveNoteDraft,
+} from '../lib/localDraft';
 
 export interface SSENotification {
   type: 'note_updated' | 'note_deleted' | 'note_locked' | 'note_unlocked';
@@ -80,11 +88,15 @@ const _editingNotes = new Set<string>();
 // 编辑量追踪：记录每个笔记未保存的编辑次数
 const _editCounters = new Map<string, number>();
 
-// 云端保存 debounce：用于排序这类高频批量操作
+// 云端保存 debounce：输入时先写本地草稿，再把云端保存合并为短批次
+const CLOUD_SAVE_DEBOUNCE_MS = 1000;
+const BACKUP_SAVE_DEBOUNCE_MS = 30000;
 const _saveTimers = new Map<string, NodeJS.Timeout>();
 const _debouncedSaveNotes = new Map<string, Note>();
 const _pendingSaves = new Map<string, Note>();
 const _activeSavePromises = new Map<string, Promise<void>>();
+const _backupTimers = new Map<string, NodeJS.Timeout>();
+const _pendingBackupNotes = new Map<string, Note>();
 
 function sanitizeNote(n: any): Note {
   if (!n) return {} as Note;
@@ -144,7 +156,6 @@ async function saveSingleNote(note: Note) {
     if (result && !result.success) {
       throw new Error(result.error || '保存失败');
     }
-    console.log(`[Store] 云端保存成功: ${note.id.substring(0, 12)}...`);
     return result;
   } catch (e) {
     console.error(`[Store] 云端保存失败: ${note.id}`, e);
@@ -200,9 +211,9 @@ async function flushCloudSaves(note?: Note) {
 }
 
 /**
- * debounce 保存单个笔记（2秒内同一笔记只保存一次）
+ * debounce 保存单个笔记（高频输入合并成短批次）
  */
-function debouncedCloudSave(note: Note) {
+function debouncedCloudSave(note: Note, delay = CLOUD_SAVE_DEBOUNCE_MS) {
   const id = note.id;
   if (_saveTimers.has(id)) {
     clearTimeout(_saveTimers.get(id)!);
@@ -213,7 +224,7 @@ function debouncedCloudSave(note: Note) {
     const latest = _debouncedSaveNotes.get(id) || note;
     _debouncedSaveNotes.delete(id);
     await queueCloudSave(latest);
-  }, 2000));
+  }, delay));
 }
 
 /**
@@ -230,6 +241,88 @@ async function tryCreateBackup(note: Note) {
   } catch (e) {
     console.warn('[Store] 本地备份失败:', e);
   }
+}
+
+function scheduleBackup(note: Note) {
+  if (note.type !== 'page') return;
+
+  const id = note.id;
+  if (_backupTimers.has(id)) {
+    clearTimeout(_backupTimers.get(id)!);
+  }
+
+  _pendingBackupNotes.set(id, note);
+  _backupTimers.set(id, setTimeout(async () => {
+    _backupTimers.delete(id);
+    const latest = _pendingBackupNotes.get(id) || note;
+    _pendingBackupNotes.delete(id);
+    await tryCreateBackup(latest);
+  }, BACKUP_SAVE_DEBOUNCE_MS));
+}
+
+async function flushBackups(note?: Note) {
+  if (note?.type === 'page') {
+    _pendingBackupNotes.set(note.id, note);
+  }
+
+  const ids = note
+    ? [note.id]
+    : Array.from(new Set([..._pendingBackupNotes.keys(), ..._backupTimers.keys()]));
+
+  const tasks: Promise<void>[] = [];
+  for (const id of ids) {
+    const timer = _backupTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      _backupTimers.delete(id);
+    }
+
+    const latest = _pendingBackupNotes.get(id);
+    _pendingBackupNotes.delete(id);
+    if (latest) {
+      tasks.push(tryCreateBackup(latest));
+    }
+  }
+
+  await Promise.all(tasks);
+}
+
+function clearQueuedSavesForNote(noteId: string) {
+  _editCounters.delete(noteId);
+  _pendingSaves.delete(noteId);
+  _activeSavePromises.delete(noteId);
+  _debouncedSaveNotes.delete(noteId);
+  _pendingBackupNotes.delete(noteId);
+
+  if (_saveTimers.has(noteId)) {
+    clearTimeout(_saveTimers.get(noteId)!);
+    _saveTimers.delete(noteId);
+  }
+
+  if (_backupTimers.has(noteId)) {
+    clearTimeout(_backupTimers.get(noteId)!);
+    _backupTimers.delete(noteId);
+  }
+}
+
+function collectNoteAndDescendants(notes: Note[], rootId: string): Note[] {
+  const childrenByParent = new Map<string, Note[]>();
+  for (const note of notes) {
+    if (!note.parentId) continue;
+    const children = childrenByParent.get(note.parentId) || [];
+    children.push(note);
+    childrenByParent.set(note.parentId, children);
+  }
+
+  const collected: Note[] = [];
+  const stack = notes.filter((note) => note.id === rootId);
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    collected.push(current);
+    stack.push(...(childrenByParent.get(current.id) || []));
+  }
+
+  return collected;
 }
 
 // 侧边栏状态保存 debounce
@@ -277,7 +370,19 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     try {
       const res = await loadFullTree();
       if (res.success && Array.isArray(res.data)) {
-        set({ notes: res.data.map(sanitizeNote), isLoading: false, loadingStatus: '就绪', loadingProgress: 100, dbReady: true });
+        const cloudNotes = res.data.map(sanitizeNote);
+        const { notes, restoredNoteIds } = await mergeNotesWithLocalDrafts(cloudNotes);
+        set({ notes, isLoading: false, loadingStatus: '就绪', loadingProgress: 100, dbReady: true });
+
+        if (restoredNoteIds.length > 0) {
+          console.warn('[Store] 已从本地草稿恢复未同步内容:', restoredNoteIds);
+          for (const noteId of restoredNoteIds) {
+            const restored = notes.find((n) => n.id === noteId);
+            if (restored) {
+              debouncedCloudSave(restored, 250);
+            }
+          }
+        }
       } else {
         set({ isLoading: false, syncError: res.error, loadingStatus: '加载失败' });
       }
@@ -301,12 +406,15 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       if (selectedId) {
         const note = state.notes.find((n) => n.id === selectedId);
         if (note) {
+          await flushNoteDrafts(selectedId);
           await flushCloudSaves(note);
-          await tryCreateBackup(note);
+          await flushBackups(note);
           _editCounters.delete(selectedId);
         }
       } else {
+        await flushNoteDrafts();
         await flushCloudSaves();
+        await flushBackups();
       }
 
       await flushSidebarState(state.expandedNodes, state.selectedNoteId);
@@ -320,15 +428,23 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   hasPendingSaves: () => {
-    return _pendingSaves.size > 0 || _activeSavePromises.size > 0 || _saveTimers.size > 0 || !!_sidebarStateTimer;
+    return hasPendingDraftSaves() || _pendingSaves.size > 0 || _activeSavePromises.size > 0 || _saveTimers.size > 0 || !!_sidebarStateTimer;
   },
 
   selectNote: (id: string | null) => {
+    const previousId = get().selectedNoteId;
     set({ selectedNoteId: id });
     debouncedSaveSidebarState(get().expandedNodes, id);
+    if (previousId && previousId !== id) {
+      get().saveNoteById(previousId).catch((e) => {
+        console.warn('[Store] 切换页面时保存失败:', e);
+      });
+    }
   },
 
   updateNote: (id: string, updates: Partial<Note>, opts?: { silent?: boolean; save?: boolean }) => {
+    const hasContentUpdate = Object.prototype.hasOwnProperty.call(updates, 'content');
+
     set((state) => {
       const now = new Date().toISOString();
       const newNotes = state.notes.map((n) => n.id === id ? { ...n, ...updates, updatedAt: now, updated_at: now } : n);
@@ -338,10 +454,13 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     if (opts?.save !== false) {
       const note = get().notes.find((n) => n.id === id);
       if (note) {
-        queueCloudSave(note).catch(() => {});
-        if (updates.content !== undefined) {
-          tryCreateBackup(note);
+        if (hasContentUpdate) {
+          saveNoteDraft(note).catch((e) => console.warn('[Store] 本地草稿保存失败:', e));
+          debouncedCloudSave(note);
+          scheduleBackup(note);
           _editCounters.delete(id);
+        } else {
+          debouncedCloudSave(note);
         }
       }
     }
@@ -352,8 +471,9 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   saveNoteById: async (id: string) => {
     const note = get().notes.find((n) => n.id === id);
     if (note) {
+      await flushNoteDrafts(id);
       await flushCloudSaves(note);
-      tryCreateBackup(note);
+      await flushBackups(note);
       _editCounters.delete(id);
     }
   },
@@ -377,20 +497,15 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   deleteNote: async (id: string) => {
-    const deletedNotes = get().notes.filter((n) => n.id === id || n.parentId === id);
+    const deletedNotes = collectNoteAndDescendants(get().notes, id);
+    const deletedIds = new Set(deletedNotes.map((note) => note.id));
     // 清除被删笔记及其子笔记的保存队列，防止未完成的保存请求将它们复活
     for (const n of deletedNotes) {
-      _editCounters.delete(n.id);
-      _pendingSaves.delete(n.id);
-      _activeSavePromises.delete(n.id);
-      _debouncedSaveNotes.delete(n.id);
-      if (_saveTimers.has(n.id)) {
-        clearTimeout(_saveTimers.get(n.id)!);
-        _saveTimers.delete(n.id);
-      }
+      clearQueuedSavesForNote(n.id);
+      deleteNoteDraft(n.id).catch((e) => console.warn('[Store] 删除本地草稿失败:', e));
     }
     set((state) => ({
-      notes: state.notes.filter((n) => n.id !== id && n.parentId !== id)
+      notes: state.notes.filter((n) => !deletedIds.has(n.id))
     }));
     const res = await deleteNoteFromCloud(id);
     if (res && !res.success) {
@@ -457,7 +572,10 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     return !!(note.isLocked && note.lockedBy && note.lockedBy !== userId);
   },
 
-  clearLocalCache: () => set({ notes: [], selectedNoteId: null, expandedNodes: [], loadingStatus: '已清除缓存' }),
+  clearLocalCache: () => {
+    set({ notes: [], selectedNoteId: null, expandedNodes: [], loadingStatus: '已清除缓存' });
+    clearAllNoteDrafts().catch((e) => console.warn('[Store] 清除本地草稿失败:', e));
+  },
   getNoteById: (id: string) => get().notes.find((n) => n.id === id),
   setSidebarCollapsed: (v: boolean) => set({ sidebarCollapsed: v }),
   setActiveTab: (v: string) => set({ activeTab: v }),

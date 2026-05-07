@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, HardDrive, Download, Trash2, Image, Video, FileText, FileCode, CheckCircle, Volume2, HelpCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './authContext';
 import { getBaiduAttachments, getBaiduAuthUrl, downloadFromBaidu, deleteBaiduAttachment, formatFileSize, checkBaiduBinding, BaiduAttachment } from '../lib/baiduService';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -37,15 +37,11 @@ export const BaiduModal: React.FC<BaiduModalProps> = ({ onClose }) => {
     };
   }, []);
 
-  useEffect(() => {
-    checkBindingStatus();
-  }, []);
-
-  const checkBindingStatus = async () => {
+  const checkBindingStatus = useCallback(async () => {
     if (!user) return;
     const result = await checkBaiduBinding();
     setIsBound(result.bound);
-  };
+  }, [user]);
 
   const addDebug = (step: string, status: 'pending' | 'ok' | 'error', detail: string) => {
     setDebugLog(prev => {
@@ -55,7 +51,7 @@ export const BaiduModal: React.FC<BaiduModalProps> = ({ onClose }) => {
   };
   const clearDebug = () => setDebugLog([]);
 
-  const loadAttachments = async () => {
+  const loadAttachments = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     const result = await getBaiduAttachments();
@@ -63,7 +59,11 @@ export const BaiduModal: React.FC<BaiduModalProps> = ({ onClose }) => {
       setAttachments(result.data || []);
     }
     setLoading(false);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    checkBindingStatus();
+  }, [checkBindingStatus]);
 
   const isTauriApp = typeof (window as any).__TAURI__ !== 'undefined' ||
     (navigator.userAgent || '').includes('Tauri') ||

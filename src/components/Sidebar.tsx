@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Search, BookOpen, ChevronDown, ChevronRight, Folder, MoreHorizontal, Trash2, Plus, User, Settings, Download, Info, Sun, Flower, Glasses, Star, Heart, Zap, Moon, Cloud, Music, Coffee, Book, Camera, Users, LogOut, Share2, X, Tag, Bell, Briefcase, Calendar, Flag, Globe, Home, Map, MessageSquare, Phone, ShoppingCart, Target, Trophy, Umbrella, Video, Wallet, Award, BookMarked, BriefcaseBusiness, Building, Car, Clock, Code, Compass, DollarSign, Droplet, Feather, FileText, FolderOpen, Gift, Globe2, Hammer, Key, Lightbulb, Link, Lock, Mail, MapPin, Monitor, Notebook, Package, Palette, Pencil, PieChart, Plane, Printer, Puzzle, Rocket, Scissors, Shield, Smile, Smartphone, Snowflake, Stamp, SunMoon, Tent, Timer, TreePine, Truck, Tv, Wrench, Send, Bug, GripVertical, Upload, Copy, RefreshCw, PanelLeftClose, PanelLeft, History } from 'lucide-react';
 import { useNoteStore } from '../store/noteStore';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './authContext';
 import { signOut } from '../lib/auth';
 import EmailAccountModal from './EmailAccountModal';
 import { isAdminEmail } from '../lib/adminApi';
@@ -24,7 +24,8 @@ import { JoinNotebookModal } from './JoinNotebookModal';
 import { InviteManagementModal } from './InviteManagementModal';
 import { LLMConfigModal } from './LLMConfigModal';
 import { CloudStorageHubModal } from './CloudStorageHubModal';
-import { checkNotebooksBaiduBatch } from '../lib/baiduService';
+import { checkNotebookBaidu, checkNotebooksBaiduBatch } from '../lib/baiduService';
+import { checkNotebookQiniu } from '../lib/qiniuService';
 import { checkNotebookOnedrive } from '../lib/onedriveService';
 import { apiGetCloudProvider, apiSetCloudProvider } from '../lib/edgeApi';
 import { getBackupConfig } from '../lib/localBackup';
@@ -379,9 +380,9 @@ const NotebookItem: React.FC<{
                     // 检查可用云存储
                     const [odRes, bdRes] = await Promise.all([
                       checkNotebookOnedrive(notebook.id).catch(() => ({bound: false})),
-                      import('../lib/baiduService').then(m => m.checkNotebookBaidu(notebook.id)).catch(() => ({bound: false})),
+                      checkNotebookBaidu(notebook.id).catch(() => ({bound: false})),
                     ]);
-                    const qnRes = await import('../lib/qiniuService').then(m => m.checkNotebookQiniu(notebook.id)).catch(() => ({bound: false}));
+                    const qnRes = await checkNotebookQiniu(notebook.id).catch(() => ({bound: false}));
                     // 获取当前设置
                     const cpRes = await apiGetCloudProvider(notebook.id);
                     const current = cpRes?.success ? cpRes.data?.cloud_provider : null;
@@ -654,7 +655,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   useEffect(() => {
     const loadStorageStatus = async () => {
       try {
-        const ids = notes.filter((n) => n.type === 'notebook' || n.type === 'email_notebook').map((n) => n.id);
+        const ids = notebookIds.split(',').filter(Boolean);
         const result = await checkNotebooksStorageBatch(ids);
         const boundSet = new Set<string>();
         result.forEach((bound, nid) => { if (bound) boundSet.add(nid); });
@@ -898,7 +899,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
       {/* 顶部 - Logo */}
       <div className="h-[47px] shrink-0 flex items-center px-3 bg-white border-b border-gray-100 justify-between">
         {!collapsed && (
-          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.1.1</span></span>
+          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.1.2</span></span>
         )}
         <div className={`flex items-center gap-1 ${collapsed ? 'w-full justify-center' : ''}`}>
           {!collapsed && (
@@ -966,7 +967,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                         onCopyId={handleCopyNotebookId}
                         onViewInvites={handleViewInvites}
                         isShared={isShared}
-                        isOwner={notebook.owner_id === user?.id}
+                        isOwner={notebook.ownerId === user?.id}
                         hasStorage={storageBoundIds.has(notebook.id)}
                         hasBaiduStorage={baiduBoundIds.has(notebook.id)}
                       />
@@ -1343,4 +1344,3 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
     </div>
   );
 }
-

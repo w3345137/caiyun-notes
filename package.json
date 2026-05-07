@@ -75,6 +75,7 @@
     "clsx": "^2.1.1",
     "cmdk": "1.0.0",
     "date-fns": "^3.0.0",
+    "dompurify": "^3.4.2",
     "embla-carousel-react": "^8.5.2",
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
@@ -101,7 +102,6 @@
     "react-router-dom": "^6",
     "recharts": "^2.12.4",
     "simple-mind-map": "^0.14.0-fix.2",
-
     "sortablejs": "^1.15.7",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",

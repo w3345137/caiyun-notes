@@ -1,6 +1,14 @@
 const { chromium } = require('playwright');
 
-const BASE_URL = 'http://49.235.160.8:3011';
+const BASE_URL = process.env.NOTESAPP_TEST_BASE_URL || 'http://127.0.0.1:3011';
+
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} 环境变量未配置`);
+  }
+  return value;
+}
 
 async function getToken(email, password) {
   const res = await fetch(`${BASE_URL}/api/auth/v1/token`, {
@@ -15,8 +23,8 @@ async function getToken(email, password) {
 async function main() {
   console.log('=== 附件模块 SSE 广播 + 确认提示 测试 ===\n');
 
-  const token1 = await getToken('767493611@qq.com', 'as654331');
-  const token2 = await getToken('test01@notes.app', 'test1234');
+  const token1 = await getToken(requireEnv('NOTESAPP_TEST_USER1_EMAIL'), requireEnv('NOTESAPP_TEST_USER1_PASSWORD'));
+  const token2 = await getToken(requireEnv('NOTESAPP_TEST_USER2_EMAIL'), requireEnv('NOTESAPP_TEST_USER2_PASSWORD'));
 
   if (!token1) { console.error('❌ 用户1登录失败'); return; }
   if (!token2) { console.error('❌ 用户2登录失败'); return; }

@@ -18,8 +18,17 @@ export default defineConfig(({ mode }) => {
     ],
     base: isTest ? '/test/' : '/',
     build: {
+      chunkSizeWarningLimit: 900,
       rollupOptions: {
-        external: ['@tauri-apps/plugin-shell'],
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/mermaid')) return 'mermaid';
+            if (id.includes('node_modules/simple-mind-map')) return 'mindmap';
+            if (id.includes('node_modules/@tiptap') || id.includes('node_modules/prosemirror')) return 'editor';
+            if (id.includes('node_modules/recharts')) return 'charts';
+            if (id.includes('node_modules/@tauri-apps')) return 'tauri';
+          },
+        },
       },
     },
     resolve: {

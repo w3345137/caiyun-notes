@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Cloud, Download, Trash2, Image, Video, FileText, FileCode, CheckCircle, Volume2, HelpCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './authContext';
 import { getAttachments, getOneDriveAuthUrl, downloadFromOneDrive, deleteAttachment, formatFileSize, checkOneDriveBinding, Attachment } from '../lib/onedriveService';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -39,15 +39,11 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
     };
   }, []);
 
-  useEffect(() => {
-    checkBindingStatus();
-  }, []);
-
-  const checkBindingStatus = async () => {
+  const checkBindingStatus = useCallback(async () => {
     if (!user) return;
     const result = await checkOneDriveBinding();
     setIsBound(result.bound);
-  };
+  }, [user]);
 
   const addDebug = (step: string, status: 'pending' | 'ok' | 'error', detail: string) => {
     setDebugLog(prev => {
@@ -57,7 +53,7 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
   };
   const clearDebug = () => setDebugLog([]);
 
-  const loadAttachments = async () => {
+  const loadAttachments = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     const result = await getAttachments();
@@ -65,7 +61,11 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
       setAttachments(result.data || []);
     }
     setLoading(false);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    checkBindingStatus();
+  }, [checkBindingStatus]);
 
   const isTauriApp = typeof (window as any).__TAURI__ !== 'undefined' ||
     (navigator.userAgent || '').includes('Tauri') ||

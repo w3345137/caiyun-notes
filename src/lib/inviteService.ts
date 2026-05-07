@@ -16,6 +16,8 @@ export interface NotebookInvite {
   notebook_title?: string;
   inviter_email?: string;
   inviter_name?: string;
+  requester_email?: string;
+  requester_name?: string;
 }
 
 export async function getReceivedInvites(): Promise<NotebookInvite[]> {
@@ -67,6 +69,8 @@ export async function getMyInvites(): Promise<NotebookInvite[]> {
       status: inv.status || 'pending',
       created_at: inv.created_at,
       notebook_title: inv.notebook_title,
+      requester_email: inv.requester_email,
+      requester_name: inv.requester_name,
     }));
   } catch (err) {
     console.error('获取发出的邀请失败:', err);

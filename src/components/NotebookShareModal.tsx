@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, X, Share2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './authContext';
 import { Note } from '../types';
 import { shareNotebook, unshareNotebook, getNotebookShares } from '../lib/initDatabase';
 import { ConfirmModal } from './ConfirmModal';

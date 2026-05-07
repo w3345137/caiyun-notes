@@ -10,6 +10,8 @@ interface ResizableImageAttrs {
   height?: number | null;
 }
 
+type ResizeCorner = false | 'se' | 'sw' | 'ne' | 'nw';
+
 export const ResizableImage = Node.create({
   name: 'image',
   group: 'block',
@@ -35,7 +37,7 @@ export const ResizableImage = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ResizableImageView);
+    return ReactNodeViewRenderer(ResizableImageView as React.ComponentType<any>);
   },
 });
 
@@ -46,8 +48,8 @@ const ResizableImageView: React.FC<{ node: any; updateAttributes: any; selected:
   deleteNode,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isResizing, setIsResizing] = useState(false);
-  const [size, setSize] = useState({ width: node.attrs.width || 300, height: node.attrs.height || 'auto' });
+  const [isResizing, setIsResizing] = useState<ResizeCorner>(false);
+  const [size, setSize] = useState<{ width: number; height: number | 'auto' }>({ width: node.attrs.width || 300, height: node.attrs.height || 'auto' });
   const [isSelected, setIsSelected] = useState(selected);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const aspectRatioRef = useRef<number>(1);
@@ -62,7 +64,7 @@ const ResizableImageView: React.FC<{ node: any; updateAttributes: any; selected:
     }
   }, [node.attrs.width]);
 
-  const handleResizeStart = useCallback((corner: string, e: React.MouseEvent) => {
+  const handleResizeStart = useCallback((corner: Exclude<ResizeCorner, false>, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsResizing(corner);
@@ -107,7 +109,7 @@ const ResizableImageView: React.FC<{ node: any; updateAttributes: any; selected:
 
   const handleMouseUp = useCallback(() => {
     if (isResizing) {
-      updateAttributes({ width: size.width, height: Math.round(size.height) });
+      updateAttributes({ width: size.width, height: typeof size.height === 'number' ? Math.round(size.height) : null });
       setIsResizing(false);
     }
   }, [isResizing, size, updateAttributes]);

@@ -50,7 +50,7 @@ export async function getOneDriveAuthUrl(
   clientId: string,
   cloudType: string = 'international',
   tenantId?: string
-): Promise<{ authUrl: string; state: string; cloud: string }> {
+): Promise<{ authUrl: string; state: string; cloud: string; redirectUrl?: string }> {
   const token = getAuthToken();
   const response = await fetch('/api/onedrive/auth-url', {
     method: 'POST',
@@ -67,7 +67,7 @@ export async function getOneDriveAuthUrl(
 
   const data = await response.json();
   if (data.error) throw new Error(data.error);
-  return { authUrl: data.authUrl, state: data.state, cloud: data.cloud };
+  return { authUrl: data.authUrl, state: data.state, cloud: data.cloud, redirectUrl: data.redirectUrl };
 }
 
 /**

@@ -41,8 +41,9 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({ onClose }) => {
       const result = await checkLLMConfig();
       if (result.configured && result.config) {
         setIsConfigured(true);
-        setProtocol(result.config.protocol || 'openai');
-        setProvider(result.config.provider || (result.config.protocol === 'anthropic' ? 'anthropic' : 'openai'));
+        const nextProtocol = result.config.protocol === 'anthropic' ? 'anthropic' : 'openai';
+        setProtocol(nextProtocol);
+        setProvider(result.config.provider || (nextProtocol === 'anthropic' ? 'anthropic' : 'openai'));
         setApiKey(result.config.api_key || '');
         setBaseUrl(result.config.base_url || '');
         setModelName(result.config.model_name || 'gpt-4o-mini');

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import MindElixir from 'mind-elixir';
 import 'mind-elixir/style.css';
-import { X, Save, RotateCcw, Download, ZoomIn, ZoomOut } from 'lucide-react';
+import { X, Save, RotateCcw, Download } from 'lucide-react';
 
 interface MindElixirEditorProps {
   content: string;
@@ -9,15 +9,10 @@ interface MindElixirEditorProps {
   onCancel: () => void;
 }
 
-// 预设颜色
-const NODE_COLORS = [
-  '#4a90e2', '#e54d4d', '#57b894', '#f7c948', '#9c27b0', '#ff9800',
-  '#00bcd4', '#e91e63', '#8bc34a', '#3f51b5', '#ff5722', '#607d8b'
-];
-
 export const MindElixirEditor: React.FC<MindElixirEditorProps> = ({ content, onSave, onCancel }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mindRef = useRef<MindElixir | null>(null);
+  const mindRef = useRef<any>(null);
+  const initialContentRef = useRef(content);
   const [isReady, setIsReady] = useState(false);
 
   // 初始化 Mind Elixir
@@ -27,8 +22,8 @@ export const MindElixirEditor: React.FC<MindElixirEditorProps> = ({ content, onS
     // 解析现有内容或创建新数据
     let data;
     try {
-      if (content) {
-        data = JSON.parse(content);
+      if (initialContentRef.current) {
+        data = JSON.parse(initialContentRef.current);
       } else {
         data = MindElixir.new('中心主题');
       }
@@ -54,7 +49,7 @@ export const MindElixirEditor: React.FC<MindElixirEditorProps> = ({ content, onS
             name: '变更颜色',
             onclick: (nodeData: any) => {
               // 颜色选择可以通过快捷键或直接修改实现
-              console.log('Change color for:', nodeData.topic);
+              void nodeData;
             },
           },
         ],
@@ -68,9 +63,7 @@ export const MindElixirEditor: React.FC<MindElixirEditorProps> = ({ content, onS
     });
 
     // 监听操作事件
-    mind.bus.addListener('operation', (operation: any) => {
-      console.log('[MindElixir] 操作:', operation.name, operation.obj);
-    });
+    mind.bus.addListener('operation', () => {});
 
     // 初始化数据
     mind.init(data);

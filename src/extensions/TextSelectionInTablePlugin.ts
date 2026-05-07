@@ -1,3 +1,4 @@
+import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { CellSelection } from 'prosemirror-tables';
 
@@ -10,7 +11,7 @@ import { CellSelection } from 'prosemirror-tables';
  * 解决方案：拦截 CellSelection，当 anchor 和 head 在同一个单元格内时，
  * 转换为普通的 TextSelection，让用户可以正常选字。
  */
-export const TextSelectionInTablePlugin = new Plugin({
+export const textSelectionInTablePlugin = new Plugin({
   key: new PluginKey('textSelectionInTable'),
 
   appendTransaction(transactions, oldState, newState) {
@@ -34,4 +35,12 @@ export const TextSelectionInTablePlugin = new Plugin({
   },
 });
 
-export default TextSelectionInTablePlugin;
+export const TextSelectionInTableExtension = Extension.create({
+  name: 'textSelectionInTable',
+
+  addProseMirrorPlugins() {
+    return [textSelectionInTablePlugin];
+  },
+});
+
+export default TextSelectionInTableExtension;

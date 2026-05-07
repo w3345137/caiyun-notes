@@ -116,7 +116,6 @@ export async function testLLMConnection(config: { protocol: string; api_key: str
 export async function transcribeAudio(noteId: string, audioHex: string): Promise<{ success: boolean; text?: string; provider?: string; error?: string }> {
   try {
     const token = getAuthToken();
-    console.log('[llmService] transcribeAudio request, noteId:', noteId, 'hexLen:', audioHex.length);
     const response = await fetch('/api/llm/transcribe', {
       method: 'POST',
       headers: {
@@ -125,10 +124,11 @@ export async function transcribeAudio(noteId: string, audioHex: string): Promise
       },
       body: JSON.stringify({ note_id: noteId, audio_hex: audioHex }),
     });
-    console.log('[llmService] transcribeAudio response status:', response.status, 'type:', response.headers.get('content-type'));
     const text = await response.text();
-    console.log('[llmService] transcribeAudio response body (first 500):', text.substring(0, 500));
     const data = JSON.parse(text);
+    if (!response.ok) {
+      return { success: false, error: data.error || '转写请求失败' };
+    }
     return data;
   } catch (error) {
     console.error('[llmService] transcribeAudio error:', error);

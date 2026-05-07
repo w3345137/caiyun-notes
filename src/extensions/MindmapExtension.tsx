@@ -6,6 +6,7 @@ import Drag from 'simple-mind-map/src/plugins/Drag.js';
 import Select from 'simple-mind-map/src/plugins/Select.js';
 import Export from 'simple-mind-map/src/plugins/Export.js';
 import RainbowLines from 'simple-mind-map/src/plugins/RainbowLines.js';
+import { registerMindmap, unregisterMindmap } from '../lib/mindmapActions';
 import './MindmapExtension.css';
 
 // simple-mind-map 的 usePlugin 是普通插件注册 API，不是 React Hook。
@@ -18,22 +19,13 @@ MindMap.usePlugin(Export);
 // eslint-disable-next-line react-hooks/rules-of-hooks
 MindMap.usePlugin(RainbowLines);
 
-export interface MindmapActions {
-  addChild: () => void;
-  addSibling: () => void;
-  removeSelected: () => void;
-  deleteMindmap: () => void;
-  toggleFullscreen: () => void;
-  exportImage: () => void;
-  exportMarkdown: () => void;
-  addSummary: () => void;
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    mindmap: {
+      insertMindmap: (content?: string) => ReturnType;
+    };
+  }
 }
-
-const mindmapRegistry = new Map<string, MindmapActions>();
-let registryCounter = 0;
-function registerMindmap(actions: MindmapActions): string { const id = `mindmap-${++registryCounter}`; mindmapRegistry.set(id, actions); return id; }
-function unregisterMindmap(id: string) { mindmapRegistry.delete(id); }
-export function getActiveMindmapActions(): MindmapActions | null { const e = Array.from(mindmapRegistry.values()); return e.length > 0 ? e[e.length - 1] : null; }
 
 interface SmmNodeData { data: { text: string; uid?: string; expand?: boolean; }; children: SmmNodeData[]; }
 interface MindElixirNodeData { id: string; topic: string; children?: MindElixirNodeData[]; expanded?: boolean; }
@@ -83,7 +75,7 @@ export const MindmapExtension = Node.create({
   parseHTML() { return [{ tag: 'div[data-mindmap]' }]; },
   renderHTML({ HTMLAttributes }) { return ['div', mergeAttributes(HTMLAttributes, { 'data-mindmap': HTMLAttributes.content, 'data-type': 'mindmap', class: 'mindmap-wrapper' })]; },
   addNodeView() {
-    return ReactNodeViewRenderer(MindmapNodeView, {
+    return ReactNodeViewRenderer(MindmapNodeView as React.ComponentType<any>, {
       stopEvent: ({ event }: { event: Event }) => {
         if (event instanceof KeyboardEvent) return false;
         if (event.type === 'mousedown' || event.type === 'mouseup' || event.type === 'dblclick' || event.type === 'pointerdown') {
@@ -102,10 +94,9 @@ export const MindmapExtension = Node.create({
 const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: boolean; deleteNode: () => void; }> = ({ node, updateAttributes, selected, deleteNode }) => {
   const mountCountRef = useRef(0);
   mountCountRef.current++;
-  if (mountCountRef.current <= 3) console.log('[MM-DEBUG] COMPONENT RENDER #' + mountCountRef.current);
   
   const containerRef = useRef<HTMLDivElement>(null);
-  const mmRef = useRef<MindMap | null>(null);
+  const mmRef = useRef<any>(null);
   const isSaving = useRef(false);
   const isEditingRef = useRef(false);
   const lastSavedContentRef = useRef('');
@@ -214,7 +205,7 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
         minNodeTextModifyWidth: 20, textAutoWrapWidth: 500, disableMouseWheelZoom: false, isDisableDrag: false, readonly: false,
         generalizationLineWidth: 3, generalizationLineColor: '#000000', generalizationLineMargin: 12, generalizationNodeMargin: 36,
         rainbowLinesConfig: { open: true, colorsList: ['rgb(192,57,43)', 'rgb(212,160,23)', 'rgb(39,174,96)', 'rgb(41,128,185)', 'rgb(142,68,173)', 'rgb(230,126,34)', 'rgb(22,160,133)'] },
-      });
+      } as any);
 
       mmRef.current = mm;
       lastSavedContentRef.current = content;
@@ -298,9 +289,8 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
     return () => {
       clearTimeout(timer);
       const oldMm = mmRef.current;
-      console.log('[MM-DEBUG] EFFECT 1 CLEANUP, mm exists:', !!oldMm);
       if (oldMm) {
-        try { oldMm.destroy(); } catch (e) { console.warn('[MM-DEBUG] destroy failed:', e); }
+        try { oldMm.destroy(); } catch (e) { console.warn('[Mindmap] destroy failed:', e); }
         mmRef.current = null;
       }
       initDoneRef.current = false;
@@ -312,7 +302,6 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
     if (!initDoneRef.current) return;
     const currentContent = node.attrs.content || '';
     if (currentContent === lastSavedContentRef.current) return;
-    console.log('[MM-DEBUG] EFFECT 2: external content change, calling setData');
     const mm = mmRef.current;
     if (!mm) return;
     const data = normalizeToSmm(currentContent);

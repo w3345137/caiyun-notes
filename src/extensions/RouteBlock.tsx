@@ -429,10 +429,11 @@ interface MapPanelProps {
   legs: RouteLeg[];
   onLegsChange: (legs: RouteLeg[]) => void;
   onExport: () => void;
+  onMapReady?: (map: any | null) => void;
 }
 
 const MapPanel: React.FC<MapPanelProps> = ({
-  points, departTime, mode, labelMode, legs, onLegsChange, onExport,
+  points, departTime, mode, labelMode, legs, onLegsChange, onExport, onMapReady,
 }) => {
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -466,12 +467,13 @@ const MapPanel: React.FC<MapPanelProps> = ({
         viewMode: '2D',
       });
       mapInstanceRef.current = map;
+      onMapReady?.(map);
       setSdkLoaded(true);
       setMapReady(true);
     } catch {
       setMapError('地图加载失败');
     }
-  }, [mode]);
+  }, [onMapReady]);
 
   // 更新标记点（标记模式 & 路线模式通用）
   const updateMarkers = useCallback(() => {
@@ -607,7 +609,7 @@ const MapPanel: React.FC<MapPanelProps> = ({
 
     onLegsChangeRef.current(newLegs);
     setIsCalculating(false);
-  }, [points, departTime]);
+  }, [points]);
 
   // 手动触发：初始化地图 + 规划
   const handleStartMap = useCallback(async () => {
@@ -640,9 +642,10 @@ const MapPanel: React.FC<MapPanelProps> = ({
       if (mapInstanceRef.current) {
         mapInstanceRef.current.destroy();
         mapInstanceRef.current = null;
+        onMapReady?.(null);
       }
     };
-  }, []);
+  }, [onMapReady]);
 
   return (
     <div className="route-map-panel" ref={mapRef}>
@@ -907,7 +910,7 @@ const RouteBlockView: React.FC<{
             legs={legs}
             onLegsChange={handleLegsChange}
             onExport={() => setShowExport(true)}
-            ref={mapInstanceRef as any}
+            onMapReady={(map) => { mapInstanceRef.current = map; }}
           />
         </div>
       </div>

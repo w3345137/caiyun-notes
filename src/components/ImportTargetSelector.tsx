@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, ChevronRight, ChevronDown, BookOpen, Folder, AlertCircle, Check, MapPin, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getUserNotebooksAndSections, ParsedNote, OriginalLocationInfo } from '../lib/importService';
@@ -36,17 +36,8 @@ export const ImportTargetSelector: React.FC<ImportTargetSelectorProps> = ({
   const [originalLocationInfo, setOriginalLocationInfo] = useState<Map<string, OriginalLocationInfo>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    console.log('[导入调试] ImportTargetSelector isOpen 变为', isOpen);
-    if (isOpen) {
-      setIsLoading(true);
-      loadUserData().finally(() => setIsLoading(false));
-    }
-  }, [isOpen]);
-
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
     const user = getCurrentUserId();
-    console.log('[导入调试] loadUserData 获取用户:', user);
     if (!user) {
       toast.error('请先登录');
       onCancel();
@@ -101,7 +92,14 @@ export const ImportTargetSelector: React.FC<ImportTargetSelectorProps> = ({
       }
     }
     setOriginalLocationInfo(originalInfo);
-  };
+  }, [notes, onCancel]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsLoading(true);
+      loadUserData().finally(() => setIsLoading(false));
+    }
+  }, [isOpen, loadUserData]);
 
   const toggleNotebook = (notebookId: string) => {
     const newExpanded = new Set(expandedNotebooks);

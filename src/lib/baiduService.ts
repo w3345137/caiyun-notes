@@ -40,7 +40,7 @@ function getAuthToken(): string {
 export async function getBaiduAuthUrl(
   appKey: string,
   secretKey: string
-): Promise<{ authUrl: string; state: string }> {
+): Promise<{ authUrl: string; state: string; redirectUrl?: string }> {
   const token = getAuthToken();
   const response = await fetch('/api/baidu/auth-url', {
     method: 'POST',
@@ -56,7 +56,7 @@ export async function getBaiduAuthUrl(
 
   const data = await response.json();
   if (data.error) throw new Error(data.error);
-  return { authUrl: data.authUrl, state: data.state };
+  return { authUrl: data.authUrl, state: data.state, redirectUrl: data.redirectUrl };
 }
 
 /**

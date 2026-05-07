@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, Database, Download, Trash2, Image, Video, FileText, FileCode, CheckCircle, Volume2, HelpCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './authContext';
 import { saveQiniuConfig, checkQiniuConfig, deleteQiniuConfig, getQiniuAttachments, downloadFromQiniu, deleteQiniuAttachment, formatFileSize, QiniuAttachment } from '../lib/qiniuService';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -37,17 +37,13 @@ export const QiniuModal: React.FC<QiniuModalProps> = ({ onClose }) => {
     onConfirm: () => void;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
-  useEffect(() => {
-    checkBindingStatus();
-  }, []);
-
-  const checkBindingStatus = async () => {
+  const checkBindingStatus = useCallback(async () => {
     if (!user) return;
     const result = await checkQiniuConfig();
     setIsBound(result.bound);
-  };
+  }, [user]);
 
-  const loadAttachments = async () => {
+  const loadAttachments = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     const result = await getQiniuAttachments();
@@ -55,7 +51,11 @@ export const QiniuModal: React.FC<QiniuModalProps> = ({ onClose }) => {
       setAttachments(result.data || []);
     }
     setLoading(false);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    checkBindingStatus();
+  }, [checkBindingStatus]);
 
   const handleSave = async () => {
     if (!user || !accessKey.trim() || !secretKey.trim() || !bucket.trim()) {

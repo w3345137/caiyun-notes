@@ -3,7 +3,7 @@ import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import React, { useState } from 'react';
 import { Download, Trash2, FileText, Image, Video, Volume2, FileCode, Link, Cloud } from 'lucide-react';
 import { downloadFromOneDrive, formatFileSize, getFileIconType } from '../lib/onedriveService';
-import { useAuth } from '../components/AuthProvider';
+import { useAuth } from '../components/authContext';
 import toast from 'react-hot-toast';
 
 declare module '@tiptap/core' {
@@ -156,7 +156,7 @@ export const AttachmentBlock = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(AttachmentBlockView);
+    return ReactNodeViewRenderer(AttachmentBlockView as React.ComponentType<any>);
   },
 
   addCommands() {

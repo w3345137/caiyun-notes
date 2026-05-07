@@ -70,36 +70,3 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
     </div>
   );
 };
-
-// 全局确认函数（使用 React Portal 或回调模式）
-let globalConfirmCallback: ((result: boolean) => void) | null = null;
-
-export const showConfirm = (
-  title: string,
-  message: string,
-  options?: {
-    confirmText?: string;
-    cancelText?: string;
-    isDanger?: boolean;
-    onResult: (confirmed: boolean) => void;
-  }
-) => {
-  // 通过自定义事件传递确认逻辑
-  const event = new CustomEvent('show-confirm', {
-    detail: {
-      title,
-      message,
-      confirmText: options?.confirmText || '确定',
-      cancelText: options?.cancelText || '取消',
-      isDanger: options?.isDanger || false,
-    },
-  });
-  window.dispatchEvent(event);
-
-  // 监听确认结果
-  const handler = (e: CustomEvent) => {
-    window.removeEventListener('confirm-result', handler as EventListener);
-    options?.onResult(e.detail.confirmed);
-  };
-  window.addEventListener('confirm-result', handler as EventListener);
-};

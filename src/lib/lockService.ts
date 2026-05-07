@@ -95,7 +95,7 @@ export async function removeLocksForUser(
   notebookId: string,
   userId: string
 ): Promise<{ success: boolean; deletedCount: number }> {
-  const result = await edgeApi.apiRemoveLocksForUser(notebookId);
+  const result = await edgeApi.apiRemoveLocksForUser(notebookId, userId);
 
   return {
     success: result.success,

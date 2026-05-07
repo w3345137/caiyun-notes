@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Users, Eye, Edit2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './authContext';
 import { createInvite } from '../lib/inviteService';
 
 interface JoinNotebookModalProps {

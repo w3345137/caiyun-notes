@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, RefreshCw, Loader2, Mail, MailOpen, Paperclip, User } from 'lucide-react';
 import { getEmailThread, getEmailContent, sendEmail } from '../lib/emailService';
 import toast from 'react-hot-toast';
+import DOMPurify from 'dompurify';
 
 interface EmailThreadViewProps {
   accountId: string;
@@ -27,6 +28,7 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
   const [emails, setEmails] = useState<EmailItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [contentCache, setContentCache] = useState<Record<string, string>>({});
+  const [htmlContentCache, setHtmlContentCache] = useState<Record<string, boolean>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCompose, setShowCompose] = useState(false);
   const [composeSubject, setComposeSubject] = useState('');
@@ -35,14 +37,16 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    loadEmails();
-  }, [accountId, otherAddr]);
-
-  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [emails]);
 
-  const loadEmails = async () => {
+  const sanitizeEmailHtml = (html: string) => DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+    FORBID_ATTR: ['style'],
+  });
+
+  const loadEmails = useCallback(async () => {
     setLoading(true);
     try {
       const result = await getEmailThread(accountId, otherAddr);
@@ -58,7 +62,11 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
     } finally {
       setLoading(false);
     }
-  };
+  }, [accountId, otherAddr]);
+
+  useEffect(() => {
+    loadEmails();
+  }, [loadEmails]);
 
   const loadContent = async (email: EmailItem) => {
     if (contentCache[email.id]) {
@@ -69,14 +77,17 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
       const result = await getEmailContent(accountId, email.folder, email.uid);
       if (result.success) {
         let textContent = '';
+        let isHtmlContent = false;
         if (result.html) {
-          textContent = result.html;
+          textContent = sanitizeEmailHtml(result.html);
+          isHtmlContent = true;
         } else if (result.text) {
           textContent = result.text.replace(/\r\n/g, '\n').trim();
         } else if (result.source) {
           textContent = result.source.substring(0, 500);
         }
         setContentCache(prev => ({ ...prev, [email.id]: textContent }));
+        setHtmlContentCache(prev => ({ ...prev, [email.id]: isHtmlContent }));
         setExpandedId(email.id);
       }
     } catch (e) {
@@ -167,7 +178,7 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
                 )}
                 <button onClick={() => loadContent(email)} className="text-left w-full">
                   {expandedId === email.id && contentCache[email.id] ? (
-                    contentCache[email.id].includes('<') && contentCache[email.id].includes('>') ? (
+                    htmlContentCache[email.id] ? (
                       <div className={`text-sm prose prose-sm max-w-none ${fromMe ? 'text-white prose-invert' : 'text-gray-700'}`} dangerouslySetInnerHTML={{ __html: contentCache[email.id] }} />
                     ) : (
                       <div className={`text-sm whitespace-pre-wrap ${fromMe ? 'text-white' : 'text-gray-700'}`}>

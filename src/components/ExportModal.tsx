@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { X, Download, Upload, ChevronRight, ChevronDown, FileText, Folder, BookOpen, Loader2, Check, Cloud, AlertCircle, Info } from 'lucide-react';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './authContext';
 import { useNoteStore } from '../store/noteStore';
 import toast from 'react-hot-toast';
 import { getSharedNotebooks } from '../lib/sharing';
@@ -224,7 +224,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
       };
       sortChildren(roots);
 
-      console.log(`[导出树] 共加载 ${nodes.length} 条笔记，根节点 ${roots.length} 个（包含分享的笔记本）`);
       setExportTree(roots);
     } catch (err) {
       console.error('加载笔记树异常:', err);
@@ -499,7 +498,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
 
   // 导入笔记 - 点按钮就弹选择框
   const handleImport = () => {
-    console.log('[导入调试] handleImport 被调用', { importFilesLength: importFiles.length, parsedNotesLength: parsedNotes.length });
     if (importFiles.length === 0) {
       toast.error('请先选择要导入的文件');
       return;
@@ -512,14 +510,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
       toast.error('请先登录');
       return;
     }
-    console.log('[导入调试] 即将设置 showTargetSelector = true');
     setShowTargetSelector(true);
-    console.log('[导入调试] showTargetSelector 已设置');
   };
 
   // 处理目标选择确认
   const handleTargetConfirm = (targetNotebookId: string, targetSectionId: string | null, mode: 'original' | 'new_location') => {
-    console.log('[导入调试] handleTargetConfirm called:', { targetNotebookId, targetSectionId, mode, parsedNotesCount: parsedNotes.length });
     setShowTargetSelector(false);
 
     if (mode === 'original') {
@@ -538,7 +533,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
       // - notebook → parent_id = null（完全新建笔记本）
       // - section → parent_id = targetNotebookId
       // - page → parent_id = targetSectionId
-      console.log('[导入调试] 新位置模式:', { targetNotebookId, targetSectionId });
       if (!targetNotebookId) {
         toast.error('请选择目标笔记本');
         return;
@@ -549,7 +543,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
 
   // 原位置导入：保留原 ID 和父子关系，使用 ID 映射处理冲突
   const performImportOriginal = async (notesToImport: ParsedNote[]) => {
-    console.log('[导入调试] performImportOriginal called, notes:', notesToImport.length);
     setIsImporting(true);
     let success = 0;
     let failed = 0;
@@ -574,9 +567,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, onImportCompl
           resolvedParentId = idMapping.get(resolvedParentId)!;
         }
 
-        console.log('[导入调试] 导入笔记:', { id: note.id, title: note.title, type: note.type, parentId: resolvedParentId });
         const result = await importNote(note, resolvedParentId, user?.id || '', existingIds);
-        console.log('[导入调试] importNote result:', result);
         if (result.success) {
           success++;
           // 记录 ID 映射（如果因为冲突使用了新 ID）

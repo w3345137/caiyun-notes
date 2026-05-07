@@ -1,15 +1,15 @@
 import React, { useEffect, useRef, useCallback, useState, lazy, Suspense } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { useShallow } from 'zustand/react/shallow';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
-import { Table } from '@tiptap/extension-table';
 import { goToNextCell } from 'prosemirror-tables';
 import { TableWithDefaultWidth } from '../extensions/TableWithDefaultWidth';
 import { TableRowWithTextSelection } from '../extensions/TableRowWithTextSelection';
 import { TableCellWithColor } from '../extensions/TableCellWithColor';
 import { TableHeaderWithColor } from '../extensions/TableHeaderWithColor';
 import { ResizableImage } from '../extensions/ResizableImage';
-import { TextSelectionInTablePlugin } from '../extensions/TextSelectionInTablePlugin';
+import { TextSelectionInTableExtension } from '../extensions/TextSelectionInTablePlugin';
 import { TabGroup } from '../extensions/TabGroup';
 import TextAlign from '@tiptap/extension-text-align';
 import Highlight from '@tiptap/extension-highlight';
@@ -23,14 +23,14 @@ import { Color } from '@tiptap/extension-color';
 import { getActiveInternalEditor } from '../lib/nodeViewEditorManager';
 import { ListKeymap } from '@tiptap/extension-list-keymap';
 import { useNoteStore, markNoteAsEditing, markNoteAsEditingEnd, SSENotification } from '../store/noteStore';
-import { useAuth } from '../components/AuthProvider';
-import { MindmapExtension, getActiveMindmapActions } from '../extensions/MindmapExtension';
+import { useAuth } from '../components/authContext';
+import { MindmapExtension } from '../extensions/MindmapExtension';
+import { getActiveMindmapActions } from '../lib/mindmapActions';
 import { RouteBlock } from '../extensions/RouteBlock.tsx';
 import { AttachmentBlock } from '../extensions/AttachmentBlock';
 import { FolderBlock } from '../extensions/FolderBlock';
 import { AudioBlock } from '../extensions/AudioBlock';
 import { AlertCircle, Plus, Minus, Table as TableIcon, ChevronDown, PaintBucket, Lock, Unlock, Bold, Italic, Strikethrough, List, ListOrdered, ListTodo, CirclePlus, Camera, Maximize2, Download, Image, FileText, Trash2, FolderOpen, Braces } from 'lucide-react';
-import mermaid from 'mermaid';
 import toast from 'react-hot-toast';
 import html2canvas from 'html2canvas';
 import { HistoryPanel } from '../components/HistoryPanel';
@@ -43,21 +43,35 @@ import { checkNotebookQiniu } from '../lib/qiniuService';
 import { apiGetCloudProvider } from '../lib/edgeApi';
 import { getNotebookLLMConfig } from '../lib/llmService';
 
-// 延迟初始化 mermaid - Safari 兼容性修复
-let mermaidInitialized = false;
-const initMermaid = () => {
-  if (mermaidInitialized) return;
-  try {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'default',
-      securityLevel: 'loose',
-      fontFamily: 'sans-serif',
-    });
-    mermaidInitialized = true;
-  } catch (e) {
-    console.error('Mermaid initialization failed:', e);
+type RecordingCloudProvider = 'onedrive' | 'baidu' | 'qiniu';
+
+const recordingCloudLabels: Record<RecordingCloudProvider, string> = {
+  onedrive: 'OneDrive',
+  baidu: '百度网盘',
+  qiniu: '七牛云',
+};
+
+const isRecordingCloudProvider = (value: unknown): value is RecordingCloudProvider => (
+  value === 'onedrive' || value === 'baidu' || value === 'qiniu'
+);
+
+const findRootNotebookId = (
+  notes: Array<{ id: string; type: string; parentId?: string | null }>,
+  noteId: string
+): string | null => {
+  let current = notes.find((note) => note.id === noteId) || null;
+  let guard = 0;
+
+  while (current && guard < 20) {
+    if (current.type === 'notebook' || current.type === 'email_notebook') {
+      return current.id;
+    }
+    const parentId = current.parentId;
+    current = parentId ? notes.find((note) => note.id === parentId) || null : null;
+    guard += 1;
   }
+
+  return null;
 };
 
 const ToolbarButton: React.FC<{
@@ -239,7 +253,7 @@ const EditorToolbar: React.FC<{
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [setShowColorPicker]);
 
   const colors = [
     '#fef3c7', '#fce7f3', '#dbeafe', '#dcfce7', '#f3e8ff', '#fee2e2',
@@ -949,7 +963,6 @@ EditorToolbar.displayName = 'EditorToolbar';
 export const NoteEditor: React.FC = () => {
   const { user } = useAuth();
   const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
-  const notes = useNoteStore((state) => state.notes);
   const updateNote = useNoteStore((state) => state.updateNote);
   const dbReady = useNoteStore((state) => state.dbReady);
   const lockNote = useNoteStore((state) => state.lockNote);
@@ -962,14 +975,36 @@ export const NoteEditor: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
   const [wordCount, setWordCount] = useState(0);
+  const [displayedUpdatedAt, setDisplayedUpdatedAt] = useState<string | null>(null);
   const [isSharedNotebook, setIsSharedNotebook] = useState(false);
   const [confirmOpts, setConfirmOpts] = useState<{ msg: string; onOk: () => void } | null>(null);
 
-  const selectedNote = notes.find((n) => n.id === selectedNoteId) || null;
+  const selectedNote = useNoteStore(useShallow((state) => {
+    const note = state.notes.find((n) => n.id === state.selectedNoteId);
+    if (!note) return null;
+
+    return {
+      id: note.id,
+      title: note.title,
+      type: note.type,
+      lockedBy: note.lockedBy,
+      lockedByName: note.lockedByName,
+    };
+  }));
 
   // 获取用户信息
   const userId = user?.id || 'anonymous';
   const userName = user?.display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || '访客';
+
+  useEffect(() => {
+    if (!selectedNoteId) {
+      setDisplayedUpdatedAt(null);
+      return;
+    }
+
+    const note = useNoteStore.getState().notes.find((n) => n.id === selectedNoteId);
+    setDisplayedUpdatedAt(note?.updatedAt || null);
+  }, [selectedNoteId]);
 
   // 检查页面是否被锁定
   const isLocked = selectedNote?.lockedBy != null;
@@ -1022,50 +1057,73 @@ export const NoteEditor: React.FC = () => {
 
   // 检查是否可编辑（未被锁定或由自己锁定）
   const canEdit = !isLocked || isLockedByMe;
+  const sharedStatusCacheRef = useRef<Map<string, boolean>>(new Map());
 
   // 检查当前页面是否属于共享笔记本
   useEffect(() => {
+    let cancelled = false;
+
     const checkSharedStatus = async () => {
-      if (!selectedNote) {
+      if (!selectedNoteId) {
         setIsSharedNotebook(false);
         return;
       }
-      if (selectedNote.type !== 'page') {
+
+      const currentNotes = useNoteStore.getState().notes;
+      const currentNote = currentNotes.find((n) => n.id === selectedNoteId);
+      if (!currentNote || currentNote.type !== 'page') {
         setIsSharedNotebook(false);
         return;
       }
 
       // 找到父分区
-      const section = notes.find((n) => n.id === selectedNote.parentId && n.type === 'section');
+      const section = currentNotes.find((n) => n.id === currentNote.parentId && n.type === 'section');
       if (!section) {
         setIsSharedNotebook(false);
         return;
       }
 
       // 找到父笔记本
-      const notebook = notes.find((n) => n.id === section.parentId && (n.type === 'notebook' || n.type === 'email_notebook'));
+      const notebook = currentNotes.find((n) => n.id === section.parentId && (n.type === 'notebook' || n.type === 'email_notebook'));
       if (!notebook) {
         setIsSharedNotebook(false);
         return;
       }
 
+      const cached = sharedStatusCacheRef.current.get(notebook.id);
+      if (cached !== undefined) {
+        setIsSharedNotebook(cached);
+        return;
+      }
+
       // 查询 note_shares 表
       const result = await apiGetNotebookShares(notebook.id);
-      setIsSharedNotebook(result.success && result.data && result.data.length > 0);
+      const isShared = !!(result.success && result.data && result.data.length > 0);
+      sharedStatusCacheRef.current.set(notebook.id, isShared);
+      if (!cancelled) {
+        setIsSharedNotebook(isShared);
+      }
     };
 
     checkSharedStatus();
-  }, [selectedNote, notes]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedNoteId]);
 
   const lastSavedContentRef = useRef<string>('');
   const isLoadingRef = useRef(false);
   const editorRef = useRef<any>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingContentRef = useRef<string | null>(null); // 待保存的内容（debounce）
+  const wordCountTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        link: false,
+        listKeymap: false,
+      }),
       ResizableImage.configure({
         HTMLAttributes: {
           class: 'rounded-lg',
@@ -1083,7 +1141,7 @@ export const NoteEditor: React.FC = () => {
       }),
       TableHeaderWithColor,
       // 允许表格单元格内原生文字选择
-      TextSelectionInTablePlugin,
+      TextSelectionInTableExtension,
       // 页签扩展
       TabGroup,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
@@ -1124,14 +1182,9 @@ export const NoteEditor: React.FC = () => {
       }),
       // Markdown 语法支持
       Markdown.configure({
-        html: false,
-        tightLists: true,
-        tightListClass: 'tight',
-        bulletListMarker: '-',
-        linkify: false,
-        breaks: false,
-        transformCopiedText: true,
-        transformPastedText: true,
+        markedOptions: {
+          breaks: false,
+        },
       }),
     ],
     content: '',
@@ -1206,6 +1259,7 @@ export const NoteEditor: React.FC = () => {
       },
     },
     immediatelyRender: false, // Safari 兼容性修复
+    shouldRerenderOnTransaction: false,
     onUpdate: ({ editor }) => {
       if (selectedNoteId && !isLoadingRef.current) {
         const currentLockedByOther = useNoteStore.getState().isNoteLockedByOther(selectedNoteId, userId);
@@ -1217,9 +1271,15 @@ export const NoteEditor: React.FC = () => {
           pendingContentRef.current = null;
           return;
         }
-        const content = JSON.stringify(editor.getJSON());
-        const count = calculateWordCount(editor.getJSON());
-        setWordCount(count);
+        const json = editor.getJSON();
+        const content = JSON.stringify(json);
+        if (wordCountTimeoutRef.current) {
+          clearTimeout(wordCountTimeoutRef.current);
+        }
+        wordCountTimeoutRef.current = setTimeout(() => {
+          setWordCount(calculateWordCount(json));
+          wordCountTimeoutRef.current = null;
+        }, 250);
 
         markNoteAsEditing(selectedNoteId);
 
@@ -1285,7 +1345,7 @@ export const NoteEditor: React.FC = () => {
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'r') {
         event.preventDefault();
         // 触发 selectionUpdate 事件，更新工具栏状态
-        editor.emit('selectionUpdate', editor.state);
+        editor.emit('selectionUpdate', { editor, transaction: editor.state.tr });
         return;
       }
       // Cmd+. for unordered list
@@ -1404,6 +1464,10 @@ export const NoteEditor: React.FC = () => {
         clearTimeout(autoSaveTimeoutRef.current);
         autoSaveTimeoutRef.current = null;
       }
+      if (wordCountTimeoutRef.current) {
+        clearTimeout(wordCountTimeoutRef.current);
+        wordCountTimeoutRef.current = null;
+      }
       if (pendingContentRef.current !== null &&
           pendingContentRef.current !== lastSavedContentRef.current &&
           selectedNoteId) {
@@ -1416,7 +1480,7 @@ export const NoteEditor: React.FC = () => {
       // 切换离开时标记结束编辑
       markNoteAsEditingEnd(selectedNoteId);
     };
-  }, [selectedNoteId, editor]);
+  }, [selectedNoteId, editor, calculateWordCount, updateNote]);
 
   const handleCellColor = useCallback((color: string) => {
     if (editor) {
@@ -1434,21 +1498,22 @@ export const NoteEditor: React.FC = () => {
 
   const handleMindmapClick = () => {
     if (editor) {
-      editor.chain().focus().insertMindmap().run();
+      (editor.chain().focus() as any).insertMindmap().run();
       toast.success('思维导图已添加');
     }
   };
 
   // 获取笔记本的云存储提供商
-  const getNoteCloudProvider = useCallback(async (noteId: string): Promise<string> => {
+  const getNoteCloudProvider = useCallback(async (noteId: string): Promise<RecordingCloudProvider | null> => {
     try {
-      const cpRes = await apiGetCloudProvider(noteId);
-      return cpRes?.success ? cpRes.data?.cloud_provider : null;
+      const notebookId = findRootNotebookId(useNoteStore.getState().notes, noteId) || noteId;
+      const cpRes = await apiGetCloudProvider(notebookId);
+      return isRecordingCloudProvider(cpRes?.data?.cloud_provider) ? cpRes.data.cloud_provider : null;
     } catch { return null; }
   }, []);
 
   // 检查指定云存储提供商是否可用
-  const checkCloudProvider = useCallback(async (noteId: string, provider: string | null): Promise<{ bound: boolean; isOwner: boolean; access: string }> => {
+  const checkCloudProvider = useCallback(async (noteId: string, provider: RecordingCloudProvider | null): Promise<{ bound: boolean; isOwner: boolean; access: string }> => {
     if (!provider || provider === 'onedrive') {
       return checkNotebookOnedrive(noteId);
     } else if (provider === 'baidu') {
@@ -1478,44 +1543,54 @@ export const NoteEditor: React.FC = () => {
       return;
     }
     if (editor) {
-      editor.chain().focus().insertFolderBlock({ noteId: selectedNote.id, folderName: '附件文件夹' }).run();
+      editor.chain().focus().insertFolderBlock({ noteId: selectedNote.id, folderName: '附件文件夹', storageProvider: cp || 'onedrive' }).run();
     }
   };
 
-  // 处理插入录音机点击（检查大模型 + OneDrive 绑定状态）
+  // 处理插入录音机点击：录音文件需要云盘保存，大模型只影响自动转写。
   const handleRecorderClick = async () => {
     if (!user || !selectedNote?.id) return;
 
-    const odResult = await checkNotebookOnedrive(selectedNote.id);
-    if (!odResult.bound) {
-      if (odResult.isOwner) {
-        toast.error('请先绑定 OneDrive 账号');
+    let transcriptionEnabled = true;
+
+    const storageProvider = await getNoteCloudProvider(selectedNote.id);
+    if (!storageProvider) {
+      toast.error('请先为该笔记本选择并绑定云盘，录音文件需要云盘保存');
+      return;
+    }
+
+    const storageResult = await checkCloudProvider(selectedNote.id, storageProvider);
+    if (storageResult.access === 'view') {
+      toast.error('你只有查看权限，无法录音保存到该笔记本');
+      return;
+    }
+
+    if (!storageResult.bound) {
+      const providerLabel = recordingCloudLabels[storageProvider];
+      if (storageResult.isOwner) {
+        toast.error(`请先绑定${providerLabel}，录音文件需要云盘保存`);
       } else {
-        toast.error('该笔记本所有者未绑定 OneDrive，无法使用录音功能');
+        toast.error(`该笔记本所有者未绑定${providerLabel}，无法使用录音`);
       }
       return;
     }
 
     const llmResult = await getNotebookLLMConfig(selectedNote.id);
     if (!llmResult.configured) {
-      if (llmResult.is_owner) {
-        toast.error('请先配置大模型');
-      } else {
-        toast.error('该笔记本所有者未配置大模型，无法使用录音功能');
-      }
-      return;
+      transcriptionEnabled = false;
+      toast('未配置大模型，录音可用，但不会自动转写', { duration: 5000 });
     }
 
     // 检查大模型是否支持语音转写（MiniMax 通过 Assistants API 支持，其他需要 OpenAI 兼容协议）
     const config = llmResult.config;
     const isMinimax = config && (config.provider === 'minimax' || config.base_url?.includes('minimax'));
     if (!isMinimax && config && config.protocol !== 'openai' && config.protocol !== 'custom') {
-      toast.error('当前大模型不支持语音转写。请使用 OpenAI 兼容协议的模型或 MiniMax。');
-      return;
+      transcriptionEnabled = false;
+      toast('当前大模型不支持语音转写，录音仍可正常保存', { duration: 5000 });
     }
 
     if (editor) {
-      editor.chain().focus().insertAudioBlock({ noteId: selectedNote.id }).run();
+      editor.chain().focus().insertAudioBlock({ noteId: selectedNote.id, uploadEnabled: true, transcriptionEnabled, storageProvider }).run();
     }
   };
 
@@ -1575,7 +1650,7 @@ export const NoteEditor: React.FC = () => {
       {/* 底部信息栏 - 放在编辑区上方 */}
       <div className="px-4 py-1.5 text-xs text-gray-400 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 pl-4">
-          <span>最后修改: {new Date(selectedNote.updatedAt).toLocaleString('zh-CN')}</span>
+          <span>最后修改: {displayedUpdatedAt ? new Date(displayedUpdatedAt).toLocaleString('zh-CN') : '-'}</span>
           <span className="text-gray-300">|</span>
           <span>字数: {wordCount.toLocaleString()}</span>
         </div>

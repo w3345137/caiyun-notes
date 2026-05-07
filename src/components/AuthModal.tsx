@@ -80,7 +80,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       setCountdown(60);
       toast.success('验证码已发送到您的邮箱');
     } catch (error: any) {
-      let msg = error?.message || '发送验证码失败';
+      const msg = error?.message || '发送验证码失败';
       showError(msg);
     } finally {
       setSendingCode(false);

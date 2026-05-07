@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "彩云笔记",
-  "version": "2.0.0-p6",
+  "version": "2.0.0-p7",
   "identifier": "com.caiyun.notes",
   "build": {
     "frontendDist": "../dist"
@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' https://notes.binapp.top https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://notes.binapp.top; style-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://notes.binapp.top; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob: https://notes.binapp.top; media-src 'self' blob: data: https://notes.binapp.top; connect-src 'self' https://restapi.amap.com https://notes.binapp.top https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn ws://localhost:*; frame-src 'self' https://notes.binapp.top https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn"
+      "csp": "default-src 'self' https://notes.binapp.top https://github.com https://api.github.com https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://notes.binapp.top; style-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://notes.binapp.top; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob: https://notes.binapp.top; media-src 'self' blob: data: https://notes.binapp.top; connect-src 'self' https://restapi.amap.com https://notes.binapp.top https://github.com https://api.github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn ws://localhost:*; frame-src 'self' https://notes.binapp.top https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn"
     }
   },
   "bundle": {
@@ -56,7 +56,9 @@
     },
     "updater": {
       "endpoints": [
-        "https://notes.binapp.top/updates/latest.json"
+        "https://notes.binapp.top/updates/latest.json",
+        "https://gitee.com/binbin3344/cloudnote/raw/master/updates/latest.json",
+        "https://github.com/w3345137/caiyun-notes/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMxNzI5OEQ3M0M5MjYyQzEKUldUQllwSTgxNWh5d1JKQ3p3dFJOcTNxRmdIZHBNY2F0WDJaVVczRWh5SHR1b0ZVL2Y4eVNkUEcK"
     }

@@ -34,12 +34,6 @@ export const TableCellWithColor = TableCell.extend<CellColorOptions>({
     };
   },
 
-  // 当在单元格内选择文字时，不阻止，让原生 selection 生效
-  // 返回 true 会阻止默认行为，导致选中整个单元格
-  // 返回 false 让浏览器原生选择正常工作
-  handleMouseDown() {
-    return false;
-  },
 });
 
 export default TableCellWithColor;

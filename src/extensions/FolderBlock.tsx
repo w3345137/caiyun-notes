@@ -1,11 +1,15 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Download, Trash2, FileText, Image, Video, Volume2, FileCode, Cloud, Upload, FolderOpen, Loader2, Plus, X, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { downloadFromOneDrive, uploadToOneDrive, formatFileSize, getFileIconType, getAttachments } from '../lib/onedriveService';
-import { useAuth } from '../components/AuthProvider';
+import { downloadFromOneDrive, uploadToOneDrive, formatFileSize, getFileIconType, getAttachments, deleteAttachment } from '../lib/onedriveService';
+import { downloadFromBaidu, uploadToBaidu, deleteBaiduAttachment } from '../lib/baiduService';
+import { downloadFromQiniu, uploadToQiniu, deleteQiniuAttachment } from '../lib/qiniuService';
+import { useAuth } from '../components/authContext';
 import { useNoteStore } from '../store/noteStore';
 import toast from 'react-hot-toast';
+
+type StorageProvider = 'onedrive' | 'baidu' | 'qiniu';
 
 interface FolderFile {
   id: string;
@@ -15,12 +19,13 @@ interface FolderFile {
   onedrive_path: string;
   category: string;
   created_at: string;
+  storage_provider?: StorageProvider;
 }
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     folderBlock: {
-      insertFolderBlock: (attrs: { noteId: string; folderName: string }) => ReturnType;
+      insertFolderBlock: (attrs: { noteId: string; folderName: string; storageProvider?: StorageProvider }) => ReturnType;
     };
   }
 }
@@ -28,7 +33,44 @@ declare module '@tiptap/core' {
 interface FolderBlockAttrs {
   noteId: string;
   folderName: string;
+  storageProvider?: StorageProvider;
 }
+
+const getProvider = (provider?: string): StorageProvider => {
+  return provider === 'baidu' || provider === 'qiniu' ? provider : 'onedrive';
+};
+
+const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = reader.result as string;
+    resolve(result.split(',')[1] || '');
+  };
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+
+const uploadFile = async (provider: StorageProvider, file: File, noteId: string, folderName: string) => {
+  if (provider === 'baidu') {
+    return uploadToBaidu(noteId, file.name, await fileToBase64(file));
+  }
+  if (provider === 'qiniu') {
+    return uploadToQiniu(noteId, file.name, await fileToBase64(file));
+  }
+  return uploadToOneDrive(file, noteId, '/彩云笔记', folderName);
+};
+
+const downloadFile = (provider: StorageProvider, attachmentId: string) => {
+  if (provider === 'baidu') return downloadFromBaidu(attachmentId);
+  if (provider === 'qiniu') return downloadFromQiniu(attachmentId);
+  return downloadFromOneDrive(attachmentId);
+};
+
+const deleteFile = (provider: StorageProvider, attachmentId: string) => {
+  if (provider === 'baidu') return deleteBaiduAttachment(attachmentId);
+  if (provider === 'qiniu') return deleteQiniuAttachment(attachmentId);
+  return deleteAttachment(attachmentId);
+};
 
 // 文件预览弹窗
 const FilePreviewModal: React.FC<{
@@ -170,22 +212,7 @@ const FolderBlockView: React.FC<{
     }
   };
 
-  useEffect(() => {
-    loadFiles();
-  }, [attrs.noteId]);
-
-  useEffect(() => {
-    if (folderRefreshTrigger > 0) loadFiles();
-  }, [folderRefreshTrigger]);
-
-  // 清理预览blob
-  useEffect(() => {
-    return () => {
-      if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
-    };
-  }, [previewBlobUrl]);
-
-  const loadFiles = async () => {
+  const loadFiles = useCallback(async () => {
     if (!attrs.noteId) return;
     setLoading(true);
     try {
@@ -198,14 +225,29 @@ const FolderBlockView: React.FC<{
     } finally {
       setLoading(false);
     }
-  };
+  }, [attrs.noteId]);
+
+  useEffect(() => {
+    loadFiles();
+  }, [loadFiles]);
+
+  useEffect(() => {
+    if (folderRefreshTrigger > 0) loadFiles();
+  }, [folderRefreshTrigger, loadFiles]);
+
+  // 清理预览blob
+  useEffect(() => {
+    return () => {
+      if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+    };
+  }, [previewBlobUrl]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length || !user) return;
     const file = e.target.files[0];
     setUploading(true);
     try {
-      const result = await uploadToOneDrive(file, attrs.noteId, '/彩云笔记', attrs.folderName);
+      const result = await uploadFile(getProvider(attrs.storageProvider), file, attrs.noteId, attrs.folderName);
       if (result.success) {
         toast.success('上传成功');
         await loadFiles();
@@ -224,7 +266,7 @@ const FolderBlockView: React.FC<{
     if (!user) return;
     setDownloadingId(file.id);
     try {
-      const result = await downloadFromOneDrive(file.id);
+      const result = await downloadFile(getProvider(file.storage_provider || attrs.storageProvider), file.id);
       if (result.success && result.blob) {
         const url = URL.createObjectURL(result.blob);
         const a = document.createElement('a');
@@ -245,7 +287,7 @@ const FolderBlockView: React.FC<{
     if (!user) return;
     setDownloadingId(file.id);
     try {
-      const result = await downloadFromOneDrive(file.id);
+      const result = await downloadFile(getProvider(file.storage_provider || attrs.storageProvider), file.id);
       if (result.success && result.blob) {
         const url = URL.createObjectURL(result.blob);
         setPreviewBlobUrl(url);
@@ -267,8 +309,7 @@ const FolderBlockView: React.FC<{
   const handleDeleteFile = async (file: FolderFile) => {
     if (!confirm(`确定删除文件「${file.file_name}」？此操作不可撤销。`)) return;
     try {
-      const { deleteAttachment } = await import('../lib/onedriveService');
-      const result = await deleteAttachment(file.id);
+      const result = await deleteFile(getProvider(file.storage_provider || attrs.storageProvider), file.id);
       if (result.success) {
         toast.success('已删除');
         await loadFiles();
@@ -440,6 +481,7 @@ export const FolderBlock = Node.create({
     return {
       noteId: { default: '' },
       folderName: { default: '附件文件夹' },
+      storageProvider: { default: 'onedrive' },
     };
   },
 
@@ -452,7 +494,7 @@ export const FolderBlock = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(FolderBlockView);
+    return ReactNodeViewRenderer(FolderBlockView as React.ComponentType<any>);
   },
 
   addCommands() {

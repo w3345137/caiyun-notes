@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { NodeViewWrapper, useEditor, EditorContent } from '@tiptap/react';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Plus } from 'lucide-react';
@@ -9,6 +9,7 @@ import TextAlign from '@tiptap/extension-text-align';
 import { TableRowWithTextSelection } from '../extensions/TableRowWithTextSelection';
 import { TableCellWithColor } from '../extensions/TableCellWithColor';
 import { TableHeaderWithColor } from '../extensions/TableHeaderWithColor';
+import { TextSelectionInTableExtension } from '../extensions/TextSelectionInTablePlugin';
 import { ResizableImage } from '../extensions/ResizableImage';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
@@ -55,8 +56,11 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const tabs: Tab[] = node.attrs.tabs || [{ id: '1', title: '页签1' }];
-  const contents: Contents = node.attrs.contents || { '1': { type: 'doc', content: [{ type: 'paragraph' }] } };
+  const tabs: Tab[] = useMemo(() => node.attrs.tabs || [{ id: '1', title: '页签1' }], [node.attrs.tabs]);
+  const contents: Contents = useMemo(
+    () => node.attrs.contents || { '1': { type: 'doc', content: [{ type: 'paragraph' }] } },
+    [node.attrs.contents]
+  );
   const activeIndex: number = node.attrs.activeIndex ?? 0;
 
   // 用 ref 保持最新值，避免 onBlur/handleTabClick 中的闭包过时问题
@@ -91,7 +95,10 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
   // 创建内部编辑器
   const internalEditor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        link: false,
+        listKeymap: false,
+      }),
       Placeholder.configure({ placeholder: '开始输入...' }),
       ResizableImage.configure({
         HTMLAttributes: { class: 'rounded-lg' },
@@ -103,6 +110,7 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
         HTMLAttributes: { class: 'relative' },
       }),
       TableHeaderWithColor,
+      TextSelectionInTableExtension,
       TextStyle,
       Color,
       FontSize.configure({ types: ['textStyle'] }),
@@ -121,11 +129,9 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
         ],
       }),
       Markdown.configure({
-        html: false,
-        tightLists: true,
-        breaks: false,
-        transformCopiedText: true,
-        transformPastedText: true,
+        markedOptions: {
+          breaks: false,
+        },
       }),
     ],
     content: contents[tabs[activeIndex]?.id] || { type: 'doc', content: [{ type: 'paragraph' }] },
@@ -139,7 +145,7 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
         if (moved) return false;
         const files = event.dataTransfer?.files;
         if (!files || files.length === 0) return false;
-        const imageFiles = Array.from(files).filter((f: File) => f.type.startsWith('image/'));
+        const imageFiles = Array.from(files as FileList).filter((file) => file.type.startsWith('image/'));
         if (imageFiles.length === 0) return false;
         event.preventDefault();
         const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
@@ -226,12 +232,12 @@ export const TabGroupView: React.FC<TabGroupViewProps> = ({
   // 加载目标 Tab 内容 —— 仅在 activeIndex 变化时触发
   useEffect(() => {
     if (!internalEditor) return;
-    const targetTab = tabs[activeIndex];
+    const targetTab = tabsRef.current[activeIndex];
     if (!targetTab) return;
 
-    const targetContent = contents[targetTab.id] || { type: 'doc', content: [{ type: 'paragraph' }] };
-    internalEditor.commands.setContent(targetContent, false);
-  }, [activeIndex, internalEditor]); // 故意不包含 tabs 和 contents，避免循环触发
+    const targetContent = contentsRef.current[targetTab.id] || { type: 'doc', content: [{ type: 'paragraph' }] };
+    internalEditor.commands.setContent(targetContent, { emitUpdate: false });
+  }, [activeIndex, internalEditor]);
 
   // 添加 Tab：先保存当前内容
   const handleAddTab = useCallback(() => {

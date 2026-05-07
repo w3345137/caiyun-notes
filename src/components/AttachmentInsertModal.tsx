@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './authContext';
 import { uploadToOneDrive, formatFileSize, checkNotebookOnedrive } from '../lib/onedriveService';
 import { X, Upload, Cloud, FileText, Image, Video, Volume2, FileCode, Loader2, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
