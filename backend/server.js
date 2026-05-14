@@ -30,7 +30,9 @@ const { collabTransformer, EMPTY_DOC } = require('./collabSchema');
     }
 
 const PORT = process.env.PORT || 3010;
+const HOST = process.env.HOST || '0.0.0.0';
 const COLLAB_PORT = parseInt(process.env.COLLAB_PORT || '3012', 10);
+const COLLAB_HOST = process.env.COLLAB_HOST || '127.0.0.1';
 const JWT_SECRET = process.env.JWT_SECRET || (() => {
   console.warn('[SECURITY] JWT_SECRET 未设置，使用随机临时密钥（仅限开发环境）');
   return require('crypto').randomBytes(64).toString('hex');
@@ -254,6 +256,7 @@ async function storeCollabDocument(documentName, document) {
 
 const collabServer = new HocuspocusServer({
   port: COLLAB_PORT,
+  address: COLLAB_HOST,
   quiet: true,
   debounce: 1200,
   maxDebounce: 10000,
@@ -340,9 +343,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 2. 解析 Body（带大小限制）
+  // multipart 上传需要保留原始请求流，交给对应处理器读取。
   let body;
   try {
-    body = await getBody(req);
+    const contentType = req.headers['content-type'] || '';
+    const isMultipartUpload = req.url === '/upload-image'
+      && req.method === 'POST'
+      && contentType.startsWith('multipart/form-data');
+    body = isMultipartUpload ? {} : await getBody(req);
   } catch (e) {
     return end(res, 413, { error: 'Request body too large' });
   }
@@ -3059,10 +3067,12 @@ if (req.url === '/email/send' && req.method === 'POST') {
 
 async function start() {
   await ensureCollabTables();
-  server.listen(PORT, () => {
+  server.listen(PORT, HOST, () => {
     console.log('\n🚀 ========================================');
     console.log('   NotesApp v2.5 Core Running');
+    console.log('   Host: ' + HOST);
     console.log('   Port: ' + PORT);
+    console.log('   Collab Host: ' + COLLAB_HOST);
     console.log('   Collab Port: ' + COLLAB_PORT);
     console.log('   Auth: 100% Local (bcrypt + JWT)');
     console.log('   Data: 100% Local PostgreSQL');
