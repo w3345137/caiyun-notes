@@ -1,23 +1,23 @@
 {
-  "version": "2.0.0-p6",
-  "notes": "彩云笔记 p6 更新\n\n- 新增百度网盘存储集成\n- 新增七牛云存储集成\n- 修复邮箱功能路由BUG\n- SMTP/DB密码安全加固\n- 图片上传安全增强\n- Tauri CSP添加百度/微软OAuth域名\n- 新增shell插件支持系统浏览器唤起",
-  "pub_date": "2026-05-04T01:00:00Z",
+  "version": "2.5.0",
+  "notes": "彩云笔记 p7 更新",
+  "pub_date": "2026-05-14T17:04:22Z",
   "platforms": {
-    "darwin-aarch64": {
-      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/darwin-aarch64/_aarch64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1FCN3pTcTJBUXVleXQvQXFRRXFLd1FmUFpSM1Vpbk1Rc0pDVms4RGF6bTdZNVZaUHhPcXgrbm9sQlZBZUJVUlhJWFdMUmE2TmQzcUdxTzlGdThHcndzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc2ODI3ODUzCWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKaVJsT0ZXc1ZPY0RQaTY0KzAwZmF2em1FUTdFZDBkd2h3WnEyMFc2ZVhoNS82OGFmaWUxck8wQTN6L1NMdHJUb0gzVlJISk9vTTMveGNlRUNpeXJaQ3c9PQo="
+    "windows-x86_64": {
+      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/windows-x86_64/_2.5.0_x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1F5SHN2NjlRcjU0c1dWUHE3N1lxNXRxaG5rTGdPMW1BS2VIWUQwMVJiMVdnK0FtaVhYcGdFOEFqam9oVTB5czJlRmJJK3NET21BdTFIOUtBbkxVMmdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4Nzc3NTE4CWZpbGU65b2p5LqR56yU6K6wXzIuNS4wX3g2NC1zZXR1cC5leGUKWlI3dXBGdW01SGRGZWtrZGhrKzlVT0RGZU16aXFwVXUzdzh5SXBtVytWcHVkSDg5L1d1bHV1ampSK215Z2QwRE5IdjhSMTJVZ0s0cFErUVFBcC9tQ2c9PQo="
     },
     "darwin-x86_64": {
       "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/darwin-x86_64/_x64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1RUTUFHMkMwT25iamNFK2tKbG9CTXV4ZmxMZmVSZENSeVR3WlJ4a3V0MjNUZDlsb2d4NDhjSTNSWktNdlVIY014dERLaGtYUlhyaUI1V0s2VFZDWUFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc3ODUzMzYyCWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKN0RpaUFmOFpJbllHWFJiRXdIb1Nra1FVb3ZiR2hXYmdmb2V1bURNTDh3Y1A1T2xrRmxnRjRXUUdudTBoeUNvUGsrbENUSTRIUENscDNWK3cwK0toRFE9PQo="
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1VsZU15UVVwaWRlWGkxMythNTBRbUk0M2NmKzllVVI2SnZhMEU1YWxsSTlEQ0pZbTFncTVuS25YUFVmdkpkSFVDVTVzdm83RjNJQ0ZKWkxiaGJBYkE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4Nzc3MTg0CWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKZmhhdG9JUHlaOVlxcHNaUEwzRTBjSlc3WHVwRTlBMHp5NThESnllSWxJQWVEZXdrMFczZEkyRm5wYVJrNENKMzk1dnh2L1lIMUhDSm5Tc2NuazEvQ2c9PQo="
     },
-    "windows-x86_64": {
-      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/windows-x86_64/_2.0.0-p6_x64-setup.exe",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d2FKckpFZ0NXN093RHZhYjN1cytQUXVBMnc2aGdBZ29tSWxOZWttZXQvdWx1OE9DczJQZ1c1WlZ2M2gzQmdMZVpXajIyS011eEdYdjF5V3lBSkM3OFFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc3ODUzNjU3CWZpbGU65b2p5LqR56yU6K6wXzIuMC4wLXA2X3g2NC1zZXR1cC5leGUKVUNvdGNaaUZTWWdINVpEV0dFWTZaZnlQKy83NnhySWhaYkp5ZjBjS1dIbDhuSkRzOTFKTmU0OWxQVllDVmpzZlBYcnN6bkpBZ0xwcUlFT0lOV09TQWc9PQo="
+    "darwin-aarch64": {
+      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/darwin-aarch64/_aarch64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d2JvakduQUEwVWNzaG9TRTlYYUVxUEFaU0RodU85dXhFL3BSb0dSdDVWTlpHSkRVdmVVMTMvNXBCVG4xbnhEQm01ekhPN2J0RGVQVVFFbFk0S010L0FrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4Nzc3MjUyCWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKcGxLcmJKZmhyMCtZUlZGR1NmR0lTTitlV1hvUkVWdEhTeWh3eWN3b3BtNG9zbW9BZ05OaWF2L2J2bVFFWHFlM2t4NEFnR1VRSkRpV2I4d2FoK1VZQmc9PQo="
     },
     "linux-x86_64": {
-      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/linux-x86_64/_2.0.0-p6_amd64.deb",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1FVZ3VoNjFJQis1c3RQd3hvdklhUVVORG1yOVpNZ1NWbktKcUplSWZ2ZWdacC9XeHN1ck8zWU1RTXpLS002MGF3ZitadUlYMVFDTXBYTHY3QTRqT3dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc3ODUzNDY1CWZpbGU65b2p5LqR56yU6K6wXzIuMC4wLXA2X2FtZDY0LmRlYgpvUEswdmVaN1RscVpZN0czRnRlNnh0cDJpK0J4Zkx2WHRWT241T3g5Z0hnZzJtbWJVYzB0N25MaTFYRmJ0ZWJvd003cU10T3FwVDBhV3lzZHJvRmFBdz09Cg=="
+      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/linux-x86_64/_2.5.0_amd64.deb",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1pUWTF6S0JXdVJRZWF2cC9ZdS9UcHlPeFhxQkx4T05WMmZjRHpzYUI1aXlCVEpIVTFvWTBhT3JvR3M3WVhlU1pHNzJNNlVESU13bzE5NmtNUUNzSXdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4Nzc3MzcyCWZpbGU65b2p5LqR56yU6K6wXzIuNS4wX2FtZDY0LmRlYgpTMkpya0FPSFpYajZZWG1KTjVQcVNoUHFra2lOeW84UXR2NWFuODhuWFlJWnp6bEg3bG5pVk9iditDd1k5cCthNUM0ZDFycDAxQlRHZXhzTEZCZzVEZz09Cg=="
     }
   }
 }

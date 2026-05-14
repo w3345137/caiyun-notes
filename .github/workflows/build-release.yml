@@ -166,17 +166,31 @@ jobs:
               'staged/linux-x86_64': 'linux-x86_64',
           }
 
+          update_preferences = {
+              'windows-x86_64': ['.exe', '.msi', '.zip'],
+              'darwin-x86_64': ['.app.tar.gz'],
+              'darwin-aarch64': ['.app.tar.gz'],
+              'linux-x86_64': ['.deb', '.AppImage'],
+          }
+
+          def pick_by_preference(files, preferences):
+              for suffix in preferences:
+                  matches = sorted(f for f in files if f.endswith(suffix))
+                  if matches:
+                      return matches[0]
+              return sorted(files)[0] if files else None
+
           for staged_dir, pid in platform_ids.items():
               files_in_dir = os.listdir(staged_dir)
-              # 找安装包（排除 .sig 和 .json）
+              # 找 updater 安装包（排除 .sig 和 .json）。macOS 必须使用 .app.tar.gz，
+              # DMG 仅作为手动安装包，否则签名文件会与 updater URL 不匹配。
               pkgs = [x for x in files_in_dir if not x.endswith('.sig') and not x.endswith('.json')]
-              sigs = [x for x in files_in_dir if x.endswith('.sig')]
-              if pkgs:
-                  pkg_file = pkgs[0]
+              pkg_file = pick_by_preference(pkgs, update_preferences.get(pid, []))
+              if pkg_file:
+                  sig_file = f'{pkg_file}.sig'
                   sig_content = ''
-                  if sigs:
-                      sig_file = sigs[0]
-                      sig_path = os.path.join(staged_dir, sig_file)
+                  sig_path = os.path.join(staged_dir, sig_file)
+                  if os.path.exists(sig_path):
                       with open(sig_path, 'r') as sf:
                           sig_content = sf.read().strip()
                   data['platforms'][pid] = {
