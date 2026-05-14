@@ -4,19 +4,19 @@
   "pub_date": "2026-05-04T01:00:00Z",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://notes.binapp.top/updates/darwin-aarch64/_aarch64.app.tar.gz",
+      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/darwin-aarch64/_aarch64.app.tar.gz",
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1FCN3pTcTJBUXVleXQvQXFRRXFLd1FmUFpSM1Vpbk1Rc0pDVms4RGF6bTdZNVZaUHhPcXgrbm9sQlZBZUJVUlhJWFdMUmE2TmQzcUdxTzlGdThHcndzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc2ODI3ODUzCWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKaVJsT0ZXc1ZPY0RQaTY0KzAwZmF2em1FUTdFZDBkd2h3WnEyMFc2ZVhoNS82OGFmaWUxck8wQTN6L1NMdHJUb0gzVlJISk9vTTMveGNlRUNpeXJaQ3c9PQo="
     },
     "darwin-x86_64": {
-      "url": "https://notes.binapp.top/updates/darwin-x86_64/_x64.app.tar.gz",
+      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/darwin-x86_64/_x64.app.tar.gz",
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1RUTUFHMkMwT25iamNFK2tKbG9CTXV4ZmxMZmVSZENSeVR3WlJ4a3V0MjNUZDlsb2d4NDhjSTNSWktNdlVIY014dERLaGtYUlhyaUI1V0s2VFZDWUFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc3ODUzMzYyCWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKN0RpaUFmOFpJbllHWFJiRXdIb1Nra1FVb3ZiR2hXYmdmb2V1bURNTDh3Y1A1T2xrRmxnRjRXUUdudTBoeUNvUGsrbENUSTRIUENscDNWK3cwK0toRFE9PQo="
     },
     "windows-x86_64": {
-      "url": "https://notes.binapp.top/updates/windows-x86_64/_2.0.0-p6_x64-setup.exe",
+      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/windows-x86_64/_2.0.0-p6_x64-setup.exe",
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d2FKckpFZ0NXN093RHZhYjN1cytQUXVBMnc2aGdBZ29tSWxOZWttZXQvdWx1OE9DczJQZ1c1WlZ2M2gzQmdMZVpXajIyS011eEdYdjF5V3lBSkM3OFFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc3ODUzNjU3CWZpbGU65b2p5LqR56yU6K6wXzIuMC4wLXA2X3g2NC1zZXR1cC5leGUKVUNvdGNaaUZTWWdINVpEV0dFWTZaZnlQKy83NnhySWhaYkp5ZjBjS1dIbDhuSkRzOTFKTmU0OWxQVllDVmpzZlBYcnN6bkpBZ0xwcUlFT0lOV09TQWc9PQo="
     },
     "linux-x86_64": {
-      "url": "https://notes.binapp.top/updates/linux-x86_64/_2.0.0-p6_amd64.deb",
+      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/linux-x86_64/_2.0.0-p6_amd64.deb",
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1FVZ3VoNjFJQis1c3RQd3hvdklhUVVORG1yOVpNZ1NWbktKcUplSWZ2ZWdacC9XeHN1ck8zWU1RTXpLS002MGF3ZitadUlYMVFDTXBYTHY3QTRqT3dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc3ODUzNDY1CWZpbGU65b2p5LqR56yU6K6wXzIuMC4wLXA2X2FtZDY0LmRlYgpvUEswdmVaN1RscVpZN0czRnRlNnh0cDJpK0J4Zkx2WHRWT241T3g5Z0hnZzJtbWJVYzB0N25MaTFYRmJ0ZWJvd003cU10T3FwVDBhV3lzZHJvRmFBdz09Cg=="
     }
   }

@@ -1912,7 +1912,7 @@ export const NoteEditor: React.FC = () => {
     if (collabStatus === 'error') return `同步暂不可用: ${collabError || '连接失败'}`;
     if (collabStatus === 'connecting' || collabStatus === 'disconnected') return '正在同步';
     if (collabStatus === 'connected' && !collabSynced) return '正在同步';
-    if (collabSession?.permission === 'read') return '只读同步中';
+    if (collabSession?.permission === 'read') return '已同步（只读）';
     return '已同步';
   })();
   const showCollabPreview = isCollabPage && !isCollabReady;

@@ -44,7 +44,7 @@
 
 ### Tauri 与 Android 验证版
 
-- 桌面端基于 Tauri 2，首选更新源为 Gitee raw 的 `updates/latest.json`，`https://notes.binapp.top/updates/latest.json` 和 GitHub Release 作为备用更新源。
+- 桌面端基于 Tauri 2，首选更新源为 Gitee raw 的 `updates/latest.json`，安装包下载 URL 也指向 Gitee raw；`https://notes.binapp.top/updates/latest.json` 和 GitHub Release 作为备用更新源。
 - 已初始化 Tauri Android 工程，Android 壳加载线上 Web 前端，因此前端发布可直接在 Android 壳内生效。
 - Android 已配置网络和录音权限：`INTERNET`、`RECORD_AUDIO`。
 - 已生成验证 APK：
