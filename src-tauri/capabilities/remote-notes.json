@@ -1,0 +1,39 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-notes",
+  "description": "Allow the production Notes web app loaded from notes.binapp.top to use the desktop shell features.",
+  "windows": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "https://notes.binapp.top"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "fs:default",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-read-dir",
+    "fs:allow-remove",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPLOCALDATA/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$APPCONFIG/**" }
+      ]
+    },
+    "updater:default",
+    "dialog:default",
+    "process:default",
+    "process:allow-restart",
+    "clipboard-manager:default",
+    "clipboard-manager:allow-write-image",
+    "shell:default",
+    "shell:allow-open"
+  ]
+}
