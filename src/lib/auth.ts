@@ -5,7 +5,18 @@
 
 const API_BASE = '/api';
 
-export async function signIn(email: string, password: string) {
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user: {
+    id: string;
+    email: string;
+    display_name?: string;
+  };
+}
+
+export async function signIn(email: string, password: string): Promise<AuthResponse> {
   const res = await fetch(`${API_BASE}/auth/v1/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -15,12 +26,12 @@ export async function signIn(email: string, password: string) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || '账号或密码错误');
   }
-  const data = await res.json();
+  const data: AuthResponse = await res.json();
   localStorage.setItem('notesapp_token', data.access_token);
   return data;
 }
 
-export async function signUp(email: string, password: string, displayName: string, verifyToken: string) {
+export async function signUp(email: string, password: string, displayName: string, verifyToken: string): Promise<AuthResponse> {
   const res = await fetch(`${API_BASE}/auth/v1/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -30,9 +41,27 @@ export async function signUp(email: string, password: string, displayName: strin
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || '注册失败');
   }
-  const data = await res.json();
+  const data: AuthResponse = await res.json();
   localStorage.setItem('notesapp_token', data.access_token);
   return data;
+}
+
+export async function refreshToken(): Promise<AuthResponse> {
+  const token = localStorage.getItem('notesapp_token');
+  if (!token) throw new Error('未登录');
+
+  const res = await fetch(`${API_BASE}/auth/v1/refresh`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || '登录续期失败');
+  localStorage.setItem('notesapp_token', data.access_token);
+  return data as AuthResponse;
 }
 
 // 发送验证码
@@ -107,7 +136,7 @@ export function getCurrentUsername(): string | null {
 }
 
 // 兼容旧版代码的导出
-export const auth = { signIn, signOut, getCurrentUserId, getCurrentUserEmail };
+export const auth = { signIn, signOut, refreshToken, getCurrentUserId, getCurrentUserEmail };
 
 // 兼容旧版 AdminConsole 等组件的调用
 export async function getCurrentUser() {

@@ -49,13 +49,14 @@ export const apiShareNotebook = (id: string, email: string, p: string) => call('
 export const apiUnshareNotebook = (id: string, email: string) => call('/shares-write', { action: 'unshareNotebook', notebookId: id, email });
 export const apiGetSharedNotebookIds = () => call('/shares-query', { action: 'getSharedNotebookIds' });
 export const apiGetSharedNotebooks = () => call('/shares-query', { action: 'getSharedNotebooks' });
+export const apiGetCollabConfig = (noteId: string) => call('/collab-config', { noteId });
 
 // === 邀请映射 (走本地后端 /invites-manage) ===
 export const apiGetReceivedInvites = () => call('/invites-manage', { action: 'getReceivedInvites' });
 export const apiGetMyInvites = () => call('/invites-manage', { action: 'getMyInvites' });
 export const apiGetPendingCount = () => call('/invites-manage', { action: 'getPendingInviteCount' });
 export const apiCreateInvite = (notebookId: string, inviteeUserId: string, permission: string) => call('/invites-manage', { action: 'createInvite', notebookId, inviteeUserId, permission });
-export const apiRespondToInvite = (inviteId: string, accept: boolean, permission?: string) => 
+export const apiRespondToInvite = (inviteId: string, accept: boolean, permission?: string) =>
   call('/invites-manage', { action: 'respondToInvite', inviteId, accept, permission });
 export const apiCancelInvite = (inviteId: string) => call('/invites-manage', { action: 'cancelInvite', inviteId });
 export const apiGetNotebookInfo = async (id?: string) => {

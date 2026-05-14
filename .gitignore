@@ -44,17 +44,19 @@ pnpm-debug.log*
 *.key
 
 # Local project files (not part of the app)
-App/
-fix-export/
-logos/
-memorys/
-versions/
-.workbuddy/
-.openclaw/
-中文目录/
+/App/
+/fix-export/
+/logos/
+/memorys/
+/versions/
+/.workbuddy/
+/.openclaw/
+/中文目录/
 
 # Generated images
 generated-images/
 
-# Backend (deployed separately)
-backend/
+# Backend source is part of the deployable app; keep dependencies and secrets local.
+backend/node_modules/
+backend/.env
+backend/*.log

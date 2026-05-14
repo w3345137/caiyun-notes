@@ -7,11 +7,13 @@ import { useAuth } from './components/authContext';
 import { AuthModal } from './components/AuthModal';
 import { useNoteStore, setUpdateLogsCache } from './store/noteStore';
 import toast, { Toaster } from 'react-hot-toast';
-import { signIn, parseJWTPayload } from './lib/auth';
+import { signIn, parseJWTPayload, refreshToken } from './lib/auth';
 import { getUpdateLogs } from './lib/initDatabase';
 import { sseService } from './lib/sseService';
 import logoUrl from '/logo.png';
 import './App.css';
+
+const TOKEN_REFRESH_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
 
 // ========== 加载页面组件 ==========
 function LoadingScreen({ progress, status }: { progress: number; status: string }) {
@@ -52,6 +54,7 @@ function AppContent() {
   const syncError = useNoteStore((state) => state.syncError);
   const setSyncError = useNoteStore((state) => state.setSyncError);
   const refreshInProgressRef = useRef(false);
+  const tokenRefreshInProgressRef = useRef(false);
 
   // 用户登录后加载数据
   useEffect(() => {
@@ -149,10 +152,11 @@ function AppContent() {
     return () => window.removeEventListener('refresh-notes', handleRefresh);
   }, [userId, dbReady, syncToCloud, loadFromCloud]);
 
-  // Token 检查：本地 JWT 有效期 7 天，检查是否即将过期
+  // Token 检查：30 天有效期，剩余不足 7 天时滑动续期。
   useEffect(() => {
-    const checkToken = () => {
+    const checkToken = async () => {
       if (!user) return;
+      if (tokenRefreshInProgressRef.current) return;
       try {
         const token = localStorage.getItem('notesapp_token');
         if (!token) return;
@@ -161,21 +165,41 @@ function AppContent() {
         const exp = payload.exp * 1000;
         const now = Date.now();
         const remaining = exp - now;
-        if (remaining < 24 * 60 * 60 * 1000 && remaining > 0) {
-          toast('登录即将过期，请保存数据后重新登录', { icon: '⚠️', duration: 10000 });
-        }
         if (remaining <= 0) {
           localStorage.removeItem('notesapp_token');
           window.location.reload();
+          return;
+        }
+        if (remaining < TOKEN_REFRESH_THRESHOLD_MS) {
+          tokenRefreshInProgressRef.current = true;
+          try {
+            await refreshToken();
+          } catch (e) {
+            console.warn('[TokenCheck] 续期失败:', e);
+            localStorage.removeItem('notesapp_token');
+            window.location.reload();
+          } finally {
+            tokenRefreshInProgressRef.current = false;
+          }
         }
       } catch (e) {
         console.warn('[TokenCheck] 检查失败:', e);
       }
     };
 
-    const interval = setInterval(checkToken, 60 * 60 * 1000);
-    checkToken();
-    return () => clearInterval(interval);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void checkToken();
+      }
+    };
+
+    const interval = window.setInterval(() => void checkToken(), 60 * 60 * 1000);
+    void checkToken();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user]);
 
   // APP 更新检查（仅 Tauri 环境有效）

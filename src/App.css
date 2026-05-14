@@ -74,6 +74,34 @@
   height: 0;
 }
 
+.collaboration-carets__caret {
+  position: relative;
+  border-left: 2px solid #2563eb;
+  border-right: 2px solid #2563eb;
+  margin-left: -1px;
+  margin-right: -1px;
+  pointer-events: none;
+  word-break: normal;
+}
+
+.collaboration-carets__label {
+  position: absolute;
+  top: -1.45em;
+  left: -1px;
+  border-radius: 3px;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 5px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.collaboration-carets__selection {
+  opacity: 0.22;
+}
+
 /* Headings - margin 用 em 单位，跟随字号缩放 */
 .ProseMirror h1 {
   font-size: 2em;

@@ -56,6 +56,7 @@ export interface NoteStore {
   hasPendingSaves: () => boolean;
   selectNote: (id: string | null) => void;
   updateNote: (id: string, updates: Partial<Note>, opts?: { silent?: boolean; save?: boolean }) => void;
+  touchNoteUpdatedAt: (id: string, updatedAt?: string) => void;
   setSyncError: (err: string | null) => void;
   saveNoteById: (id: string) => Promise<void>;
   addNote: (parentId: string | null, type?: string, title?: string, opts?: { skipSelect?: boolean }) => string;
@@ -464,6 +465,17 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
         }
       }
     }
+  },
+
+  touchNoteUpdatedAt: (id: string, updatedAt?: string) => {
+    const nextUpdatedAt = updatedAt || new Date().toISOString();
+    set((state) => ({
+      notes: state.notes.map((n) =>
+        n.id === id
+          ? { ...n, updatedAt: nextUpdatedAt, updated_at: nextUpdatedAt }
+          : n
+      )
+    }));
   },
 
   setSyncError: (err: string | null) => set({ syncError: err }),

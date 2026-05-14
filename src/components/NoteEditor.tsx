@@ -1,7 +1,12 @@
-import React, { useEffect, useRef, useCallback, useState, lazy, Suspense } from 'react';
+import React, { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { generateHTML } from '@tiptap/core';
 import { useShallow } from 'zustand/react/shallow';
 import StarterKit from '@tiptap/starter-kit';
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCaret from '@tiptap/extension-collaboration-caret';
+import { HocuspocusProvider, WebSocketStatus } from '@hocuspocus/provider';
+import * as Y from 'yjs';
 import { Markdown } from '@tiptap/markdown';
 import { goToNextCell } from 'prosemirror-tables';
 import { TableWithDefaultWidth } from '../extensions/TableWithDefaultWidth';
@@ -35,15 +40,31 @@ import toast from 'react-hot-toast';
 import html2canvas from 'html2canvas';
 import { HistoryPanel } from '../components/HistoryPanel';
 import { AttachmentInsertModal } from '../components/AttachmentInsertModal';
-import { apiGetNotebookShares } from '../lib/edgeApi';
+import { apiGetNotebookShares, apiGetCloudProvider, apiGetCollabConfig } from '../lib/edgeApi';
 import { PROSEMIRROR_CSS } from '../lib/editorStyles';
 import { checkNotebookOnedrive } from '../lib/onedriveService';
 import { checkNotebookBaidu } from '../lib/baiduService';
 import { checkNotebookQiniu } from '../lib/qiniuService';
-import { apiGetCloudProvider } from '../lib/edgeApi';
 import { getNotebookLLMConfig } from '../lib/llmService';
 
 type RecordingCloudProvider = 'onedrive' | 'baidu' | 'qiniu';
+type CollabPermission = 'read' | 'write';
+type CollabStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+
+interface CollabUser {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface CollabSession {
+  noteId: string;
+  documentName: string;
+  ydoc: Y.Doc;
+  provider: HocuspocusProvider;
+  permission: CollabPermission;
+  user: CollabUser;
+}
 
 const recordingCloudLabels: Record<RecordingCloudProvider, string> = {
   onedrive: 'OneDrive',
@@ -54,6 +75,165 @@ const recordingCloudLabels: Record<RecordingCloudProvider, string> = {
 const isRecordingCloudProvider = (value: unknown): value is RecordingCloudProvider => (
   value === 'onedrive' || value === 'baidu' || value === 'qiniu'
 );
+
+const COLLAB_COLORS = ['#2563eb', '#059669', '#dc2626', '#7c3aed', '#ea580c', '#0891b2', '#be123c', '#4d7c0f'];
+
+const getCollabUserColor = (id: string) => {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
+  }
+  return COLLAB_COLORS[Math.abs(hash) % COLLAB_COLORS.length];
+};
+
+const renderCollabCaret = (user: Record<string, any>) => {
+  const caret = document.createElement('span');
+  caret.classList.add('collaboration-carets__caret');
+  caret.style.borderColor = user.color || '#2563eb';
+
+  const label = document.createElement('div');
+  label.classList.add('collaboration-carets__label');
+  label.style.backgroundColor = user.color || '#2563eb';
+  label.textContent = user.name || '协作者';
+
+  caret.appendChild(label);
+  return caret;
+};
+
+const renderCollabSelection = (user: Record<string, any>) => ({
+  nodeName: 'span',
+  class: 'collaboration-carets__selection',
+  style: `background-color: ${user.color || '#2563eb'}; color: transparent;`,
+  'data-user': user.name || '协作者',
+});
+
+const toCollabStatus = (status: WebSocketStatus): CollabStatus => {
+  if (status === WebSocketStatus.Connected) return 'connected';
+  if (status === WebSocketStatus.Connecting) return 'connecting';
+  return 'disconnected';
+};
+
+const getSafeEditorView = (editor: any) => {
+  if (!editor || editor.isDestroyed) return null;
+  try {
+    return editor.view || null;
+  } catch {
+    return null;
+  }
+};
+
+const createEmptyEditorDoc = () => ({ type: 'doc', content: [{ type: 'paragraph' }] });
+
+const parseEditorSnapshot = (rawContent: unknown) => {
+  if (typeof rawContent === 'string' && rawContent) {
+    try {
+      const parsed = JSON.parse(rawContent);
+      return parsed?.type ? parsed : createEmptyEditorDoc();
+    } catch {
+      return createEmptyEditorDoc();
+    }
+  }
+
+  if (rawContent && typeof rawContent === 'object' && (rawContent as any).type) {
+    return rawContent;
+  }
+
+  return createEmptyEditorDoc();
+};
+
+const createEditorExtensions = (undoRedo: false | undefined, collaborationExtensions: any[] = []) => [
+  StarterKit.configure({
+    link: false,
+    listKeymap: false,
+    undoRedo,
+  }),
+  ResizableImage.configure({
+    HTMLAttributes: {
+      class: 'rounded-lg',
+    },
+  }),
+  TableWithDefaultWidth.configure({
+    resizable: true,
+    handleWidth: 3,
+  }),
+  TableRowWithTextSelection,
+  TableCellWithColor.configure({
+    HTMLAttributes: {
+      class: 'relative',
+    },
+  }),
+  TableHeaderWithColor,
+  TextSelectionInTableExtension,
+  TabGroup,
+  TextAlign.configure({ types: ['heading', 'paragraph'] }),
+  TextStyle,
+  Color,
+  FontSize.configure({
+    types: ['textStyle'],
+  }),
+  Highlight,
+  Link.configure({ openOnClick: false }),
+  Placeholder.configure({ placeholder: '开始输入...' }),
+  TaskList.configure({
+    HTMLAttributes: {
+      class: 'not-prose pl-0 list-none',
+    },
+  }),
+  TaskItem.configure({
+    HTMLAttributes: {
+      class: 'flex items-start gap-2 py-1',
+    },
+  }),
+  MindmapExtension,
+  RouteBlock,
+  AttachmentBlock,
+  FolderBlock,
+  AudioBlock,
+  ListKeymap.configure({
+    listTypes: [
+      { itemName: 'listItem', wrapperNames: ['bulletList', 'orderedList'] },
+      { itemName: 'taskItem', wrapperNames: ['taskList'] },
+    ],
+  }),
+  ...collaborationExtensions,
+  Markdown.configure({
+    markedOptions: {
+      breaks: false,
+    },
+  }),
+];
+
+const runWhenEditorViewReady = (
+  editor: any,
+  onReady: (view: any) => void | (() => void),
+  maxFrames = 30,
+) => {
+  let disposed = false;
+  let frameId = 0;
+  let cleanup: void | (() => void);
+  let attempts = 0;
+
+  const tick = () => {
+    if (disposed) return;
+    const view = getSafeEditorView(editor);
+    if (view?.dom) {
+      cleanup = onReady(view);
+      return;
+    }
+    attempts += 1;
+    if (attempts <= maxFrames) {
+      frameId = requestAnimationFrame(tick);
+    }
+  };
+
+  tick();
+
+  return () => {
+    disposed = true;
+    if (frameId) cancelAnimationFrame(frameId);
+    if (typeof cleanup === 'function') cleanup();
+  };
+};
 
 const findRootNotebookId = (
   notes: Array<{ id: string; type: string; parentId?: string | null }>,
@@ -270,20 +450,25 @@ const EditorToolbar: React.FC<{
     const file = event.target.files?.[0];
     if (file && editor) {
       try {
+        const editorView = getSafeEditorView(editor);
+        if (!editorView) {
+          toast.error('编辑器尚未准备好，请稍后重试');
+          return;
+        }
         // 先插入临时占位
         const tempSrc = URL.createObjectURL(file);
         editor.chain().focus().insertContent({ type: 'image', attrs: { src: tempSrc, width: 300 } }).run();
         // 上传到服务器
         const url = await uploadImageToServer(file);
         // 替换为永久 URL（找到刚插入的图片节点）
-        const { state } = editor.view;
+        const { state } = editorView;
         const { tr } = state;
         state.doc.descendants((node, pos) => {
           if (node.type.name === 'image' && node.attrs.src === tempSrc) {
             tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: url });
           }
         });
-        if (tr.docChanged) editor.view.dispatch(tr);
+        if (tr.docChanged) editorView.dispatch(tr);
         URL.revokeObjectURL(tempSrc);
       } catch (err) {
         console.error('图片上传失败:', err);
@@ -589,7 +774,11 @@ const EditorToolbar: React.FC<{
             }
 
             try {
-              const editorView = editor.view;
+              const editorView = getSafeEditorView(editor);
+              if (!editorView) {
+                toast.error('编辑器尚未准备好，请稍后重试');
+                return;
+              }
               const editorEl = editorView.dom;
               const container = document.createElement('div');
               container.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff;padding:16px;font-family:inherit;max-width:800px;';
@@ -964,6 +1153,7 @@ export const NoteEditor: React.FC = () => {
   const { user } = useAuth();
   const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
   const updateNote = useNoteStore((state) => state.updateNote);
+  const touchNoteUpdatedAt = useNoteStore((state) => state.touchNoteUpdatedAt);
   const dbReady = useNoteStore((state) => state.dbReady);
   const lockNote = useNoteStore((state) => state.lockNote);
   const unlockNote = useNoteStore((state) => state.unlockNote);
@@ -978,6 +1168,12 @@ export const NoteEditor: React.FC = () => {
   const [displayedUpdatedAt, setDisplayedUpdatedAt] = useState<string | null>(null);
   const [isSharedNotebook, setIsSharedNotebook] = useState(false);
   const [confirmOpts, setConfirmOpts] = useState<{ msg: string; onOk: () => void } | null>(null);
+  const [collabSession, setCollabSession] = useState<CollabSession | null>(null);
+  const [collabStatus, setCollabStatus] = useState<CollabStatus>('idle');
+  const [collabSynced, setCollabSynced] = useState(false);
+  const [collabInitialSynced, setCollabInitialSynced] = useState(false);
+  const [collabError, setCollabError] = useState<string | null>(null);
+  const [collabPreviewHtml, setCollabPreviewHtml] = useState('');
 
   const selectedNote = useNoteStore(useShallow((state) => {
     const note = state.notes.find((n) => n.id === state.selectedNoteId);
@@ -987,6 +1183,7 @@ export const NoteEditor: React.FC = () => {
       id: note.id,
       title: note.title,
       type: note.type,
+      updatedAt: note.updatedAt,
       lockedBy: note.lockedBy,
       lockedByName: note.lockedByName,
     };
@@ -1002,14 +1199,17 @@ export const NoteEditor: React.FC = () => {
       return;
     }
 
-    const note = useNoteStore.getState().notes.find((n) => n.id === selectedNoteId);
-    setDisplayedUpdatedAt(note?.updatedAt || null);
-  }, [selectedNoteId]);
+    setDisplayedUpdatedAt(selectedNote?.updatedAt || null);
+  }, [selectedNoteId, selectedNote?.updatedAt]);
 
   // 检查页面是否被锁定
   const isLocked = selectedNote?.lockedBy != null;
   const isLockedByMe = selectedNote?.lockedBy === userId;
   const isLockedByOther = selectedNote ? isNoteLockedByOther(selectedNote.id, userId) : false;
+  const isCollabPage = selectedNote?.type === 'page';
+  const isCollabSessionActive = !!(isCollabPage && collabSession && collabSession.noteId === selectedNoteId);
+  const isCollabReady = !!(isCollabSessionActive && collabInitialSynced);
+  const collabCanWrite = !!(isCollabReady && collabSession?.permission === 'write');
 
   // 处理锁定/解锁
   const handleLock = useCallback(() => {
@@ -1055,8 +1255,8 @@ export const NoteEditor: React.FC = () => {
     }
   }, []);
 
-  // 检查是否可编辑（未被锁定或由自己锁定）
-  const canEdit = !isLocked || isLockedByMe;
+  // page 内容统一走 CRDT；页面锁只决定本机是否可写，不阻止远端同步到当前页面。
+  const canEdit = isCollabPage ? collabCanWrite : (!isLocked || isLockedByMe);
   const sharedStatusCacheRef = useRef<Map<string, boolean>>(new Map());
 
   // 检查当前页面是否属于共享笔记本
@@ -1117,77 +1317,137 @@ export const NoteEditor: React.FC = () => {
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingContentRef = useRef<string | null>(null); // 待保存的内容（debounce）
   const wordCountTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastCollabTouchRef = useRef<{ noteId: string | null; at: number }>({ noteId: null, at: 0 });
+
+  const scheduleWordCount = useCallback((readContent: () => any) => {
+    if (wordCountTimeoutRef.current) {
+      clearTimeout(wordCountTimeoutRef.current);
+    }
+    wordCountTimeoutRef.current = setTimeout(() => {
+      try {
+        setWordCount(calculateWordCount(readContent()));
+      } finally {
+        wordCountTimeoutRef.current = null;
+      }
+    }, 350);
+  }, [calculateWordCount]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let provider: HocuspocusProvider | null = null;
+    let ydoc: Y.Doc | null = null;
+
+    setCollabSession(null);
+    setCollabSynced(false);
+    setCollabInitialSynced(false);
+    setCollabError(null);
+
+    if (!selectedNoteId || !isCollabPage || !user) {
+      setCollabStatus('idle');
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setCollabStatus('connecting');
+
+    apiGetCollabConfig(selectedNoteId)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result?.success || !result.data?.wsUrl || !result.data?.documentName) {
+          setCollabStatus('error');
+          setCollabError(result?.error || '无法连接协同编辑服务');
+          return;
+        }
+
+        ydoc = new Y.Doc();
+        const permission: CollabPermission = result.data.permission === 'write' ? 'write' : 'read';
+        const collabUser: CollabUser = {
+          id: userId,
+          name: userName,
+          color: getCollabUserColor(userId),
+        };
+
+        provider = new HocuspocusProvider({
+          url: result.data.wsUrl,
+          name: result.data.documentName,
+          document: ydoc,
+          token: () => localStorage.getItem('notesapp_token') || '',
+          onStatus: ({ status }) => {
+            if (!cancelled) setCollabStatus(toCollabStatus(status));
+          },
+          onSynced: ({ state }) => {
+            if (!cancelled) {
+              setCollabSynced(state);
+              if (state) {
+                setCollabInitialSynced(true);
+                setCollabStatus('connected');
+              }
+            }
+          },
+          onAuthenticationFailed: ({ reason }) => {
+            if (!cancelled) {
+              setCollabStatus('error');
+              setCollabError(reason || '协同编辑认证失败');
+            }
+          },
+        });
+
+        provider.setAwarenessField('user', collabUser);
+        setCollabSession({
+          noteId: selectedNoteId,
+          documentName: result.data.documentName,
+          ydoc,
+          provider,
+          permission,
+          user: collabUser,
+        });
+      })
+      .catch((error: any) => {
+        if (!cancelled) {
+          setCollabStatus('error');
+          setCollabError(error?.message || '协同编辑连接失败');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      provider?.destroy();
+      ydoc?.destroy();
+    };
+  }, [selectedNoteId, isCollabPage, user, userId, userName, selectedNote?.lockedBy]);
+
+  const previewExtensions = useMemo(() => createEditorExtensions(undefined), []);
+
+  const collaborationExtensions = useMemo(() => {
+    if (!isCollabSessionActive || !collabSession) return [];
+
+    return [
+      Collaboration.configure({
+        document: collabSession.ydoc,
+        provider: collabSession.provider,
+        field: 'default',
+        onFirstRender: () => {
+          scheduleWordCount(() => editorRef.current?.getJSON());
+        },
+      }),
+      CollaborationCaret.configure({
+        provider: collabSession.provider,
+        user: collabSession.user,
+        render: renderCollabCaret,
+        selectionRender: renderCollabSelection,
+      }),
+    ];
+  }, [collabSession, isCollabSessionActive, scheduleWordCount]);
+
+  const editorExtensions = useMemo(
+    () => createEditorExtensions(isCollabSessionActive ? false : undefined, collaborationExtensions),
+    [collaborationExtensions, isCollabSessionActive],
+  );
 
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        link: false,
-        listKeymap: false,
-      }),
-      ResizableImage.configure({
-        HTMLAttributes: {
-          class: 'rounded-lg',
-        },
-      }),
-      TableWithDefaultWidth.configure({
-        resizable: true,
-        handleWidth: 3,
-      }),
-      TableRowWithTextSelection,
-      TableCellWithColor.configure({
-        HTMLAttributes: {
-          class: 'relative',
-        },
-      }),
-      TableHeaderWithColor,
-      // 允许表格单元格内原生文字选择
-      TextSelectionInTableExtension,
-      // 页签扩展
-      TabGroup,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      TextStyle,
-      Color,
-      FontSize.configure({
-        types: ['textStyle'],
-      }),
-      Highlight,
-      Link.configure({ openOnClick: false }),
-      Placeholder.configure({ placeholder: '开始输入...' }),
-      TaskList.configure({
-        HTMLAttributes: {
-          class: 'not-prose pl-0 list-none',
-        },
-      }),
-      TaskItem.configure({
-        HTMLAttributes: {
-          class: 'flex items-start gap-2 py-1',
-        },
-      }),
-      // 思维导图扩展
-      MindmapExtension,
-      // 行程规划扩展
-      RouteBlock,
-      // 附件块扩展
-      AttachmentBlock,
-      // 文件夹块扩展
-      FolderBlock,
-      // 录音机块扩展
-      AudioBlock,
-      // 列表快捷键（Tab/Shift+Tab缩进）
-      ListKeymap.configure({
-        listTypes: [
-          { itemName: 'listItem', wrapperNames: ['bulletList', 'orderedList'] },
-          { itemName: 'taskItem', wrapperNames: ['taskList'] },
-        ],
-      }),
-      // Markdown 语法支持
-      Markdown.configure({
-        markedOptions: {
-          breaks: false,
-        },
-      }),
-    ],
-    content: '',
+    extensions: editorExtensions,
+    content: isCollabSessionActive ? undefined : '',
     editable: canEdit, // 只读模式：禁用编辑但允许滚动、选择、表格拖动等查看操作
     editorProps: {
       attributes: {
@@ -1210,7 +1470,7 @@ export const NoteEditor: React.FC = () => {
           view.dispatch(tr);
           // 异步上传替换
           uploadImageToServer(file).then(url => {
-            const currentView = editorRef.current?.view;
+            const currentView = getSafeEditorView(editorRef.current);
             if (!currentView) return;
             const { state } = currentView;
             const { tr: replaceTr } = state;
@@ -1240,7 +1500,7 @@ export const NoteEditor: React.FC = () => {
             view.dispatch(tr);
             // 异步上传替换
             uploadImageToServer(file).then(url => {
-              const currentView = editorRef.current?.view;
+              const currentView = getSafeEditorView(editorRef.current);
               if (!currentView) return;
               const { state } = currentView;
               const { tr: replaceTr } = state;
@@ -1262,6 +1522,19 @@ export const NoteEditor: React.FC = () => {
     shouldRerenderOnTransaction: false,
     onUpdate: ({ editor }) => {
       if (selectedNoteId && !isLoadingRef.current) {
+        if (isCollabPage) {
+          scheduleWordCount(() => editor.getJSON());
+          if (collabCanWrite) {
+            const now = Date.now();
+            const lastTouch = lastCollabTouchRef.current;
+            if (lastTouch.noteId !== selectedNoteId || now - lastTouch.at >= 1000) {
+              lastCollabTouchRef.current = { noteId: selectedNoteId, at: now };
+              touchNoteUpdatedAt(selectedNoteId, new Date(now).toISOString());
+            }
+          }
+          return;
+        }
+
         const currentLockedByOther = useNoteStore.getState().isNoteLockedByOther(selectedNoteId, userId);
         if (currentLockedByOther) {
           if (autoSaveTimeoutRef.current) {
@@ -1294,7 +1567,7 @@ export const NoteEditor: React.FC = () => {
         }
       }
     },
-  });
+  }, [selectedNoteId, isCollabPage, isCollabSessionActive, collabSession?.documentName, collabCanWrite, touchNoteUpdatedAt, editorExtensions]);
 
   // 保存 editor 实例引用
   editorRef.current = editor;
@@ -1310,99 +1583,158 @@ export const NoteEditor: React.FC = () => {
   useEffect(() => {
     if (!editor) return;
 
-    const handleBlur = () => {
-      setTimeout(() => {
-        const activeElement = document.activeElement;
-        const editorElement = editor.view?.dom;
+    return runWhenEditorViewReady(editor, (view) => {
+      const handleBlur = () => {
+        setTimeout(() => {
+          const activeElement = document.activeElement;
+          const editorElement = view.dom;
 
-        const isMindmapEditing = activeElement && (
-          activeElement.closest('.smm-node-edit-wrap') ||
-          activeElement.closest('.smm-richtext-node-edit-wrap') ||
-          activeElement.closest('.mindmap-container')
-        );
+          const isMindmapEditing = activeElement && (
+            activeElement.closest('.smm-node-edit-wrap') ||
+            activeElement.closest('.smm-richtext-node-edit-wrap') ||
+            activeElement.closest('.mindmap-container')
+          );
 
-        if (editorElement && !editorElement.contains(activeElement) && selectedNoteId && !isMindmapEditing) {
-          markNoteAsEditingEnd(selectedNoteId);
-        }
-      }, 100);
-    };
-
-    const editorElement = editor.view?.dom;
-    if (editorElement) {
-      editorElement.addEventListener('blur', handleBlur, true);
-      return () => {
-        editorElement.removeEventListener('blur', handleBlur, true);
+          if (editorElement && !editorElement.contains(activeElement) && selectedNoteId && !isMindmapEditing) {
+            markNoteAsEditingEnd(selectedNoteId);
+          }
+        }, 100);
       };
-    }
+
+      view.dom.addEventListener('blur', handleBlur, true);
+      return () => {
+        view.dom.removeEventListener('blur', handleBlur, true);
+      };
+    });
   }, [editor, selectedNoteId]);
 
   // 键盘快捷键
   useEffect(() => {
     if (!editor) return;
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Cmd+Shift+R: 强制刷新编辑器视图
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'r') {
-        event.preventDefault();
-        // 触发 selectionUpdate 事件，更新工具栏状态
-        editor.emit('selectionUpdate', { editor, transaction: editor.state.tr });
-        return;
-      }
-      // Cmd+. for unordered list
-      if ((event.metaKey || event.ctrlKey) && event.key === '.') {
-        event.preventDefault();
-        editor.chain().focus().toggleBulletList().run();
-        return;
-      }
-      // Cmd+1 for task list toggle
-      if ((event.metaKey || event.ctrlKey) && event.key === '1') {
-        event.preventDefault();
-        editor.chain().focus().toggleTaskList().run();
-        return;
-      }
-      // Tab: 列表缩进
-      if (event.key === 'Tab' && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        if (editor.isActive('table')) {
+    return runWhenEditorViewReady(editor, (view) => {
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
           event.preventDefault();
-          goToNextCell(event.shiftKey ? -1 : 1)(editor.state, editor.view.dispatch, editor.view);
-          editor.view.focus();
+          if (!selectedNoteId) return;
+
+          if (isCollabPage) {
+            if (collabStatus === 'error') {
+              toast.error(collabError || '同步暂不可用');
+            } else if (!isCollabReady || !collabSynced) {
+              toast('正在同步正文内容');
+            } else {
+              toast.success('正文已实时同步');
+            }
+            return;
+          }
+
+          useNoteStore.getState().saveNoteById(selectedNoteId)
+            .then(() => toast.success('已同步'))
+            .catch((error: any) => toast.error(error?.message || '同步失败'));
           return;
         }
 
-        const inListItem = editor.isActive('listItem');
-        if (event.shiftKey) {
-          // Shift+Tab: 提升层级
+        // Cmd+Shift+R: 强制刷新编辑器视图
+        if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'r') {
           event.preventDefault();
-          editor.chain().focus().liftListItem('listItem').run();
-          return;
-        } else if (inListItem) {
-          // Tab: 嵌套层级，仅在列表项内拦截
-          event.preventDefault();
-          editor.chain().focus().sinkListItem('listItem').run();
+          // 触发 selectionUpdate 事件，更新工具栏状态
+          editor.emit('selectionUpdate', { editor, transaction: editor.state.tr });
           return;
         }
+        // Cmd+. for unordered list
+        if ((event.metaKey || event.ctrlKey) && event.key === '.') {
+          event.preventDefault();
+          editor.chain().focus().toggleBulletList().run();
+          return;
+        }
+        // Cmd+1 for task list toggle
+        if ((event.metaKey || event.ctrlKey) && event.key === '1') {
+          event.preventDefault();
+          editor.chain().focus().toggleTaskList().run();
+          return;
+        }
+        // Tab: 列表缩进
+        if (event.key === 'Tab' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+          if (editor.isActive('table')) {
+            event.preventDefault();
+            goToNextCell(event.shiftKey ? -1 : 1)(editor.state, view.dispatch, view);
+            view.focus();
+            return;
+          }
 
-        event.preventDefault();
-        editor.chain().focus().insertContent('    ').run();
-        return;
-      }
-    };
+          const inListItem = editor.isActive('listItem');
+          if (event.shiftKey) {
+            // Shift+Tab: 提升层级
+            event.preventDefault();
+            editor.chain().focus().liftListItem('listItem').run();
+            return;
+          } else if (inListItem) {
+            // Tab: 嵌套层级，仅在列表项内拦截
+            event.preventDefault();
+            editor.chain().focus().sinkListItem('listItem').run();
+            return;
+          }
 
-    // Safari 兼容性：安全地添加事件监听器（capture阶段，优先于浏览器快捷键）
-    const editorElement = editor.view?.dom;
-    if (!editorElement) return;
+          event.preventDefault();
+          editor.chain().focus().insertContent('    ').run();
+        }
+      };
 
-    editorElement.addEventListener('keydown', handleKeyDown, true); // true = capture
-    return () => {
-      if (editorElement) {
-        editorElement.removeEventListener('keydown', handleKeyDown, true);
-      }
-    };
-  }, [editor]);
+      view.dom.addEventListener('keydown', handleKeyDown, true);
+      return () => {
+        view.dom.removeEventListener('keydown', handleKeyDown, true);
+      };
+    });
+  }, [editor, selectedNoteId, isCollabPage, isCollabReady, collabSynced, collabStatus, collabError]);
 
-  // 当切换笔记时，加载对应内容
+  // 当切换笔记时，加载对应内容；协同页面只渲染快照预览，避免普通编辑器和 CRDT 编辑器二次接管。
   useEffect(() => {
     if (!editor || !selectedNoteId) return;
+
+    if (isCollabPage) {
+      if (!isCollabReady) {
+        const timeoutId = setTimeout(() => {
+          const note = useNoteStore.getState().notes.find(n => n.id === selectedNoteId);
+          if (!note) return;
+
+          isLoadingRef.current = true;
+          try {
+            const editorContent = parseEditorSnapshot(note.content);
+            setCollabPreviewHtml(generateHTML(editorContent, previewExtensions));
+            lastSavedContentRef.current = JSON.stringify(editorContent);
+            setWordCount(calculateWordCount(editorContent));
+          } catch (e) {
+            console.error('生成协同快照失败:', e);
+            setCollabPreviewHtml('');
+            setWordCount(0);
+          } finally {
+            isLoadingRef.current = false;
+          }
+        }, 0);
+
+        return () => {
+          clearTimeout(timeoutId);
+          if (wordCountTimeoutRef.current) {
+            clearTimeout(wordCountTimeoutRef.current);
+            wordCountTimeoutRef.current = null;
+          }
+        };
+      }
+
+      setCollabPreviewHtml('');
+      return () => {
+        if (autoSaveTimeoutRef.current) {
+          clearTimeout(autoSaveTimeoutRef.current);
+          autoSaveTimeoutRef.current = null;
+        }
+        if (wordCountTimeoutRef.current) {
+          clearTimeout(wordCountTimeoutRef.current);
+          wordCountTimeoutRef.current = null;
+        }
+        markNoteAsEditingEnd(selectedNoteId);
+      };
+    }
 
     // 标记新的笔记开始被编辑
     markNoteAsEditing(selectedNoteId);
@@ -1415,26 +1747,7 @@ export const NoteEditor: React.FC = () => {
       isLoadingRef.current = true;
 
       try {
-        // 解析内容
-        const rawContent = note.content;
-        let editorContent: any;
-
-        if (typeof rawContent === 'string' && rawContent) {
-          try {
-            editorContent = JSON.parse(rawContent);
-          } catch {
-            editorContent = { type: 'doc', content: [{ type: 'paragraph' }] };
-          }
-        } else if (rawContent && typeof rawContent === 'object') {
-          editorContent = rawContent;
-        } else {
-          editorContent = { type: 'doc', content: [{ type: 'paragraph' }] };
-        }
-
-        // 确保内容有效
-        if (!editorContent || !editorContent.type) {
-          editorContent = { type: 'doc', content: [{ type: 'paragraph' }] };
-        }
+        const editorContent = parseEditorSnapshot(note.content);
 
         // 更新编辑器内容
         editor.commands.setContent(editorContent);
@@ -1446,7 +1759,7 @@ export const NoteEditor: React.FC = () => {
         console.error('加载笔记内容失败:', e);
         // 出错时设置空内容
         try {
-          editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph' }] });
+          editor.commands.setContent(createEmptyEditorDoc());
         } catch (e2) {
           console.error('重置编辑器失败:', e2);
         }
@@ -1480,7 +1793,7 @@ export const NoteEditor: React.FC = () => {
       // 切换离开时标记结束编辑
       markNoteAsEditingEnd(selectedNoteId);
     };
-  }, [selectedNoteId, editor, calculateWordCount, updateNote]);
+  }, [selectedNoteId, editor, calculateWordCount, updateNote, isCollabPage, isCollabReady, previewExtensions]);
 
   const handleCellColor = useCallback((color: string) => {
     if (editor) {
@@ -1594,6 +1907,16 @@ export const NoteEditor: React.FC = () => {
     }
   };
 
+  const collabStatusText = (() => {
+    if (!isCollabPage) return '';
+    if (collabStatus === 'error') return `同步暂不可用: ${collabError || '连接失败'}`;
+    if (collabStatus === 'connecting' || collabStatus === 'disconnected') return '正在同步';
+    if (collabStatus === 'connected' && !collabSynced) return '正在同步';
+    if (collabSession?.permission === 'read') return '只读同步中';
+    return '已同步';
+  })();
+  const showCollabPreview = isCollabPage && !isCollabReady;
+
   if (!selectedNote) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50 h-full">
@@ -1654,7 +1977,11 @@ export const NoteEditor: React.FC = () => {
           <span className="text-gray-300">|</span>
           <span>字数: {wordCount.toLocaleString()}</span>
         </div>
-        <span className="text-gray-400">按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">Ctrl+S</kbd> / <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">⌘+S</kbd> 保存到云端</span>
+        {isCollabPage ? (
+          <span className={collabStatus === 'error' ? 'text-red-500' : 'text-gray-400'}>{collabStatusText}</span>
+        ) : (
+          <span className="text-gray-400">按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">Ctrl+S</kbd> / <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">⌘+S</kbd> 保存到云端</span>
+        )}
       </div>
       {/* SSE 通知提示条 */}
       {sseNotifications.filter((n: SSENotification) => n.noteId === selectedNoteId).length > 0 && (
@@ -1698,7 +2025,15 @@ export const NoteEditor: React.FC = () => {
         className="flex-1 min-h-0 pl-9 px-5 pt-6 overflow-auto editor-scroll"
         style={{ maxWidth: '100%', boxSizing: 'border-box' }}
       >
-        <EditorContent editor={editor} />
+        {showCollabPreview && (
+          <div
+            className="ProseMirror outline-none"
+            dangerouslySetInnerHTML={{ __html: collabPreviewHtml || '<p></p>' }}
+          />
+        )}
+        <div className={showCollabPreview ? 'hidden' : ''}>
+          <EditorContent editor={editor} />
+        </div>
       </div>
 
       {/* 修改日志面板 */}

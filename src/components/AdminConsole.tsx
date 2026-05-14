@@ -475,7 +475,7 @@ function SettingsTab({ currentUserEmail }: { currentUserEmail?: string }) {
         <div className="text-sm text-gray-500 space-y-1">
           <p>版本：1.0.0</p>
           <p>数据库：本地 PostgreSQL</p>
-          <p>后端：Node.js v2.1 (本地)</p>
+          <p>后端：Node.js v2.5 (本地)</p>
         </div>
       </div>
 

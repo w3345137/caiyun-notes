@@ -582,7 +582,6 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   const deleteNote = useNoteStore((state) => state.deleteNote);
   const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
   const selectNote = useNoteStore((state) => state.selectNote);
-  const syncToCloud = useNoteStore((state) => state.syncToCloud);
   const expandedNodes = useNoteStore((state) => state.expandedNodes);
   const toggleExpanded = useNoteStore((state) => state.toggleExpanded);
   const reorderPages = useNoteStore((state) => state.reorderPages);
@@ -778,11 +777,11 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   // 点击分区：选中第一个页面（数据已全量加载，无需懒加载）
   const handleSectionClick = useCallback(async (sectionId: string) => {
     setActiveSection(sectionId);
-    
+
     // 检查本地是否已有页面
     const localNotes = useNoteStore.getState().notes;
     const sectionPages = localNotes.filter((n) => n.parentId === sectionId && n.type === 'page').sort((a, b) => a.order - b.order);
-    
+
     if (sectionPages.length > 0) {
       // 有页面，选中第一个
       selectNote(sectionPages[0].id);
@@ -899,7 +898,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
       {/* 顶部 - Logo */}
       <div className="h-[47px] shrink-0 flex items-center px-3 bg-white border-b border-gray-100 justify-between">
         {!collapsed && (
-          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.1.2</span></span>
+          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.5</span></span>
         )}
         <div className={`flex items-center gap-1 ${collapsed ? 'w-full justify-center' : ''}`}>
           {!collapsed && (
@@ -1070,13 +1069,6 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                   >
                     <Plus className="w-4 h-4 text-purple-500" />
                     新建笔记本
-                  </button>
-                  <button
-                    onClick={() => { syncToCloud(); setShowUserMenu(false); toast.success('已同步到云端'); }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <Download className="w-4 h-4 text-green-500" />
-                    保存到云端
                   </button>
                   <button
                     onClick={() => { setShowExportModal(true); setShowUserMenu(false); }}

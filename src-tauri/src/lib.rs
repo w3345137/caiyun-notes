@@ -7,10 +7,10 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
+        .setup(|_app| {
             #[cfg(desktop)]
             {
-                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+                _app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             }
             Ok(())
         })

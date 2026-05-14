@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "彩云笔记",
-  "version": "2.0.0-p7",
+  "version": "2.5.0",
   "identifier": "com.caiyun.notes",
   "build": {
     "frontendDist": "../dist"
@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' https://notes.binapp.top https://github.com https://api.github.com https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://notes.binapp.top; style-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://notes.binapp.top; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob: https://notes.binapp.top; media-src 'self' blob: data: https://notes.binapp.top; connect-src 'self' https://restapi.amap.com https://notes.binapp.top https://github.com https://api.github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn ws://localhost:*; frame-src 'self' https://notes.binapp.top https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn"
+      "csp": "default-src 'self' https://notes.binapp.top https://github.com https://api.github.com https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://notes.binapp.top; style-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://notes.binapp.top; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob: https://notes.binapp.top; media-src 'self' blob: data: https://notes.binapp.top; connect-src 'self' https://restapi.amap.com https://notes.binapp.top wss://notes.binapp.top ws://notes.binapp.top ws://49.235.160.8:* wss://49.235.160.8:* https://github.com https://api.github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn ws://localhost:* ws://127.0.0.1:*; frame-src 'self' https://notes.binapp.top https://openapi.baidu.com https://login.microsoftonline.com https://login.partner.microsoftonline.cn"
     }
   },
   "bundle": {
