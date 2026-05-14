@@ -47,8 +47,6 @@ function AppContent() {
   const isLoading = useNoteStore((state) => state.isLoading);
   const loadingStatus = useNoteStore((state) => state.loadingStatus);
   const loadingProgress = useNoteStore((state) => state.loadingProgress);
-  const isSyncing = useNoteStore((state) => state.isSyncing);
-  const lastSyncedAt = useNoteStore((state) => state.lastSyncedAt);
   const dbReady = useNoteStore((state) => state.dbReady);
   const dbError = useNoteStore((state) => state.dbError);
   const syncError = useNoteStore((state) => state.syncError);
@@ -71,86 +69,64 @@ function AppContent() {
     }
   }, [userId, loadFromCloud]);
 
-  // 手动保存到云端
-  const handleSave = useCallback(async () => {
-    if (!dbReady) {
-      toast.error('数据库未就绪，请稍后重试');
-      return;
-    }
-    try {
-      const result = await syncToCloud();
-      if (result.success) {
-        toast.success('已保存到云端', {
-          icon: '✅',
-          style: { color: '#059669', fontWeight: '500' },
-        });
-      } else {
-        toast.error(`保存失败: ${result.error || '请重试'}`, {
-          icon: '❌',
-          style: { color: '#dc2626', fontWeight: '500' },
-        });
-      }
-    } catch {
-      toast.error('保存失败，请重试');
-    }
-  }, [syncToCloud, dbReady]);
-
   const saveBeforeReload = useCallback(async () => {
     if (refreshInProgressRef.current) return;
 
-    if (!userId) {
+    if (!userId || !hasPendingSaves()) {
       window.location.reload();
       return;
     }
 
     if (!dbReady) {
-      toast.error('数据库未就绪，已取消刷新以避免丢失编辑');
+      toast.error('数据库未就绪，自动同步未完成，已取消刷新');
       return;
     }
 
     refreshInProgressRef.current = true;
-    const toastId = 'save-before-refresh';
-    toast.loading('正在保存编辑...', { id: toastId });
 
     try {
       const result = await syncToCloud();
       if (!result.success) {
         refreshInProgressRef.current = false;
-        toast.error(`保存失败，已取消刷新: ${result.error || '请重试'}`, { id: toastId });
+        toast.error(`自动同步未完成，已取消刷新: ${result.error || '请重试'}`);
         return;
       }
 
-      toast.success('已保存，正在刷新', { id: toastId });
       window.location.reload();
     } catch {
       refreshInProgressRef.current = false;
-      toast.error('保存失败，已取消刷新', { id: toastId });
+      toast.error('自动同步未完成，已取消刷新');
     }
-  }, [dbReady, syncToCloud, userId]);
+  }, [dbReady, hasPendingSaves, syncToCloud, userId]);
 
-  // 监听应用内刷新事件：先保存，再重新拉取云端数据
+  // 监听应用内刷新事件：先确保自动同步队列完成，再重新拉取云端数据。
   useEffect(() => {
     const handleRefresh = async () => {
       if (!userId) return;
       if (!dbReady) {
-        toast.error('数据库未就绪，已取消刷新以避免丢失编辑');
+        toast.error('数据库未就绪，无法刷新');
         return;
       }
 
-      const toastId = 'save-before-refresh-notes';
-      toast.loading('正在保存编辑...', { id: toastId });
-      const result = await syncToCloud();
-      if (!result.success) {
-        toast.error(`保存失败，已取消刷新: ${result.error || '请重试'}`, { id: toastId });
-        return;
-      }
+      const toastId = 'refresh-notes';
+      try {
+        if (hasPendingSaves()) {
+          const result = await syncToCloud();
+          if (!result.success) {
+            toast.error(`自动同步未完成，已取消刷新: ${result.error || '请重试'}`, { id: toastId });
+            return;
+          }
+        }
 
-      await loadFromCloud();
-      toast.success('已保存并刷新', { id: toastId });
+        await loadFromCloud();
+        toast.success('已刷新', { id: toastId });
+      } catch {
+        toast.error('刷新失败，请重试', { id: toastId });
+      }
     };
     window.addEventListener('refresh-notes', handleRefresh);
     return () => window.removeEventListener('refresh-notes', handleRefresh);
-  }, [userId, dbReady, syncToCloud, loadFromCloud]);
+  }, [userId, dbReady, hasPendingSaves, syncToCloud, loadFromCloud]);
 
   // Token 检查：30 天有效期，剩余不足 7 天时滑动续期。
   useEffect(() => {
@@ -234,21 +210,23 @@ function AppContent() {
     }
   }, []);
 
-  // Ctrl+S / Cmd+S 保存，Ctrl+R / Cmd+R / F5 刷新前保存
+  // 自动保存模式下拦截浏览器保存页面快捷键；刷新前如有未完成的自动同步任务，先静默刷完队列。
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       if ((e.metaKey || e.ctrlKey) && key === 's') {
         e.preventDefault();
-        await handleSave();
-      } else if (((e.metaKey || e.ctrlKey) && key === 'r') || e.key === 'F5') {
+        return;
+      }
+
+      if ((((e.metaKey || e.ctrlKey) && key === 'r') || e.key === 'F5') && userId && hasPendingSaves()) {
         e.preventDefault();
         await saveBeforeReload();
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [handleSave, saveBeforeReload]);
+  }, [hasPendingSaves, saveBeforeReload, userId]);
 
   // 浏览器工具栏刷新/关闭无法可靠等待异步保存，只能在还有请求未完成时提示用户。
   useEffect(() => {
@@ -380,13 +358,13 @@ function AppContent() {
         </div>
       )}
 
-      {/* 同步/保存错误提示 */}
+      {/* 同步错误提示 */}
       {syncError && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-orange-500 text-white px-6 py-4 rounded-xl shadow-2xl z-[200] max-w-md">
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium mb-1">保存失败</p>
+              <p className="font-medium mb-1">自动同步失败</p>
               <p className="text-sm opacity-90">{syncError}</p>
               <button
                 onClick={() => setSyncError(null)}

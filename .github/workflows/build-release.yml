@@ -203,53 +203,53 @@ jobs:
       - name: Upload platform files to server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: 49.235.160.8
+          host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
           source: "staged/**/*"
-          target: "/notesapp/updates-tmp"
+          target: "/cloudnotes/updates-tmp"
           strip_components: 1
 
       - name: Upload latest.json to server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: 49.235.160.8
+          host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
           source: "latest.json"
-          target: "/notesapp/updates-tmp"
+          target: "/cloudnotes/updates-tmp"
           strip_components: 0
 
       - name: Move updates into place
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 49.235.160.8
+          host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             # 把各平台文件合并到正式目录
-            for dir in /notesapp/updates-tmp/*/; do
-              [ -d "$dir" ] && cp -r "$dir" /notesapp/updates/
+            for dir in /cloudnotes/updates-tmp/*/; do
+              [ -d "$dir" ] && cp -r "$dir" /cloudnotes/updates/
             done
             # 把根 latest.json 放到正式目录
-            cp -f /notesapp/updates-tmp/latest.json /notesapp/updates/latest.json 2>/dev/null || true
-            rm -rf /notesapp/updates-tmp
+            cp -f /cloudnotes/updates-tmp/latest.json /cloudnotes/updates/latest.json 2>/dev/null || true
+            rm -rf /cloudnotes/updates-tmp
             echo "=== Updates directory after deploy ==="
-            find /notesapp/updates -type f | sort
+            find /cloudnotes/updates -type f | sort
 
       - name: Verify updates on server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 49.235.160.8
+          host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             echo "=== Root latest.json ==="
-            cat /notesapp/updates/latest.json 2>/dev/null && echo "" || echo "CRITICAL: root latest.json MISSING"
+            cat /cloudnotes/updates/latest.json 2>/dev/null && echo "" || echo "CRITICAL: root latest.json MISSING"
             echo "=== All update files ==="
-            find /notesapp/updates -type f | sort
+            find /cloudnotes/updates -type f | sort
             echo ""
             echo "=== Endpoint test ==="
-            RESP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3011/updates/latest.json)
+            RESP=$(curl -s -o /dev/null -w "%{http_code}" https://notes.binapp.top/updates/latest.json)
             echo "HTTP Status: ${RESP}"
-            curl -s http://127.0.0.1:3011/updates/latest.json | python3 -m json.tool 2>/dev/null || echo "Invalid JSON"
+            curl -s https://notes.binapp.top/updates/latest.json | python3 -m json.tool 2>/dev/null || echo "Invalid JSON"

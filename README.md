@@ -4,8 +4,6 @@
 
 在线体验：[https://notes.binapp.top](https://notes.binapp.top)
 
-备用访问：[http://49.235.160.8:3011](http://49.235.160.8:3011)
-
 ---
 
 ## 仓库状态

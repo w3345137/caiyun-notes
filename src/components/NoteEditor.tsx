@@ -1772,7 +1772,7 @@ export const NoteEditor: React.FC = () => {
     const timeoutId = setTimeout(loadContent, 50);
     return () => {
       clearTimeout(timeoutId);
-      // 切换离开时，flush pending 的 debounce 内容并保存到云端
+      // 切换离开时，flush pending 的 debounce 内容，避免最后一次输入滞留在队列中。
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
         autoSaveTimeoutRef.current = null;
@@ -1980,7 +1980,7 @@ export const NoteEditor: React.FC = () => {
         {isCollabPage ? (
           <span className={collabStatus === 'error' ? 'text-red-500' : 'text-gray-400'}>{collabStatusText}</span>
         ) : (
-          <span className="text-gray-400">按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">Ctrl+S</kbd> / <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-500">⌘+S</kbd> 保存到云端</span>
+          <span className="text-gray-400">{canEdit ? '自动保存' : '只读'}</span>
         )}
       </div>
       {/* SSE 通知提示条 */}

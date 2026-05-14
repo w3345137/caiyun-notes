@@ -3,7 +3,7 @@
  * 核心改动：
  * - updateNote 更新 store 后立即排队保存
  * - 同一笔记的高频保存串行化，刷新前可等待队列刷完
- * - syncToCloud 只保存当前选中页面（手动 Ctrl+S）
+ * - syncToCloud 作为内部 flush 兜底，只处理当前选中页面的待同步队列
  * - 去掉定时保存和全量同步
  */
 import { create } from 'zustand';
@@ -155,11 +155,11 @@ async function saveSingleNote(note: Note) {
   try {
     const result = await saveNoteToCloud(note);
     if (result && !result.success) {
-      throw new Error(result.error || '保存失败');
+      throw new Error(result.error || '自动同步失败');
     }
     return result;
   } catch (e) {
-    console.error(`[Store] 云端保存失败: ${note.id}`, e);
+    console.error(`[Store] 云端同步失败: ${note.id}`, e);
     throw e;
   }
 }
@@ -399,7 +399,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   syncToCloud: async () => {
-    set({ isSyncing: true, loadingStatus: '保存中...' });
+    set({ isSyncing: true, loadingStatus: '同步中...' });
     try {
       const state = get();
       const selectedId = state.selectedNoteId;
@@ -422,8 +422,8 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       set({ isSyncing: false, lastSyncedAt: new Date(), loadingStatus: '就绪', syncError: null });
       return { success: true };
     } catch (e: any) {
-      const message = e?.message || '保存失败';
-      set({ isSyncing: false, syncError: message, loadingStatus: '保存失败' });
+      const message = e?.message || '自动同步失败';
+      set({ isSyncing: false, syncError: message, loadingStatus: '同步失败' });
       return { success: false, error: message };
     }
   },

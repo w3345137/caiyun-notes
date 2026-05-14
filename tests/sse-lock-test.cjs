@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 
-const BASE_URL = process.env.NOTESAPP_TEST_BASE_URL || 'http://127.0.0.1:3011';
+const BASE_URL = requireEnv('NOTESAPP_TEST_BASE_URL').replace(/\/$/, '');
 const SHARED_NOTEBOOK_ID = '1774070766899-may0vbeov';
 
 function requireEnv(name) {
