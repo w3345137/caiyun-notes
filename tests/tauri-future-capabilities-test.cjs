@@ -11,9 +11,15 @@ const releaseWorkflow = fs.readFileSync(path.join(root, '.github/workflows/build
 
 const defaultCapability = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/capabilities/default.json'), 'utf8'));
 const remoteCapability = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/capabilities/remote-notes.json'), 'utf8'));
+const p7UpdaterPubkey = 'dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMxNzI5OEQ3M0M5MjYyQzEKUldUQllwSTgxNWh5d1JKQ3p3dFJOcTNxRmdIZHBNY2F0WDJaVVczRWh5SHR1b0ZVL2Y4eVNkUEcK';
 
 assert.equal(packageJson.version, '2.5.1', 'desktop app package version should be bumped to 2.5.1');
 assert.equal(tauriConf.version, '2.5.1', 'Tauri bundle version should be bumped to 2.5.1');
+assert.equal(
+  tauriConf.plugins.updater.pubkey,
+  p7UpdaterPubkey,
+  'desktop updater public key must stay compatible with installed p7 clients',
+);
 assert.match(cargoToml, /^version = "2\.5\.1"/m, 'Cargo package version should be bumped to 2.5.1');
 assert.match(cargoToml, /tauri-plugin-store = "2"/, 'Tauri Store plugin should be included for future local settings/cache needs');
 assert.match(cargoToml, /tauri-plugin-notification = "2"/, 'Tauri Notification plugin should be included for future desktop notifications');
