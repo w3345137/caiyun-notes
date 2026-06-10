@@ -1,5 +1,5 @@
 import { Table } from '@tiptap/extension-table';
-import { TextSelection, Plugin, PluginKey } from '@tiptap/pm/state';
+import { Selection, Plugin, PluginKey } from '@tiptap/pm/state';
 import { createTable } from '@tiptap/extension-table';
 import type { Schema } from '@tiptap/pm/model';
 
@@ -25,7 +25,7 @@ export const TableWithDefaultWidth = Table.extend({
 
             tr.replaceSelectionWith(node)
               .scrollIntoView()
-              .setSelection(TextSelection.near(tr.doc.resolve(offset)));
+              .setSelection(Selection.near(tr.doc.resolve(offset)));
 
             // 立即设置所有 cell 的 colwidth
             tr.doc.nodesBetween(0, tr.doc.content.size, (n, pos) => {

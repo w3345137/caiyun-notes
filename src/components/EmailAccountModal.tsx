@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, X, Loader2, Check, AlertCircle, Server, Shield } from 'lucide-react';
-import { detectProvider, addEmailAccount } from '../lib/emailService';
+import { detectProvider, addEmailAccount, syncEmails } from '../lib/emailService';
 import toast from 'react-hot-toast';
 
 interface EmailAccountModalProps {
@@ -72,11 +72,15 @@ const EmailAccountModal: React.FC<EmailAccountModalProps> = ({ show, onClose, on
       if (result.success) {
         setStep('done');
         toast.success('邮箱账号添加成功，正在同步邮件...');
-        setTimeout(() => {
-          onSuccess();
-          onClose();
-          resetForm();
-        }, 1500);
+        const syncResult = result.account?.id ? await syncEmails(result.account.id) : null;
+        if (syncResult && !syncResult.success) {
+          toast.error(syncResult.error || '邮件同步失败，可稍后重试');
+        } else if (syncResult?.success) {
+          toast.success(`邮件同步完成，生成 ${syncResult.pages || 0} 个会话页面`);
+        }
+        await Promise.resolve(onSuccess());
+        onClose();
+        resetForm();
       } else {
         setStep('input');
         toast.error(result.error || '添加失败');

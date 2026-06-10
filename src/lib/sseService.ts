@@ -93,7 +93,7 @@ class SSEService {
     switch (event.type) {
       case 'note_updated': {
         if (event.reason === 'attachment_changed') {
-          store.triggerFolderRefresh();
+          store.triggerFolderRefresh(event.noteId);
         } else {
           const isEditing = store.isNoteEditing(event.noteId);
           if (isEditing) {

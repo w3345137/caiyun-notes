@@ -27,12 +27,26 @@ import { CloudStorageHubModal } from './CloudStorageHubModal';
 import { checkNotebookBaidu, checkNotebooksBaiduBatch } from '../lib/baiduService';
 import { checkNotebookQiniu } from '../lib/qiniuService';
 import { checkNotebookOnedrive } from '../lib/onedriveService';
+import { checkNotebookAnyShare } from '../lib/anyshareService';
 import { apiGetCloudProvider, apiSetCloudProvider } from '../lib/edgeApi';
 import { getBackupConfig } from '../lib/localBackup';
 import { canUserEditPage } from '../lib/lockService';
 
 import { SmartDropdown } from './SmartDropdown';
 import { SmartIconPicker, type IconOption } from './SmartIconPicker';
+
+const ORG_PLAN_NOTEBOOK_ID = 'jiangsu-company';
+
+const isOrgPlanTreeNote = (note?: Pick<Note, 'id' | 'rootNotebookId' | 'content'> | null) => {
+  if (!note) return false;
+  if (note.id === ORG_PLAN_NOTEBOOK_ID || note.rootNotebookId === ORG_PLAN_NOTEBOOK_ID) return true;
+  try {
+    const parsed = note.content ? JSON.parse(note.content) : null;
+    return typeof parsed?.kind === 'string' && parsed.kind.startsWith('org_plan');
+  } catch {
+    return false;
+  }
+};
 
 // OneNote风格的彩虹色书签颜色
 const NOTEBOOK_COLORS = [
@@ -106,7 +120,8 @@ const EditableTitle: React.FC<{
   title: string;
   onSave: (newTitle: string) => void;
   className?: string;
-}> = ({ title, onSave, className = '' }) => {
+  disabled?: boolean;
+}> = ({ title, onSave, className = '', disabled = false }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState(title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -157,9 +172,11 @@ const EditableTitle: React.FC<{
 
   return (
     <span
-      className={`flex-1 truncate cursor-pointer hover:bg-gray-200 px-1 py-0.5 rounded text-sm ${className}`}
-      onDoubleClick={() => setIsEditing(true)}
-      title="双击编辑"
+      className={`flex-1 truncate px-1 py-0.5 rounded text-sm ${disabled ? 'cursor-default' : 'cursor-pointer hover:bg-gray-200'} ${className}`}
+      onDoubleClick={() => {
+        if (!disabled) setIsEditing(true);
+      }}
+      title={disabled ? title : '双击编辑'}
     >
       {title}
     </span>
@@ -183,6 +200,7 @@ const SectionItem: React.FC<{
   // 获取分区图标
   const sectionIconData = getPageIcon(section.icon || 'folder');
   const SectionIcon = sectionIconData.icon;
+  const isProtected = isOrgPlanTreeNote(section) || isOrgPlanTreeNote(notebook);
 
   // 点击外部关闭图标选择器
   useEffect(() => {
@@ -211,8 +229,9 @@ const SectionItem: React.FC<{
       <EditableTitle
         title={section.title}
         onSave={(newTitle) => onTitleChange(section.id, newTitle)}
+        disabled={isProtected}
       />
-      <div className="relative ml-auto flex items-center gap-1" ref={menuRef}>
+      {!isProtected && <div className="relative ml-auto flex items-center gap-1" ref={menuRef}>
         <button
           onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
           className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded transition-opacity"
@@ -249,7 +268,7 @@ const SectionItem: React.FC<{
             icons={PAGE_ICONS}
           />
         )}
-      </div>
+      </div>}
     </div>
   );
 };
@@ -277,6 +296,7 @@ const NotebookItem: React.FC<{
   onDelete: (id: string) => void;
   onAddSection: (notebookId: string) => void;
   onShare: (notebook: Note) => void;
+  onAgentApi: (notebook: Note) => void;
   onIconChange: (id: string, iconId: string) => void;
   onCopyId: (notebook: Note) => void;
   onViewInvites: (notebook: Note) => void;
@@ -284,13 +304,14 @@ const NotebookItem: React.FC<{
   isOwner?: boolean;
   hasStorage?: boolean;
   hasBaiduStorage?: boolean;
-}> = ({ notebook, sections, isExpanded, isActive, activeSection, onToggle, onSectionClick, onTitleChange, onDelete, onAddSection, onShare, onIconChange, onCopyId, onViewInvites, isShared = false, isOwner = false, hasStorage = false, hasBaiduStorage = false }) => {
+}> = ({ notebook, sections, isExpanded, isActive, activeSection, onToggle, onSectionClick, onTitleChange, onDelete, onAddSection, onShare, onAgentApi, onIconChange, onCopyId, onViewInvites, isShared = false, isOwner = false, hasStorage = false, hasBaiduStorage = false }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [dragOverSectionIndex, setDragOverSectionIndexLocal] = useState<number | null>(null);
   const [showCloudSwitch, setShowCloudSwitch] = useState(false);
   const [cloudProvider, setCloudProvider] = useState<string | null>(null);
   const [cloudOptions, setCloudOptions] = useState<{key: string; label: string; icon: string; bound: boolean}[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
+  const isProtected = isOrgPlanTreeNote(notebook);
 
   // 点击外部关闭菜单
   useEffect(() => {
@@ -327,6 +348,7 @@ const NotebookItem: React.FC<{
         <EditableTitle
           title={notebook.title}
           onSave={(newTitle) => onTitleChange(notebook.id, newTitle)}
+          disabled={isProtected}
         />
         {/* 共享标识 */}
         {isShared && (
@@ -351,6 +373,13 @@ const NotebookItem: React.FC<{
                 分享设置
               </button>
               <button
+                onClick={() => { onAgentApi(notebook); setShowMenu(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-violet-600 hover:bg-violet-50"
+              >
+                <Bot className="w-4 h-4" />
+                智能体 API
+              </button>
+              <button
                 onClick={() => { onCopyId(notebook); setShowMenu(false); }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
               >
@@ -366,21 +395,24 @@ const NotebookItem: React.FC<{
                   查看申请
                 </button>
               )}
-              <button
-                onClick={() => { onAddSection(notebook.id); setShowMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-              >
-                <Folder className="w-4 h-4 text-blue-500" />
-                新建分区
-              </button>
-              {isOwner && (
+              {!isProtected && (
+                <button
+                  onClick={() => { onAddSection(notebook.id); setShowMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <Folder className="w-4 h-4 text-blue-500" />
+                  新建分区
+                </button>
+              )}
+              {isOwner && !isProtected && (
                 <button
                   onClick={async () => {
                     setShowCloudSwitch(true);
                     // 检查可用云存储
-                    const [odRes, bdRes] = await Promise.all([
+                    const [odRes, bdRes, asRes] = await Promise.all([
                       checkNotebookOnedrive(notebook.id).catch(() => ({bound: false})),
                       checkNotebookBaidu(notebook.id).catch(() => ({bound: false})),
+                      checkNotebookAnyShare(notebook.id).catch(() => ({bound: false})),
                     ]);
                     const qnRes = await checkNotebookQiniu(notebook.id).catch(() => ({bound: false}));
                     // 获取当前设置
@@ -392,6 +424,7 @@ const NotebookItem: React.FC<{
                       { key: 'onedrive', label: 'OneDrive', icon: '☁️', bound: odRes.bound },
                       { key: 'baidu', label: '百度网盘', icon: '💾', bound: bdRes.bound },
                       { key: 'qiniu', label: '七牛云', icon: '🗄️', bound: qnRes.bound },
+                      { key: 'anyshare', label: 'AnyShare', icon: 'AS', bound: asRes.bound },
                     ].filter(o => o.bound));
                   }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
@@ -412,13 +445,15 @@ const NotebookItem: React.FC<{
                   已绑定百度网盘
                 </div>
               )}
-              <button
-                onClick={() => { onDelete(notebook.id); setShowMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-              >
-                <Trash2 className="w-4 h-4" />
-                删除
-              </button>
+              {!isProtected && (
+                <button
+                  onClick={() => { onDelete(notebook.id); setShowMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  删除
+                </button>
+              )}
             </SmartDropdown>
           )}
           {/* 云存储切换子菜单 */}
@@ -452,6 +487,7 @@ const NotebookItem: React.FC<{
           <SectionsDndArea
             sectionIds={sections.sort((a, b) => a.order - b.order).map(s => s.id)}
             onReorder={(newSectionIds) => {
+              if (isProtected) return;
               useNoteStore.getState().reorderSections(notebook.id, newSectionIds);
             }}
           >
@@ -483,7 +519,8 @@ const PageItem: React.FC<{
   onDelete: (id: string) => void;
   onIconChange: (id: string, iconId: string) => void;
   onViewHistory?: (pageId: string, pageTitle: string) => void;
-}> = ({ page, isActive, onClick, onTitleChange, onDelete, onIconChange, onViewHistory }) => {
+  isProtected?: boolean;
+}> = ({ page, isActive, onClick, onTitleChange, onDelete, onIconChange, onViewHistory, isProtected = false }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -506,12 +543,13 @@ const PageItem: React.FC<{
 
   return (
     <div
-      draggable
+      draggable={!isProtected}
       onDragStart={(e) => {
+        if (isProtected) return;
         e.dataTransfer.setData('text/plain', page.id);
         e.dataTransfer.effectAllowed = 'move';
       }}
-      className={`flex items-center px-3 py-1.5 pl-4 cursor-grab active:cursor-grabbing transition-all group ${
+      className={`flex items-center px-3 py-1.5 pl-4 transition-all group ${isProtected ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} ${
         isActive
           ? 'bg-blue-100 shadow-sm'
           : 'hover:bg-gray-50'
@@ -522,8 +560,9 @@ const PageItem: React.FC<{
       <EditableTitle
         title={page.title}
         onSave={(newTitle) => onTitleChange(page.id, newTitle)}
+        disabled={isProtected}
       />
-      <div className="relative ml-auto flex items-center gap-1" ref={menuRef}>
+      {!isProtected && <div className="relative ml-auto flex items-center gap-1" ref={menuRef}>
         <button
           onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
           className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded transition-opacity"
@@ -569,7 +608,7 @@ const PageItem: React.FC<{
             icons={PAGE_ICONS}
           />
         )}
-      </div>
+      </div>}
     </div>
   );
 };
@@ -608,6 +647,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   const [showBackupConfig, setShowBackupConfig] = useState(false);
   const [showBackupHistory, setShowBackupHistory] = useState(false);
   const [backupHistoryNote, setBackupHistoryNote] = useState<{ id: string; title: string } | null>(null);
+  const [agentApiNotebook, setAgentApiNotebook] = useState<Note | null>(null);
   const [pendingInviteCount, setPendingInviteCount] = useState(0);
   // 确认弹窗状态
   const [confirmModal, setConfirmModal] = useState<{
@@ -735,7 +775,8 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
 
   // 获取用户显示名称
   const displayName = user?.display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || '用户';
-  const userInitial = displayName.charAt(0).toUpperCase();
+  const displayNameChars = Array.from(displayName);
+  const displayNameForChip = displayNameChars.length > 5 ? displayNameChars.slice(0, 5).join('') + '…' : displayName;
 
   // 获取所有笔记本（一级）- 使用 useMemo 缓存
   const notebooks = useMemo(
@@ -796,10 +837,20 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   }, [selectNote]);
 
   const handleTitleChange = useCallback((id: string, newTitle: string) => {
+    const note = useNoteStore.getState().notes.find(n => n.id === id);
+    if (isOrgPlanTreeNote(note)) {
+      toast.error('江苏公司笔记本结构由 HCM 自动维护，不能手动修改');
+      return;
+    }
     updateNote(id, { title: newTitle });
   }, [updateNote]);
 
   const handleIconChange = useCallback((id: string, iconId: string) => {
+    const note = useNoteStore.getState().notes.find(n => n.id === id);
+    if (isOrgPlanTreeNote(note)) {
+      toast.error('江苏公司笔记本结构由 HCM 自动维护，不能手动修改');
+      return;
+    }
     updateNote(id, { icon: iconId });
   }, [updateNote]);
 
@@ -809,12 +860,29 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   }, [updateNote]);
 
   const handleDelete = useCallback((id: string) => {
+    const note = useNoteStore.getState().notes.find(n => n.id === id);
+    if (isOrgPlanTreeNote(note)) {
+      toast.error('江苏公司笔记本结构由 HCM 自动维护，不能手动删除');
+      return;
+    }
     setConfirmModal({
       isOpen: true,
       title: '删除笔记',
       message: '确定要删除吗？这将同时删除所有子项。',
       isDanger: true,
-      onConfirm: () => deleteNote(id)
+      onConfirm: async () => {
+        const result = await deleteNote(id);
+        if (result && !result.success) {
+          const message = result.error === 'PAGE_LOCKED_BY_OTHER'
+            ? '页面被其他用户锁定，暂时无法删除'
+            : result.error === 'Forbidden: only owner can delete'
+              ? '只有页面所有者或笔记本所有者可以删除'
+              : result.error || '删除失败';
+          toast.error(message);
+          return;
+        }
+        toast.success('已删除');
+      }
     });
   }, [deleteNote]);
 
@@ -825,19 +893,33 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   }, [addNote]);
 
   const handleAddEmailNotebook = useCallback(async () => {
-    const hasEmailNotebook = notes.some(n => n.type === 'email_notebook');
-    if (hasEmailNotebook) {
+    const ownedEmailNotebook = notes.find(n => n.type === 'email_notebook' && (!user?.id || n.ownerId === user.id));
+    if (ownedEmailNotebook) {
       toast.error('已存在邮箱笔记本，每个用户只能添加一个');
+      selectNote(ownedEmailNotebook.id);
       return;
     }
     const notebookId = addNote(null, 'email_notebook', '邮箱管理');
     updateNote(notebookId, { icon: 'mail' });
-    saveNoteById(notebookId);
-  }, [notes, addNote, updateNote, saveNoteById]);
+    if (!expandedNodes.includes(notebookId)) {
+      toggleExpanded(notebookId);
+    }
+    try {
+      await saveNoteById(notebookId);
+      toast.success('邮箱笔记本已创建');
+    } catch (e: any) {
+      toast.error(e?.message || '邮箱笔记本创建失败');
+    }
+  }, [notes, user?.id, addNote, updateNote, saveNoteById, expandedNodes, toggleExpanded, selectNote]);
 
   // 新建页面
   const handleAddPage = useCallback(() => {
     if (!activeSection) {
+      return;
+    }
+    const section = useNoteStore.getState().notes.find(n => n.id === activeSection);
+    if (isOrgPlanTreeNote(section)) {
+      toast.error('江苏公司笔记本结构由 HCM 自动维护，不能新建页面');
       return;
     }
     const pageId = addNote(activeSection, 'page', '新页面', { skipSelect: true });
@@ -847,6 +929,10 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   // 在指定笔记本下新建分区
   const handleAddSection = useCallback((notebookId: string) => {
     const notebook = notes.find(n => n.id === notebookId);
+    if (isOrgPlanTreeNote(notebook)) {
+      toast.error('江苏公司笔记本结构由 HCM 自动维护，不能新建分区');
+      return;
+    }
     if (notebook?.type === 'email_notebook') {
       setEmailNotebookId(notebookId);
       setShowEmailModal(true);
@@ -862,6 +948,10 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
   // 打开分享设置
   const handleShareNotebook = useCallback((notebook: Note) => {
     setSharingNotebook(notebook);
+  }, []);
+
+  const handleAgentApiNotebook = useCallback((notebook: Note) => {
+    setAgentApiNotebook(notebook);
   }, []);
 
   // 复制笔记本ID
@@ -898,7 +988,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
       {/* 顶部 - Logo */}
       <div className="h-[47px] shrink-0 flex items-center px-3 bg-white border-b border-gray-100 justify-between">
         {!collapsed && (
-          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.5</span></span>
+          <span className="font-bold text-sm" style={{ background: 'linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.6 }}>彩云笔记 <span className="text-xs text-gray-400 ml-1">v2.5.1</span></span>
         )}
         <div className={`flex items-center gap-1 ${collapsed ? 'w-full justify-center' : ''}`}>
           {!collapsed && (
@@ -962,6 +1052,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                         onDelete={handleDelete}
                         onAddSection={handleAddSection}
                         onShare={handleShareNotebook}
+                        onAgentApi={handleAgentApiNotebook}
                         onIconChange={handleIconChange}
                         onCopyId={handleCopyNotebookId}
                         onViewInvites={handleViewInvites}
@@ -986,6 +1077,7 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                       <PagesDndArea
                         pageIds={pages.map(p => p.id)}
                         onReorder={(newPageIds) => {
+                          if (isOrgPlanTreeNote(activeSectionObj)) return;
                           reorderPagesRef.current(activeSection, newPageIds);
                         }}
                       >
@@ -1002,12 +1094,13 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                                 setBackupHistoryNote({ id, title });
                                 setShowBackupHistory(true);
                               }}
+                              isProtected={isOrgPlanTreeNote(page) || isOrgPlanTreeNote(activeSectionObj)}
                             />
                           </PageWrapper>
                         ))}
                       </PagesDndArea>
                       {/* 新建页面按钮 - 只有选中分区时才显示 */}
-                      {activeSection && (
+                      {activeSection && !isOrgPlanTreeNote(activeSectionObj) && (
                         <div className="p-2 flex-shrink-0">
                           <button
                             onClick={handleAddPage}
@@ -1022,13 +1115,15 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                   ) : (
                     <div className="flex flex-col items-center justify-center py-6 text-gray-400 flex-1">
                       <p className="text-sm mb-3">暂无页面</p>
-                      <button
-                        onClick={handleAddPage}
-                        className="flex items-center gap-2 px-4 py-2 text-sm text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                        创建页面
-                      </button>
+                      {!isOrgPlanTreeNote(activeSectionObj) && (
+                        <button
+                          onClick={handleAddPage}
+                          className="flex items-center gap-2 px-4 py-2 text-sm text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                          创建页面
+                        </button>
+                      )}
                     </div>
                   )
                 ) : (
@@ -1040,17 +1135,15 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
             </div>
           </div>
 
-          {/* 底部用户头像 + 设置菜单 */}
-          <div className="h-[52px] px-3 border-t border-gray-200 bg-white flex items-center justify-between">
-            <div className="relative flex items-center" ref={userMenuRef}>
+          {/* 底部用户入口 + 快捷操作 */}
+          <div className="h-[33px] px-3 border-t border-gray-200 bg-white flex items-center justify-between gap-2 shrink-0">
+            <div className="relative flex items-center min-w-0" ref={userMenuRef}>
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                className="h-[25px] max-w-[117px] px-[11px] min-w-0 flex items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-sm hover:shadow transition-all"
+                title={displayName}
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-sm flex-shrink-0">
-                  <span className="text-sm font-medium text-white">{userInitial}</span>
-                </div>
-                <span className="text-sm text-gray-700 truncate">{displayName}</span>
+                <span className="min-w-0 truncate text-[11px] font-medium leading-none">{displayNameForChip}</span>
               </button>
 
               {/* 用户菜单下拉 */}
@@ -1120,17 +1213,17 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
                 </div>
               )}
             </div>
-            {/* 新建按钮 - 加号 */}
-            <div className="flex items-center gap-1 ml-[10px]">
+            {/* 右下角快捷按钮 */}
+            <div className="flex items-center gap-2 shrink-0">
               {/* 通知按钮 */}
               <button
                 onClick={() => setShowInviteModal(true)}
-                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors relative"
+                className="w-6 h-6 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors relative"
                 title="通知"
               >
-                <Bell className="w-5 h-5 text-gray-500" />
+                <Bell className="w-3.5 h-3.5 text-gray-500" />
                 {pendingInviteCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
                     {pendingInviteCount > 9 ? '9+' : pendingInviteCount}
                   </span>
                 )}
@@ -1138,18 +1231,18 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
               {/* 更新日志按钮 */}
               <button
                 onClick={() => setShowUpdateLogs(true)}
-                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                className="w-6 h-6 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors"
                 title="更新日志"
               >
-                <Clock className="w-5 h-5 text-gray-500" />
+                <Clock className="w-3.5 h-3.5 text-gray-500" />
               </button>
               {/* 加号按钮 */}
               <button
                 onClick={() => setShowAddMenu(!showAddMenu)}
-                className="p-[5px] bg-purple-500 hover:bg-purple-600 rounded-lg transition-colors"
+                className="w-6 h-6 flex items-center justify-center bg-purple-500 hover:bg-purple-600 rounded-md transition-colors"
                 title="新建"
               >
-                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                   <line x1="12" y1="5" x2="12" y2="19"/>
                   <line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
@@ -1220,6 +1313,15 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
         />
       )}
 
+      {/* 笔记本智能体 API 弹窗 */}
+      {agentApiNotebook && (
+        <NotebookShareModal
+          notebook={agentApiNotebook}
+          mode="api"
+          onClose={() => setAgentApiNotebook(null)}
+        />
+      )}
+
       {/* 更新日志弹窗 */}
       {showUpdateLogs && (
         <UpdateLogsModal isAdmin={user?.email === '767493611@qq.com'} onClose={() => setShowUpdateLogs(false)} />
@@ -1231,11 +1333,23 @@ export const Sidebar: React.FC<{ collapsed: boolean; onToggle: () => void }> = (
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-[380px]" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-bold text-gray-800 mb-4">下载 App</h2>
             <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-              彩云笔记桌面应用，支持 macOS 和 Windows。
+              彩云笔记桌面应用，支持 macOS、Windows 和 Linux。
             </p>
             <div className="bg-gray-50 rounded-xl p-4 mb-5">
-              <p className="text-sm text-gray-700 mb-2"><span className="text-gray-500">下载链接：</span><a href="https://pan.baidu.com/s/1ezE0eJ4jR44uQiOgQwXoDg" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all">https://pan.baidu.com/s/1ezE0eJ4jR44uQiOgQwXoDg</a></p>
-              <p className="text-sm text-gray-700"><span className="text-gray-500">提取码：</span><span className="font-mono font-bold text-purple-600">dhjk</span></p>
+              <p className="text-sm text-gray-700 mb-2">
+                <span className="text-gray-500">下载目录：</span>
+                <a
+                  href="https://gitee.com/binbin3344/cloudnote/tree/master/updates"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:underline break-all"
+                >
+                  https://gitee.com/binbin3344/cloudnote/tree/master/updates
+                </a>
+              </p>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                按系统选择对应目录：Windows、macOS 或 Linux。应用内更新也优先使用这里的更新清单和安装包。
+              </p>
             </div>
             <div className="flex justify-end">
               <button

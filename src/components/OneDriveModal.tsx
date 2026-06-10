@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Cloud, Download, Trash2, Image, Video, FileText, FileCode, CheckCircle, Volume2, HelpCircle } from 'lucide-react';
+import { X, Cloud, Download, Trash2, Image, Video, FileText, FileCode, CheckCircle, Volume2, HelpCircle, BookOpen, Search, AlertTriangle, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from './authContext';
-import { getAttachments, getOneDriveAuthUrl, downloadFromOneDrive, deleteAttachment, formatFileSize, checkOneDriveBinding, Attachment } from '../lib/onedriveService';
+import { getAttachments, getOneDriveAuthUrl, downloadFromOneDrive, deleteAttachment, formatFileSize, checkOneDriveBinding, probeOneNoteMetadata, Attachment, OneNoteProbeResult, OneNoteProbeSample } from '../lib/onedriveService';
 import { ConfirmModal } from './ConfirmModal';
 
 interface OneDriveModalProps {
@@ -31,6 +31,8 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
   const [showDebug, setShowDebug] = useState(false);
   const [debugLog, setDebugLog] = useState<Array<{ step: string; status: 'pending' | 'ok' | 'error'; detail: string }>>([]);
+  const [oneNoteProbeResult, setOneNoteProbeResult] = useState<OneNoteProbeResult | null>(null);
+  const [isProbingOneNote, setIsProbingOneNote] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -71,12 +73,37 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
     (navigator.userAgent || '').includes('Tauri') ||
     (navigator.userAgent || '').includes('彩云笔记');
 
-  const handleBind = async () => {
-    if (!user || !clientId.trim() || !clientSecret.trim()) {
+  const handleProbeOneNote = useCallback(async () => {
+    if (!user) return;
+    setIsProbingOneNote(true);
+    try {
+      const result = await probeOneNoteMetadata();
+      setOneNoteProbeResult(result);
+      if (result.needs_reauth) {
+        toast.error('需要补充授权 OneNote 只读权限');
+      } else if (result.supported) {
+        toast.success('OneNote 笔记本检测完成');
+      } else {
+        toast.error('当前 OneNote 云端接口可能不支持');
+      }
+    } catch (error) {
+      console.error('OneNote probe error:', error);
+      toast.error(error instanceof Error ? error.message : 'OneNote 探测失败');
+    } finally {
+      setIsProbingOneNote(false);
+    }
+  }, [user]);
+
+  const handleBind = async (options?: { includeOneNote?: boolean; useStoredAccount?: boolean }) => {
+    const includeOneNote = !!options?.includeOneNote;
+    const useStoredAccount = !!options?.useStoredAccount;
+
+    if (!user) return;
+    if (!useStoredAccount && (!clientId.trim() || !clientSecret.trim())) {
       toast.error('请填写完整的 Client ID 和 Client Secret');
       return;
     }
-    if (cloudType === '世纪互联' && !tenantId.trim()) {
+    if (!useStoredAccount && cloudType === '世纪互联' && !tenantId.trim()) {
       toast.error('请填写世纪互联的租户 ID');
       return;
     }
@@ -84,8 +111,16 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
     clearDebug();
 
     try {
+      const initialBinding = includeOneNote && useStoredAccount ? await checkOneDriveBinding() : null;
+      const initialAccountUpdatedAt = initialBinding?.account?.updated_at || null;
       addDebug('① 获取授权 URL', 'pending', '发送请求...');
-      const result = await getOneDriveAuthUrl(clientId.trim(), cloudType, cloudType === '世纪互联' ? tenantId.trim() : undefined);
+      const result = await getOneDriveAuthUrl(
+        useStoredAccount ? '' : clientId.trim(),
+        useStoredAccount ? '' : clientSecret.trim(),
+        cloudType,
+        useStoredAccount ? undefined : (cloudType === '世纪互联' ? tenantId.trim() : undefined),
+        includeOneNote
+      );
       const authUrl = result.authUrl;
 
       if (!authUrl) {
@@ -99,6 +134,17 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
 
       // Tauri/nw.js 使用 server 代理跳转（绕过 CSP）; 普通浏览器直接用 authUrl
       const openUrl = result.redirectUrl || authUrl;
+      const successMessage = includeOneNote ? 'OneNote 只读授权已更新' : 'OneDrive 绑定成功！';
+      const afterAuthSuccess = async () => {
+        setIsBound(true);
+        if (includeOneNote) {
+          setActiveTab('bind');
+          await handleProbeOneNote();
+        } else {
+          setActiveTab('files');
+          loadAttachments();
+        }
+      };
 
       if (isTauriApp) {
         addDebug('② 打开授权页', 'ok', '正在唤起系统浏览器...');
@@ -115,14 +161,16 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
           pollCount++;
           addDebug('③ 检查绑定', 'pending', `第 ${pollCount}/${maxPoll} 次检查...`);
           const checkResult = await checkOneDriveBinding();
-          if (checkResult.bound) {
+          const authRecordUpdated = !includeOneNote ||
+            !useStoredAccount ||
+            !initialAccountUpdatedAt ||
+            checkResult.account?.updated_at !== initialAccountUpdatedAt;
+          if (checkResult.bound && authRecordUpdated) {
             clearInterval(tauriPollTimer);
             pollTimerRef.current = null;
             addDebug('③ 授权成功', 'ok', '检测到绑定状态');
-            toast.success('OneDrive 绑定成功！');
-            setIsBound(true);
-            setActiveTab('files');
-            loadAttachments();
+            toast.success(successMessage);
+            void afterAuthSuccess();
           } else if (pollCount >= maxPoll) {
             clearInterval(tauriPollTimer);
             pollTimerRef.current = null;
@@ -172,10 +220,8 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
 
         if (event.data.type === 'onedrive_success') {
           addDebug('③ 授权成功', 'ok', '收到 postMessage');
-          toast.success('OneDrive 绑定成功！');
-          setIsBound(true);
-          setActiveTab('files');
-          loadAttachments();
+          toast.success(successMessage);
+          void afterAuthSuccess();
         } else {
           addDebug('③ 授权失败', 'error', event.data.error || '未知错误');
           toast.error(event.data.error || '授权失败');
@@ -233,6 +279,22 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
     }
   };
 
+  const renderOneNoteSamples = (label: string, samples: OneNoteProbeSample[]) => {
+    if (!samples.length) return null;
+    return (
+      <div>
+        <p className="text-xs font-medium text-gray-600 mb-1">{label}</p>
+        <div className="space-y-1">
+          {samples.slice(0, 3).map((sample, index) => (
+            <div key={`${label}-${sample.id || index}`} className="text-xs text-gray-500 truncate">
+              {sample.title || '未命名'}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-[640px] max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
@@ -271,12 +333,94 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
                   </div>
                   <h3 className="text-lg font-semibold text-gray-800 mb-2">OneDrive 已绑定</h3>
                   <p className="text-sm text-gray-500 mb-6">你可以开始在笔记中插入附件了</p>
-                  <button
-                    onClick={() => { setActiveTab('files'); loadAttachments(); }}
-                    className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors"
-                  >
-                    查看附件
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setActiveTab('files'); loadAttachments(); }}
+                      className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors"
+                    >
+                      查看附件
+                    </button>
+                    <button
+                      onClick={handleProbeOneNote}
+                      disabled={isProbingOneNote || isBinding}
+                      className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                    >
+                      {isProbingOneNote ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      检测 OneNote 笔记本
+                    </button>
+                  </div>
+
+                  <div className="w-full mt-5 border border-gray-200 rounded-lg p-4 text-left">
+                    <div className="flex items-center gap-2 mb-3">
+                      <BookOpen className="w-4 h-4 text-purple-500" />
+                      <span className="text-sm font-medium text-gray-800">OneNote 云端元数据</span>
+                    </div>
+
+                    {!oneNoteProbeResult && !isProbingOneNote && (
+                      <p className="text-xs text-gray-500">仅检测笔记本、分区、页面数量和标题样例，不读取页面正文。</p>
+                    )}
+
+                    {oneNoteProbeResult && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="bg-gray-50 rounded-lg px-3 py-2">
+                            <p className="text-[11px] text-gray-400">笔记本</p>
+                            <p className="text-lg font-semibold text-gray-800">{oneNoteProbeResult.notebooks_count}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg px-3 py-2">
+                            <p className="text-[11px] text-gray-400">分区</p>
+                            <p className="text-lg font-semibold text-gray-800">{oneNoteProbeResult.sections_count}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg px-3 py-2">
+                            <p className="text-[11px] text-gray-400">页面样例</p>
+                            <p className="text-lg font-semibold text-gray-800">{oneNoteProbeResult.pages_count}</p>
+                          </div>
+                        </div>
+
+                        {oneNoteProbeResult.needs_reauth && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-medium text-amber-800">需要补充授权 OneNote 只读权限</p>
+                                <p className="text-xs text-amber-700 mt-1">只刷新 OAuth 权限，不删除 OneDrive 文件和附件记录。</p>
+                                <button
+                                  onClick={() => handleBind({ includeOneNote: true, useStoredAccount: true })}
+                                  disabled={isBinding}
+                                  className="mt-2 px-3 py-1.5 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50"
+                                >
+                                  需要补充授权 OneNote 只读权限
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {!oneNoteProbeResult.supported && !oneNoteProbeResult.needs_reauth && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">
+                            当前云环境可能不支持 OneNote Graph 读取，或接口暂时不可用。
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 gap-3">
+                          {renderOneNoteSamples('笔记本样例', oneNoteProbeResult.samples.notebooks)}
+                          {renderOneNoteSamples('分区样例', oneNoteProbeResult.samples.sections)}
+                          {renderOneNoteSamples('页面样例', oneNoteProbeResult.samples.pages)}
+                        </div>
+
+                        {oneNoteProbeResult.errors.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-gray-600">接口状态</p>
+                            {oneNoteProbeResult.errors.map((error, index) => (
+                              <p key={`${error.target}-${index}`} className="text-xs text-gray-500 break-words">
+                                {error.target}: {error.status || 'network'} {error.code || ''} {error.message}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <>
@@ -375,7 +519,7 @@ export const OneDriveModal: React.FC<OneDriveModalProps> = ({ onClose }) => {
                   </div>
 
                   <button
-                    onClick={handleBind}
+                    onClick={() => handleBind()}
                     disabled={isBinding || !clientId.trim() || !clientSecret.trim() || (cloudType === '世纪互联' && !tenantId.trim())}
                     className="w-full py-2.5 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                   >

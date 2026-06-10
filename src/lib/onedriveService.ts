@@ -10,6 +10,7 @@ export interface OneDriveAccount {
   id: string;
   display_name?: string;
   cloud_type?: string;
+  updated_at?: string;
 }
 
 export interface Attachment {
@@ -25,6 +26,35 @@ export interface Attachment {
   folder_path: string;
   category: string;
   created_at: string;
+}
+
+export interface OneNoteProbeSample {
+  id: string | null;
+  title: string;
+  createdDateTime: string | null;
+  lastModifiedDateTime: string | null;
+}
+
+export interface OneNoteProbeError {
+  target: string;
+  status: number;
+  code: string | null;
+  message: string;
+}
+
+export interface OneNoteProbeResult {
+  success: boolean;
+  supported: boolean;
+  needs_reauth: boolean;
+  notebooks_count: number;
+  sections_count: number;
+  pages_count: number;
+  samples: {
+    notebooks: OneNoteProbeSample[];
+    sections: OneNoteProbeSample[];
+    pages: OneNoteProbeSample[];
+  };
+  errors: OneNoteProbeError[];
 }
 
 // 获取本地 JWT token
@@ -48,8 +78,10 @@ function getAuthToken(): string {
  */
 export async function getOneDriveAuthUrl(
   clientId: string,
+  clientSecret: string,
   cloudType: string = 'international',
-  tenantId?: string
+  tenantId?: string,
+  includeOneNote: boolean = false
 ): Promise<{ authUrl: string; state: string; cloud: string; redirectUrl?: string }> {
   const token = getAuthToken();
   const response = await fetch('/api/onedrive/auth-url', {
@@ -60,14 +92,31 @@ export async function getOneDriveAuthUrl(
     },
     body: JSON.stringify({
       client_id: clientId,
+      client_secret: clientSecret,
       cloud_type: cloudType,
       tenant_id: tenantId,
+      include_onenote: includeOneNote,
     }),
   });
 
   const data = await response.json();
   if (data.error) throw new Error(data.error);
   return { authUrl: data.authUrl, state: data.state, cloud: data.cloud, redirectUrl: data.redirectUrl };
+}
+
+/**
+ * 只读探测 OneNote 云端元数据
+ */
+export async function probeOneNoteMetadata(): Promise<OneNoteProbeResult> {
+  const token = getAuthToken();
+  const response = await fetch('/api/onenote/probe', {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  const data = await response.json();
+  if (!response.ok || data.error) throw new Error(data.error || 'OneNote 探测失败');
+  return data as OneNoteProbeResult;
 }
 
 /**

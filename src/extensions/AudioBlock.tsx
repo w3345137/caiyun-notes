@@ -5,10 +5,11 @@ import { Mic, Square, Trash2, Loader2, Volume2, Copy, Check } from 'lucide-react
 import { uploadToOneDrive, downloadFromOneDrive } from '../lib/onedriveService';
 import { uploadToBaidu, downloadFromBaidu } from '../lib/baiduService';
 import { uploadToQiniu, downloadFromQiniu } from '../lib/qiniuService';
+import { uploadToAnyShare, downloadFromAnyShare } from '../lib/anyshareService';
 import { transcribeAudio } from '../lib/llmService';
 import toast from 'react-hot-toast';
 
-type StorageProvider = 'onedrive' | 'baidu' | 'qiniu';
+type StorageProvider = 'onedrive' | 'baidu' | 'qiniu' | 'anyshare';
 
 interface AudioBlockAttrs {
   noteId: string;
@@ -70,15 +71,17 @@ const providerLabels: Record<StorageProvider, string> = {
   onedrive: 'OneDrive',
   baidu: '百度网盘',
   qiniu: '七牛云',
+  anyshare: 'AnyShare',
 };
 
 const getProvider = (provider?: string): StorageProvider => {
-  return provider === 'baidu' || provider === 'qiniu' ? provider : 'onedrive';
+  return provider === 'baidu' || provider === 'qiniu' || provider === 'anyshare' ? provider : 'onedrive';
 };
 
 const downloadAudio = (provider: StorageProvider, attachmentId: string) => {
   if (provider === 'baidu') return downloadFromBaidu(attachmentId);
   if (provider === 'qiniu') return downloadFromQiniu(attachmentId);
+  if (provider === 'anyshare') return downloadFromAnyShare(attachmentId);
   return downloadFromOneDrive(attachmentId);
 };
 
@@ -91,6 +94,9 @@ const uploadAudio = async (provider: StorageProvider, blob: Blob, fileName: stri
   }
 
   const file = new File([blob], fileName, { type: mimeType });
+  if (provider === 'anyshare') {
+    return uploadToAnyShare(file, noteId);
+  }
   return uploadToOneDrive(file, noteId, '/彩云笔记', '录音文件');
 };
 

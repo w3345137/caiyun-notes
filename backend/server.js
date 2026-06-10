@@ -15,6 +15,37 @@ const emailService = require('./emailService');
 const { Server: HocuspocusServer } = require('@hocuspocus/server');
 const Y = require('yjs');
 const { collabTransformer, EMPTY_DOC } = require('./collabSchema');
+const oneNoteProbe = require('./onenoteProbe');
+const coursewareOss = require('./coursewareOss');
+const {
+  maskAnyShareAccount,
+  normalizeAnyShareBaseUrl,
+  listAnyShareDocLibs,
+  createAnyShareDir,
+  uploadAnyShareFile,
+  downloadAnyShareFile,
+  deleteAnyShareFile,
+} = require('./anyshareProvider');
+const {
+  createNotebookApiToken,
+  hashNotebookApiToken,
+  parseTiptapDoc,
+  tiptapDocToMarkdown,
+  collectAttachmentReferences,
+  extractTextFromBuffer,
+} = require('./notebookApiUtils');
+const {
+  buildEmailNotebookId,
+  buildEmailAccountSectionId,
+  buildEmailThreadPageContent,
+  buildEmailThreadPageId,
+  buildEmailThreadTitle,
+  buildEmailAccountContent,
+  normalizeEmailAddress,
+} = require('./emailNotebookUtils');
+const jiangsuOrgNotebook = require('./jiangsuOrgNotebook');
+const { ORG_PLAN_NOTEBOOK_ID, isProtectedOrgNoteContent } = require('./jiangsuOrgNotebookUtils');
+const { replaceFileNameInPath, validateAttachmentRename } = require('./attachmentRenameUtils');
     // OneDrive MIME 类型辅助
     function getMimeType(fileName) {
       const ext = (fileName.split('.').pop() || '').toLowerCase();
@@ -41,6 +72,11 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '767493611@qq.com';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 const MAX_BODY_SIZE = 10 * 1024 * 1024;
 const AUTH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+const NOTEBOOK_API_DEFAULT_EXPIRES_DAYS = 365;
+const PROVIDER_GRAPH_ENDPOINTS = {
+  '世纪互联': 'https://microsoftgraph.chinacloudapi.cn/v1.0',
+  international: 'https://graph.microsoft.com/v1.0',
+};
 
 // ================= SSE 广播管理 =================
 const sseClients = new Map();
@@ -124,6 +160,605 @@ async function ensureCollabTables() {
     )
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_collab_documents_updated_at ON collab_documents(updated_at)');
+}
+
+async function ensureAnyShareTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS anyshare_accounts (
+      user_id TEXT PRIMARY KEY,
+      base_url TEXT NOT NULL,
+      client_id TEXT NOT NULL,
+      client_secret TEXT NOT NULL,
+      root_docid TEXT NOT NULL,
+      root_name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+async function ensureNotebookApiTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notebook_api_tokens (
+      id TEXT PRIMARY KEY,
+      notebook_id TEXT NOT NULL,
+      creator_user_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '智能体 API',
+      token_hash TEXT NOT NULL UNIQUE,
+      token_prefix TEXT NOT NULL,
+      expires_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ,
+      last_used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_notebook_api_tokens_notebook_id ON notebook_api_tokens(notebook_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_notebook_api_tokens_creator_user_id ON notebook_api_tokens(creator_user_id)');
+}
+
+async function ensureEmailTables() {
+  await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_accounts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+      email_address TEXT NOT NULL,
+      display_name TEXT DEFAULT '',
+      imap_host TEXT NOT NULL,
+      imap_port INTEGER DEFAULT 993,
+      imap_ssl BOOLEAN DEFAULT true,
+      smtp_host TEXT NOT NULL,
+      smtp_port INTEGER DEFAULT 465,
+      smtp_ssl BOOLEAN DEFAULT true,
+      encrypted_password TEXT NOT NULL,
+      iv TEXT NOT NULL,
+      auth_tag TEXT,
+      note_id TEXT,
+      last_sync_uid BIGINT DEFAULT 0,
+      last_sync_at TIMESTAMPTZ,
+      sync_enabled BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id, email_address)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_index (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      account_id UUID NOT NULL REFERENCES email_accounts(id) ON DELETE CASCADE,
+      uid BIGINT NOT NULL,
+      folder TEXT NOT NULL DEFAULT 'INBOX',
+      message_id TEXT,
+      from_addr TEXT,
+      from_name TEXT,
+      to_list TEXT,
+      cc_list TEXT,
+      subject TEXT,
+      date TIMESTAMPTZ,
+      has_attachments BOOLEAN DEFAULT false,
+      is_read BOOLEAN DEFAULT false,
+      is_starred BOOLEAN DEFAULT false,
+      size INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(account_id, uid, folder)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_conversations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      account_id UUID NOT NULL REFERENCES email_accounts(id) ON DELETE CASCADE,
+      other_addr TEXT NOT NULL,
+      other_name TEXT DEFAULT '',
+      last_email_date TIMESTAMPTZ,
+      last_subject TEXT DEFAULT '',
+      unread_count INTEGER DEFAULT 0,
+      total_count INTEGER DEFAULT 0,
+      note_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(account_id, other_addr)
+    )
+  `);
+  await pool.query('ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS auth_tag TEXT');
+  await pool.query('ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS note_id TEXT');
+  await pool.query('ALTER TABLE email_conversations ADD COLUMN IF NOT EXISTS note_id TEXT');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_email_accounts_user ON email_accounts(user_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_email_accounts_note_id ON email_accounts(note_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_email_index_account ON email_index(account_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_email_index_from ON email_index(from_addr)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_email_index_date ON email_index(date DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_email_conversations_account ON email_conversations(account_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_email_conversations_note_id ON email_conversations(note_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_email_conversations_date ON email_conversations(last_email_date DESC)');
+  await pool.query('ALTER TABLE notes DROP CONSTRAINT IF EXISTS notes_type_check');
+  await pool.query(`
+    ALTER TABLE notes ADD CONSTRAINT notes_type_check
+    CHECK ((type)::text = ANY (ARRAY['notebook','email_notebook','section','email_account','page']))
+  `);
+
+  const duplicates = await pool.query(`
+    SELECT owner_id
+    FROM notes
+    WHERE type = 'email_notebook' AND parent_id IS NULL
+    GROUP BY owner_id
+    HAVING COUNT(*) > 1
+    LIMIT 1
+  `);
+  if (!duplicates.rows.length) {
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_one_email_notebook_per_owner
+      ON notes(owner_id)
+      WHERE type = 'email_notebook' AND parent_id IS NULL
+    `);
+  } else {
+    console.warn('[Email] 检测到重复邮箱笔记本，跳过唯一索引创建');
+  }
+}
+
+async function ensureUserEmailNotebook(userId, requestedNotebookId = null) {
+  if (requestedNotebookId) {
+    const { rows } = await pool.query(
+      `SELECT id
+       FROM notes
+       WHERE id = $1 AND owner_id = $2 AND type = 'email_notebook'
+       LIMIT 1`,
+      [requestedNotebookId, userId]
+    );
+    if (!rows.length) {
+      const err = new Error('邮箱笔记本不存在或无权限');
+      err.statusCode = 403;
+      throw err;
+    }
+    return requestedNotebookId;
+  }
+
+  const existing = await pool.query(
+    `SELECT id
+     FROM notes
+     WHERE owner_id = $1 AND type = 'email_notebook' AND parent_id IS NULL
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [userId]
+  );
+  if (existing.rows.length) return existing.rows[0].id;
+
+  const notebookId = buildEmailNotebookId(userId);
+  await pool.query(
+    `INSERT INTO notes (id, title, content, parent_id, type, owner_id, order_index, icon, root_notebook_id, updated_at, created_at)
+     VALUES ($1, '邮箱管理', '', NULL, 'email_notebook', $2, 0, 'mail', $1, NOW(), NOW())
+     ON CONFLICT(id) DO UPDATE SET
+       title = EXCLUDED.title,
+       type = 'email_notebook',
+       parent_id = NULL,
+       root_notebook_id = EXCLUDED.root_notebook_id,
+       icon = 'mail',
+       updated_at = NOW()`,
+    [notebookId, userId]
+  );
+  return notebookId;
+}
+
+async function upsertEmailAccountSection(userId, notebookId, account) {
+  const sectionId = buildEmailAccountSectionId(account.id);
+  const title = account.display_name || account.email_address;
+  const content = buildEmailAccountContent(account);
+  await pool.query(
+    `INSERT INTO notes (id, title, content, parent_id, type, owner_id, order_index, icon, root_notebook_id, updated_at, created_at)
+     VALUES ($1, $2, $3, $4, 'email_account', $5, 0, 'mail', $4, NOW(), NOW())
+     ON CONFLICT(id) DO UPDATE SET
+       title = EXCLUDED.title,
+       content = EXCLUDED.content,
+       parent_id = EXCLUDED.parent_id,
+       type = 'email_account',
+       root_notebook_id = EXCLUDED.root_notebook_id,
+       icon = 'mail',
+       updated_at = NOW()`,
+    [sectionId, title, content, notebookId, userId]
+  );
+  await pool.query('UPDATE email_accounts SET note_id = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [sectionId, account.id, userId]);
+  return sectionId;
+}
+
+async function upsertEmailConversationPages(accountId) {
+  const { rows: accountRows } = await pool.query(
+    `SELECT id, user_id, email_address, display_name, note_id
+     FROM email_accounts
+     WHERE id = $1`,
+    [accountId]
+  );
+  if (!accountRows.length) return { pages: 0 };
+
+  const account = accountRows[0];
+  let sectionId = account.note_id || buildEmailAccountSectionId(account.id);
+  let section = await pool.query(
+    `SELECT id, parent_id, root_notebook_id
+     FROM notes
+     WHERE id = $1 AND owner_id = $2 AND type = 'email_account'`,
+    [sectionId, account.user_id]
+  );
+
+  if (!section.rows.length) {
+    const notebookId = await ensureUserEmailNotebook(account.user_id);
+    sectionId = await upsertEmailAccountSection(account.user_id, notebookId, account);
+    section = await pool.query(
+      `SELECT id, parent_id, root_notebook_id
+       FROM notes
+       WHERE id = $1 AND owner_id = $2 AND type = 'email_account'`,
+      [sectionId, account.user_id]
+    );
+  }
+
+  const rootNotebookId = section.rows[0]?.root_notebook_id || section.rows[0]?.parent_id;
+  const { rows: conversations } = await pool.query(
+    `SELECT *
+     FROM email_conversations
+     WHERE account_id = $1
+     ORDER BY last_email_date DESC NULLS LAST, updated_at DESC`,
+    [account.id]
+  );
+
+  let order = 0;
+  const pageIds = [];
+  for (const conversation of conversations) {
+    const otherAddr = normalizeEmailAddress(conversation.other_addr);
+    if (!otherAddr) continue;
+    const pageId = conversation.note_id || buildEmailThreadPageId(account.id, otherAddr);
+    pageIds.push(pageId);
+    const content = buildEmailThreadPageContent({
+      accountId: account.id,
+      otherAddr,
+      otherName: conversation.other_name,
+      myEmail: account.email_address,
+      conversationId: conversation.id,
+    });
+    await pool.query(
+      `INSERT INTO notes (id, title, content, parent_id, type, owner_id, order_index, icon, root_notebook_id, updated_at, created_at)
+       VALUES ($1, $2, $3, $4, 'page', $5, $6, 'mail', $7, NOW(), NOW())
+       ON CONFLICT(id) DO UPDATE SET
+         title = EXCLUDED.title,
+         content = EXCLUDED.content,
+         parent_id = EXCLUDED.parent_id,
+         type = 'page',
+         order_index = EXCLUDED.order_index,
+         icon = 'mail',
+         root_notebook_id = EXCLUDED.root_notebook_id,
+         updated_at = NOW()`,
+      [pageId, buildEmailThreadTitle(conversation), content, sectionId, account.user_id, order, rootNotebookId]
+    );
+    await pool.query('UPDATE email_conversations SET note_id = $1, updated_at = NOW() WHERE id = $2', [pageId, conversation.id]);
+    order += 1;
+  }
+
+  if (pageIds.length > 0) {
+    await pool.query(
+      `DELETE FROM notes
+       WHERE parent_id = $1 AND type = 'page' AND NOT (id = ANY($2::text[]))`,
+      [sectionId, pageIds]
+    );
+  } else {
+    await pool.query(
+      `DELETE FROM notes
+       WHERE parent_id = $1 AND type = 'page'`,
+      [sectionId]
+    );
+  }
+
+  return { pages: order };
+}
+
+async function syncEmailAccountWithPages(accountId, accountConfig, options = {}) {
+  const result = await emailService.syncEmails(pool, accountId, accountConfig, options);
+  const pageResult = await upsertEmailConversationPages(accountId);
+  return { ...result, pages: pageResult.pages };
+}
+
+async function getNotebookRootInfo(noteId) {
+  const { rows } = await pool.query(
+    `SELECT
+       n.id,
+       n.title,
+       n.type,
+       n.owner_id,
+       n.root_notebook_id,
+       root.id AS root_id,
+       root.owner_id AS root_owner_id,
+       root.title AS root_title
+     FROM notes n
+     LEFT JOIN notes root ON root.id = COALESCE(n.root_notebook_id, n.id)
+     WHERE n.id = $1`,
+    [noteId]
+  );
+  if (!rows.length) return null;
+  const row = rows[0];
+  return {
+    note: row,
+    rootId: row.root_notebook_id || row.id,
+    rootOwnerId: row.root_owner_id || row.owner_id,
+    rootTitle: row.root_title || row.title,
+  };
+}
+
+async function getNotebookOwnerIdForNote(noteId) {
+  const info = await getNotebookRootInfo(noteId);
+  return info?.rootOwnerId || null;
+}
+
+async function getNotebookAccessLevelForUser(targetUserId, noteId) {
+  if (!targetUserId || !noteId) return { access: 'none', isOwner: false, rootId: null };
+  const info = await getNotebookRootInfo(noteId);
+  if (!info) return { access: 'none', isOwner: false, rootId: null };
+  if (info.note.owner_id === targetUserId || info.rootOwnerId === targetUserId) {
+    return { access: 'edit', isOwner: true, rootId: info.rootId };
+  }
+  const { rows } = await pool.query(
+    'SELECT permission FROM note_shares WHERE notebook_id = $1 AND user_id = $2 LIMIT 1',
+    [info.rootId, targetUserId]
+  );
+  if (!rows.length) return { access: 'none', isOwner: false, rootId: info.rootId };
+  return { access: rows[0].permission === 'edit' ? 'edit' : 'view', isOwner: false, rootId: info.rootId };
+}
+
+function isAnyShareDocidSafe(docid) {
+  return typeof docid === 'string' && docid.startsWith('gns://') && !docid.includes('..');
+}
+
+function isOdPathSafe(path) {
+  if (!path) return false;
+  if (!String(path).startsWith('/彩云笔记/')) return false;
+  if (String(path).includes('..')) return false;
+  if (String(path).includes('//')) return false;
+  return true;
+}
+
+function getOneDriveGraphEndpoint(cloudType) {
+  return PROVIDER_GRAPH_ENDPOINTS[cloudType] || PROVIDER_GRAPH_ENDPOINTS.international;
+}
+
+async function refreshOneDriveTokenForAccount(account) {
+  const expiresAt = account.token_expires_at ? new Date(account.token_expires_at).getTime() : 0;
+  if (account.access_token && expiresAt && expiresAt > Date.now() + 5 * 60 * 1000) {
+    return account.access_token;
+  }
+  if (!account.refresh_token) throw new Error('OneDrive refresh token 不存在');
+
+  const authBase = account.cloud_type === '世纪互联'
+    ? 'https://login.chinacloudapi.cn'
+    : 'https://login.microsoftonline.com';
+  const tokenPath = account.tenant_id && account.cloud_type === '世纪互联'
+    ? `/${account.tenant_id}/oauth2/v2.0/token`
+    : '/common/oauth2/v2.0/token';
+  const tokenResp = await fetch(`${authBase}${tokenPath}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: account.client_id,
+      client_secret: account.client_secret,
+      refresh_token: account.refresh_token,
+      grant_type: 'refresh_token',
+    }).toString(),
+  });
+  const tokenData = await tokenResp.json();
+  if (!tokenResp.ok || tokenData.error) {
+    throw new Error(tokenData.error_description || tokenData.error || 'OneDrive token 刷新失败');
+  }
+  const nextExpiresAt = tokenData.expires_in
+    ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+    : null;
+  await pool.query(
+    `UPDATE onedrive_accounts SET access_token = $1, refresh_token = $2, token_expires_at = $3, updated_at = NOW() WHERE user_id = $4`,
+    [tokenData.access_token, tokenData.refresh_token || account.refresh_token, nextExpiresAt, account.user_id]
+  );
+  return tokenData.access_token;
+}
+
+async function downloadOneDriveAttachmentBuffer(att) {
+  if (!isOdPathSafe(att.onedrive_path)) throw new Error('非法 OneDrive 路径');
+  const { rows } = await pool.query('SELECT * FROM onedrive_accounts WHERE user_id = $1', [att.user_id]);
+  if (!rows.length) throw new Error('附件所有者未绑定 OneDrive 账号');
+  const account = rows[0];
+  const accessToken = await refreshOneDriveTokenForAccount(account);
+  const graphEp = getOneDriveGraphEndpoint(account.cloud_type);
+  const drivePrefix = account.drive_id ? `drives/${account.drive_id}/root` : 'me/drive';
+  const dlResp = await fetch(`${graphEp}/${drivePrefix}:${encodeURIComponent(att.onedrive_path)}:/content`, {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+  if (!dlResp.ok) {
+    const errText = await dlResp.text();
+    throw new Error(`OneDrive 下载失败 (${dlResp.status}): ${errText}`);
+  }
+  return Buffer.from(await dlResp.arrayBuffer());
+}
+
+async function downloadAnyShareAttachmentBuffer(att) {
+  const docid = att.onedrive_file_id || att.onedrive_path;
+  if (!isAnyShareDocidSafe(docid)) throw new Error('非法 AnyShare docid');
+  const { rows } = await pool.query('SELECT * FROM anyshare_accounts WHERE user_id = $1', [att.user_id]);
+  if (!rows.length) throw new Error('附件所有者未绑定 AnyShare');
+  const result = await downloadAnyShareFile(rows[0], docid);
+  return result.buffer;
+}
+
+async function downloadAttachmentBuffer(att) {
+  if (att.storage_provider === 'anyshare') return downloadAnyShareAttachmentBuffer(att);
+  if (!att.storage_provider || att.storage_provider === 'onedrive') return downloadOneDriveAttachmentBuffer(att);
+  throw new Error(`notebook API 暂不支持读取 ${att.storage_provider} 附件内容`);
+}
+
+async function authenticateNotebookApiRequest(req) {
+  const headerToken = (req.headers['authorization'] || '').split(' ')[1];
+  const apiKey = req.headers['x-notebook-api-key'] || headerToken;
+  if (!apiKey || !String(apiKey).startsWith('cynb_')) {
+    return { ok: false, code: 401, error: 'Missing notebook API key' };
+  }
+  const tokenHash = hashNotebookApiToken(String(apiKey));
+  const { rows } = await pool.query(
+    `SELECT * FROM notebook_api_tokens
+     WHERE token_hash = $1
+       AND revoked_at IS NULL
+       AND (expires_at IS NULL OR expires_at > NOW())
+     LIMIT 1`,
+    [tokenHash]
+  );
+  if (!rows.length) return { ok: false, code: 401, error: 'Invalid notebook API key' };
+  const tokenRow = rows[0];
+  const access = await getNotebookAccessLevelForUser(tokenRow.creator_user_id, tokenRow.notebook_id);
+  if (access.access === 'none') {
+    return { ok: false, code: 403, error: 'TOKEN_ACCESS_REVOKED' };
+  }
+  await pool.query('UPDATE notebook_api_tokens SET last_used_at = NOW() WHERE id = $1', [tokenRow.id]).catch(() => {});
+  return { ok: true, token: tokenRow, access };
+}
+
+function isNotebookApiRoute(url) {
+  return url.includes('/notebook-api/v1/');
+}
+
+function notebookApiPath(reqUrl) {
+  const pathname = new URL(reqUrl, 'http://localhost').pathname;
+  return pathname.replace(/^\/api/, '');
+}
+
+async function loadNotebookApiNote(notebookId, noteId) {
+  const { rows } = await pool.query(
+    `SELECT n.*, cd.snapshot_content
+     FROM notes n
+     LEFT JOIN collab_documents cd ON cd.note_id = n.id
+     WHERE n.id = $1
+       AND (n.id = $2 OR n.root_notebook_id = $2)
+     LIMIT 1`,
+    [noteId, notebookId]
+  );
+  return rows[0] || null;
+}
+
+function sanitizeAttachment(att) {
+  return {
+    id: att.id,
+    note_id: att.note_id,
+    file_name: att.file_name,
+    file_size: att.file_size,
+    mime_type: att.mime_type,
+    category: att.category,
+    storage_provider: att.storage_provider || 'onedrive',
+    created_at: att.created_at,
+  };
+}
+
+async function handleNotebookApiReadRequest(req, res) {
+  const auth = await authenticateNotebookApiRequest(req);
+  if (!auth.ok) return end(res, auth.code, { success: false, error: auth.error });
+
+  const path = notebookApiPath(req.url);
+  const urlObj = new URL(req.url, 'http://localhost');
+  const notebookId = auth.token.notebook_id;
+
+  if (path === '/notebook-api/v1/notebook' && req.method === 'GET') {
+    const { rows } = await pool.query(
+      'SELECT id, title, type, icon, owner_id, updated_at, cloud_provider FROM notes WHERE id = $1',
+      [notebookId]
+    );
+    if (!rows.length) return end(res, 404, { success: false, error: 'Notebook not found' });
+    return end(res, 200, {
+      success: true,
+      data: {
+        ...rows[0],
+        capabilities: {
+          read_tree: true,
+          read_notes: true,
+          download_attachments: true,
+          extract_attachment_text: true,
+          write: false,
+        },
+      },
+    });
+  }
+
+  if (path === '/notebook-api/v1/tree' && req.method === 'GET') {
+    const { rows } = await pool.query(
+      `SELECT id, title, parent_id, type, order_index, icon, root_notebook_id, updated_at, cloud_provider
+       FROM notes
+       WHERE id = $1 OR root_notebook_id = $1
+       ORDER BY order_index ASC, updated_at DESC`,
+      [notebookId]
+    );
+    return end(res, 200, { success: true, data: rows });
+  }
+
+  if (path === '/notebook-api/v1/changes' && req.method === 'GET') {
+    const since = urlObj.searchParams.get('since');
+    if (!since) return end(res, 400, { success: false, error: 'Missing since' });
+    const { rows } = await pool.query(
+      `SELECT id, title, parent_id, type, order_index, icon, root_notebook_id, updated_at
+       FROM notes
+       WHERE (id = $1 OR root_notebook_id = $1) AND updated_at > $2
+       ORDER BY updated_at ASC`,
+      [notebookId, since]
+    );
+    return end(res, 200, { success: true, data: rows });
+  }
+
+  const noteMatch = path.match(/^\/notebook-api\/v1\/notes\/([^/]+)$/);
+  if (noteMatch && req.method === 'GET') {
+    const noteId = decodeURIComponent(noteMatch[1]);
+    const note = await loadNotebookApiNote(notebookId, noteId);
+    if (!note) return end(res, 404, { success: false, error: 'Note not found' });
+    const documentJson = parseTiptapDoc(note.snapshot_content || note.content);
+    const { rows: attachments } = await pool.query(
+      `SELECT id, note_id, file_name, file_size, mime_type, category, storage_provider, created_at
+       FROM attachments WHERE note_id = $1 ORDER BY created_at DESC`,
+      [noteId]
+    );
+    return end(res, 200, {
+      success: true,
+      data: {
+        id: note.id,
+        title: note.title,
+        type: note.type,
+        parent_id: note.parent_id,
+        root_notebook_id: note.root_notebook_id,
+        updated_at: note.updated_at,
+        markdown: tiptapDocToMarkdown(documentJson),
+        document_json: documentJson,
+        attachment_refs: collectAttachmentReferences(documentJson),
+        attachments: attachments.map(sanitizeAttachment),
+      },
+    });
+  }
+
+  const attachmentMatch = path.match(/^\/notebook-api\/v1\/attachments\/([^/]+)(?:\/(download|text))?$/);
+  if (attachmentMatch && req.method === 'GET') {
+    const attachmentId = decodeURIComponent(attachmentMatch[1]);
+    const mode = attachmentMatch[2] || 'metadata';
+    const { rows } = await pool.query(
+      `SELECT a.*
+       FROM attachments a
+       JOIN notes n ON n.id = a.note_id
+       WHERE a.id = $1 AND (n.id = $2 OR n.root_notebook_id = $2)
+       LIMIT 1`,
+      [attachmentId, notebookId]
+    );
+    if (!rows.length) return end(res, 404, { success: false, error: 'Attachment not found' });
+    const att = rows[0];
+    if (mode === 'metadata') return end(res, 200, { success: true, data: sanitizeAttachment(att) });
+
+    const buffer = await downloadAttachmentBuffer(att);
+    if (mode === 'text') {
+      const extracted = await extractTextFromBuffer(buffer, att.mime_type, att.file_name);
+      return end(res, extracted.supported ? 200 : 415, {
+        success: extracted.supported,
+        attachment: sanitizeAttachment(att),
+        ...extracted,
+      });
+    }
+
+    res.setHeader('Content-Type', att.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(att.file_name)}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.writeHead(200);
+    return res.end(buffer);
+  }
+
+  return end(res, 404, { success: false, error: 'Notebook API endpoint not found' });
 }
 
 function noteIdFromDocumentName(documentName) {
@@ -311,7 +946,7 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, apikey, x-supabase-api-version, X-Client-Info');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Notebook-Api-Key, apikey, x-supabase-api-version, X-Client-Info');
   res.setHeader('Content-Type', 'application/json');
   if (req.method === 'OPTIONS') return end(res, 200, {});
 
@@ -361,6 +996,10 @@ const server = http.createServer(async (req, res) => {
   console.log(`[REQ #${reqId}] ${req.method} ${req.url} | User: ${userId ? userId.substring(0, 8) + '...' : 'Anon'}`);
 
   try {
+    if (isNotebookApiRoute(req.url)) {
+      return await handleNotebookApiReadRequest(req, res);
+    }
+
     // ================= 3. 认证模块 (100% 本地) =================
     if (req.url.includes('/auth/v1/refresh') && req.method === 'POST') {
       if (!userId) {
@@ -613,6 +1252,346 @@ const server = http.createServer(async (req, res) => {
       }
     };
 
+    if (req.url.includes('/org-plan')) {
+      const ownerEmail = ADMIN_EMAIL;
+      const userProfile = await pool.query('SELECT email, display_name FROM user_profiles WHERE id = $1', [userId]);
+      const isOwner = userProfile.rows[0]?.email === ownerEmail;
+      try {
+        if (body.action === 'status') {
+          return end(res, 200, { success: true, data: await jiangsuOrgNotebook.getStatus(pool) });
+        }
+        if (body.action === 'sync') {
+          if (!isOwner) return end(res, 403, { success: false, error: '只有江苏公司笔记本所有者可以同步' });
+          const result = await jiangsuOrgNotebook.syncJiangsuOrgNotebook(pool, { ownerEmail, hcmDate: body.hcmDate });
+          sseBroadcast(ORG_PLAN_NOTEBOOK_ID, { type: 'note_updated', notebookId: ORG_PLAN_NOTEBOOK_ID, reason: 'org_plan_synced' }, userId).catch(() => {});
+          return end(res, 200, { success: true, data: result });
+        }
+        if (body.action === 'binding') {
+          return end(res, 200, { success: true, data: await jiangsuOrgNotebook.getBinding(pool, userId) });
+        }
+        if (body.action === 'sendIdentityCode') {
+          return end(res, 200, { success: true, data: await jiangsuOrgNotebook.sendIdentityCode(pool, userId, body) });
+        }
+        if (body.action === 'verifyIdentityCode') {
+          return end(res, 200, { success: true, data: await jiangsuOrgNotebook.verifyIdentityCode(pool, userId, body) });
+        }
+        if (body.action === 'listTabs') {
+          if (!body.noteId) return end(res, 400, { success: false, error: 'Missing noteId' });
+          const access = await getNotebookAccessLevelForUser(userId, body.noteId);
+          if (access.access === 'none') return end(res, 403, { success: false, error: 'Forbidden' });
+          return end(res, 200, { success: true, data: await jiangsuOrgNotebook.listTabs(pool, userId, body.noteId, ownerEmail) });
+        }
+        if (body.action === 'getTabContent') {
+          if (!body.assignmentId) return end(res, 400, { success: false, error: 'Missing assignmentId' });
+          return end(res, 200, { success: true, data: await jiangsuOrgNotebook.getTabContent(pool, userId, body.assignmentId, ownerEmail) });
+        }
+        if (body.action === 'saveTabContent') {
+          if (!body.assignmentId) return end(res, 400, { success: false, error: 'Missing assignmentId' });
+          const result = await jiangsuOrgNotebook.saveTabContent(pool, userId, body.assignmentId, body.content, ownerEmail);
+          sseBroadcast(ORG_PLAN_NOTEBOOK_ID, { type: 'note_updated', noteId: body.noteId, notebookId: ORG_PLAN_NOTEBOOK_ID, reason: 'org_plan_tab_saved' }, userId).catch(() => {});
+          return end(res, 200, { success: true, data: result });
+        }
+        if (body.action === 'lockTab') {
+          return end(res, 200, { success: true, data: await jiangsuOrgNotebook.lockTab(pool, userId, body.assignmentId, body.userName || userProfile.rows[0]?.display_name || '', ownerEmail) });
+        }
+        if (body.action === 'unlockTab') {
+          return end(res, 200, { success: true, data: await jiangsuOrgNotebook.unlockTab(pool, userId, body.assignmentId, ownerEmail) });
+        }
+        return end(res, 400, { success: false, error: 'Unknown org-plan action' });
+      } catch (error) {
+        return end(res, error.statusCode || 500, { success: false, error: error.message });
+      }
+    };
+
+    if (req.url.includes('/courseware')) {
+      try {
+        const access = await getNotebookAccessLevelForUser(userId, ORG_PLAN_NOTEBOOK_ID);
+        if (access.access === 'none') return end(res, 403, { success: false, error: 'Forbidden' });
+        const config = coursewareOss.getCoursewareConfigFromEnv();
+        if (!config.accessKeyId || !config.accessKeySecret) {
+          return end(res, 500, { success: false, error: 'OSS 课件存储未配置' });
+        }
+        if (body.action === 'list') {
+          const data = await coursewareOss.listCoursewareObjects(config, {
+            prefix: body.prefix || '',
+            marker: body.marker || '',
+            maxKeys: body.maxKeys || 1000,
+            recursive: body.recursive !== false,
+          });
+          return end(res, 200, { success: true, data });
+        }
+        if (body.action === 'download') {
+          const key = String(body.key || '').replace(/^\/+/, '');
+          const basePrefix = coursewareOss.normalizeCoursewarePrefix(config.basePrefix || '');
+          if (!key || !key.startsWith(basePrefix)) {
+            return end(res, 400, { success: false, error: '非法课件路径' });
+          }
+          const url = coursewareOss.buildSignedOssUrl(config, key, {
+            expiresAt: Math.floor(Date.now() / 1000) + 300,
+          });
+          return end(res, 200, { success: true, data: { url, expiresIn: 300 } });
+        }
+        return end(res, 400, { success: false, error: 'Unknown courseware action' });
+      } catch (error) {
+        return end(res, error.statusCode || 500, { success: false, error: error.message });
+      }
+    }
+
+    if (req.url.includes('/notebook-api-manage') && req.method === 'POST') {
+      const { action, notebookId, tokenId, name, expiresDays } = body || {};
+      if (!action) return end(res, 400, { success: false, error: 'Missing action' });
+
+      if (action === 'createToken') {
+        if (!notebookId) return end(res, 400, { success: false, error: 'Missing notebookId' });
+        const access = await getNotebookAccessLevelForUser(userId, notebookId);
+        if (access.access === 'none') return end(res, 403, { success: false, error: 'Forbidden' });
+        const issued = createNotebookApiToken(name);
+        const days = Number(expiresDays || NOTEBOOK_API_DEFAULT_EXPIRES_DAYS);
+        const expiresAt = Number.isFinite(days) && days > 0
+          ? new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+          : null;
+        const id = generateId();
+        await pool.query(
+          `INSERT INTO notebook_api_tokens (id, notebook_id, creator_user_id, name, token_hash, token_prefix, expires_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [id, notebookId, userId, issued.name, issued.hash, issued.prefix, expiresAt]
+        );
+        return end(res, 200, {
+          success: true,
+          data: {
+            id,
+            token: issued.token,
+            token_prefix: issued.prefix,
+            name: issued.name,
+            expires_at: expiresAt,
+          },
+        });
+      }
+
+      if (action === 'listTokens') {
+        if (!notebookId) return end(res, 400, { success: false, error: 'Missing notebookId' });
+        const access = await getNotebookAccessLevelForUser(userId, notebookId);
+        if (access.access === 'none') return end(res, 403, { success: false, error: 'Forbidden' });
+        const params = [notebookId];
+        let creatorFilter = '';
+        if (!access.isOwner) {
+          params.push(userId);
+          creatorFilter = ` AND k.creator_user_id = $${params.length}`;
+        }
+        const { rows } = await pool.query(
+          `SELECT k.id, k.notebook_id, k.creator_user_id, k.name, k.token_prefix, k.expires_at,
+                  k.revoked_at, k.last_used_at, k.created_at, up.email, up.display_name
+           FROM notebook_api_tokens k
+           LEFT JOIN user_profiles up ON up.id = k.creator_user_id
+           WHERE k.notebook_id = $1${creatorFilter}
+           ORDER BY k.created_at DESC`,
+          params
+        );
+        return end(res, 200, { success: true, data: rows });
+      }
+
+      if (action === 'revokeToken') {
+        if (!tokenId) return end(res, 400, { success: false, error: 'Missing tokenId' });
+        const { rows } = await pool.query('SELECT * FROM notebook_api_tokens WHERE id = $1', [tokenId]);
+        if (!rows.length) return end(res, 404, { success: false, error: 'Token not found' });
+        const target = rows[0];
+        const access = await getNotebookAccessLevelForUser(userId, target.notebook_id);
+        if (!access.isOwner && target.creator_user_id !== userId) {
+          return end(res, 403, { success: false, error: 'Forbidden' });
+        }
+        await pool.query('UPDATE notebook_api_tokens SET revoked_at = NOW() WHERE id = $1', [tokenId]);
+        return end(res, 200, { success: true });
+      }
+
+      return end(res, 400, { success: false, error: 'Unknown action' });
+    }
+
+    if (notebookApiPath(req.url) === '/anyshare/check' && req.method === 'GET') {
+      const { rows } = await pool.query('SELECT user_id, base_url, client_id, root_docid, root_name, updated_at FROM anyshare_accounts WHERE user_id = $1', [userId]);
+      return end(res, 200, { bound: rows.length > 0, account: rows[0] ? maskAnyShareAccount(rows[0]) : null });
+    }
+
+    if (req.url.includes('/anyshare/save') && req.method === 'POST') {
+      const baseUrl = normalizeAnyShareBaseUrl(body.base_url);
+      const clientId = String(body.client_id || '').trim();
+      const clientSecret = String(body.client_secret || '').trim();
+      const rootDocid = String(body.root_docid || '').trim();
+      const rootName = String(body.root_name || '').trim();
+      if (!baseUrl || !clientId || !clientSecret || !rootDocid) {
+        return end(res, 400, { success: false, error: '请填写 API 地址、Client ID、Client Secret 和根文档库 docid' });
+      }
+      if (!isAnyShareDocidSafe(rootDocid)) {
+        return end(res, 400, { success: false, error: 'AnyShare 根文档库 docid 必须是 gns:// 开头' });
+      }
+      const account = { user_id: userId, base_url: baseUrl, client_id: clientId, client_secret: clientSecret, root_docid: rootDocid, root_name: rootName };
+      if (body.skip_test !== true) {
+        await listAnyShareDocLibs(account);
+      }
+      await pool.query(
+        `INSERT INTO anyshare_accounts (user_id, base_url, client_id, client_secret, root_docid, root_name, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET
+           base_url = EXCLUDED.base_url,
+           client_id = EXCLUDED.client_id,
+           client_secret = EXCLUDED.client_secret,
+           root_docid = EXCLUDED.root_docid,
+           root_name = EXCLUDED.root_name,
+           updated_at = NOW()`,
+        [userId, baseUrl, clientId, clientSecret, rootDocid, rootName || null]
+      );
+      return end(res, 200, { success: true, account: maskAnyShareAccount(account) });
+    }
+
+    if (req.url.includes('/anyshare/doc-libs') && (req.method === 'GET' || req.method === 'POST')) {
+      let account;
+      if (body?.base_url && body?.client_id && body?.client_secret) {
+        account = {
+          base_url: normalizeAnyShareBaseUrl(body.base_url),
+          client_id: String(body.client_id || '').trim(),
+          client_secret: String(body.client_secret || '').trim(),
+        };
+      } else {
+        const { rows } = await pool.query('SELECT * FROM anyshare_accounts WHERE user_id = $1', [userId]);
+        if (!rows.length) return end(res, 400, { success: false, error: '请先填写或保存 AnyShare 配置' });
+        account = rows[0];
+      }
+      const libs = await listAnyShareDocLibs(account);
+      return end(res, 200, { success: true, data: libs });
+    }
+
+    if (req.url.includes('/anyshare/test') && req.method === 'POST') {
+      const account = body?.base_url && body?.client_id && body?.client_secret
+        ? {
+          base_url: normalizeAnyShareBaseUrl(body.base_url),
+          client_id: String(body.client_id || '').trim(),
+          client_secret: String(body.client_secret || '').trim(),
+        }
+        : (await pool.query('SELECT * FROM anyshare_accounts WHERE user_id = $1', [userId])).rows[0];
+      if (!account) return end(res, 400, { success: false, error: 'AnyShare 未配置' });
+      const libs = await listAnyShareDocLibs(account);
+      return end(res, 200, { success: true, message: '连接成功', doc_libs_count: libs.length, data: libs.slice(0, 10) });
+    }
+
+    if (req.url.includes('/anyshare/unbind') && req.method === 'POST') {
+      await pool.query('DELETE FROM anyshare_accounts WHERE user_id = $1', [userId]);
+      return end(res, 200, { success: true });
+    }
+
+    if (req.url.includes('/anyshare/check-notebook') && !req.url.includes('/anyshare/check-notebooks-batch')) {
+      const urlObj = new URL(req.url, `http://${req.headers.host}`);
+      const noteId = urlObj.searchParams.get('note_id');
+      if (!noteId) return end(res, 400, { error: '缺少 note_id' });
+      const notebookOwnerId = await getNotebookOwnerIdForNote(noteId);
+      if (!notebookOwnerId) return end(res, 404, { error: '笔记不存在' });
+      const accessInfo = await getNotebookAccessLevelForUser(userId, noteId);
+      if (accessInfo.access === 'none') return end(res, 403, { error: '无权访问该笔记' });
+      const { rows } = await pool.query('SELECT 1 FROM anyshare_accounts WHERE user_id = $1', [notebookOwnerId]);
+      return end(res, 200, { bound: rows.length > 0, is_owner: accessInfo.isOwner, access: accessInfo.access });
+    }
+
+    if (req.url.includes('/anyshare/check-notebooks-batch')) {
+      const urlObj = new URL(req.url, `http://${req.headers.host}`);
+      const idsParam = urlObj.searchParams.get('notebook_ids');
+      if (!idsParam) return end(res, 400, { error: '缺少 notebook_ids' });
+      const notebookIds = idsParam.split(',').filter(Boolean);
+      const results = [];
+      for (const nid of notebookIds) {
+        const ownerId = await getNotebookOwnerIdForNote(nid);
+        if (!ownerId) { results.push({ notebook_id: nid, bound: false }); continue; }
+        const { rows } = await pool.query('SELECT 1 FROM anyshare_accounts WHERE user_id = $1', [ownerId]);
+        results.push({ notebook_id: nid, bound: rows.length > 0 });
+      }
+      return end(res, 200, { data: results });
+    }
+
+    if (req.url.includes('/anyshare/upload') && req.method === 'POST') {
+      const { note_id, file_name, file_content } = body || {};
+      if (!note_id || !file_name || !file_content) return end(res, 400, { error: '缺少 note_id、file_name 或 file_content' });
+      const notebookOwnerId = await getNotebookOwnerIdForNote(note_id);
+      if (!notebookOwnerId) return end(res, 404, { error: '笔记不存在' });
+      const accessInfo = await getNotebookAccessLevelForUser(userId, note_id);
+      if (accessInfo.access === 'none') return end(res, 403, { error: '无权访问该笔记' });
+      if (accessInfo.access === 'view') return end(res, 403, { error: '只有查看权限，无法上传附件' });
+      const { rows: accounts } = await pool.query('SELECT * FROM anyshare_accounts WHERE user_id = $1', [notebookOwnerId]);
+      if (!accounts.length) return end(res, 400, { error: '该笔记本所有者未绑定 AnyShare', needBind: true });
+      const account = accounts[0];
+      const dir = await createAnyShareDir(account, account.root_docid, `彩云笔记/${note_id}`);
+      const binaryContent = Buffer.from(file_content, 'base64');
+      const mimeType = getMimeType(file_name);
+      const uploadResult = await uploadAnyShareFile(account, dir.docid, file_name, binaryContent);
+      const attachId = generateId();
+      await pool.query(
+        `INSERT INTO attachments (id, note_id, user_id, file_name, file_size, mime_type, onedrive_path, onedrive_file_id, folder_name, folder_path, category, storage_provider)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'anyshare')`,
+        [attachId, note_id, notebookOwnerId, file_name, binaryContent.length, mimeType, uploadResult.docid, uploadResult.docid, '根目录', '/', getCategory(mimeType)]
+      );
+      const attachNb = await pool.query('SELECT root_notebook_id FROM notes WHERE id = $1', [note_id]);
+      if (attachNb.rows[0]?.root_notebook_id) {
+        sseBroadcast(attachNb.rows[0].root_notebook_id, { type: 'note_updated', noteId: note_id, updatedBy: userId, notebookId: attachNb.rows[0].root_notebook_id, reason: 'attachment_changed' }, userId).catch(() => {});
+      }
+      return end(res, 200, { success: true, data: { id: attachId, file_name, file_size: binaryContent.length, mime_type: mimeType, onedrive_path: uploadResult.docid, onedrive_file_id: uploadResult.docid, category: getCategory(mimeType), storage_provider: 'anyshare' } });
+    }
+
+    if (req.url.includes('/anyshare/download')) {
+      const urlObj = new URL(req.url, `http://${req.headers.host}`);
+      const attachmentId = urlObj.searchParams.get('attachment_id');
+      if (!attachmentId) return end(res, 400, { error: '缺少 attachment_id' });
+      const { rows } = await pool.query('SELECT * FROM attachments WHERE id = $1 AND storage_provider = $2', [attachmentId, 'anyshare']);
+      if (!rows.length) return end(res, 404, { error: '附件不存在' });
+      const att = rows[0];
+      if (att.note_id) {
+        const accessInfo = await getNotebookAccessLevelForUser(userId, att.note_id);
+        if (accessInfo.access === 'none') return end(res, 403, { error: '无权访问该附件' });
+      } else if (att.user_id !== userId) {
+        return end(res, 403, { error: '无权访问该附件' });
+      }
+      const content = await downloadAnyShareAttachmentBuffer(att);
+      res.writeHead(200, {
+        'Content-Type': att.mime_type || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(att.file_name)}"`,
+        'Content-Length': content.length,
+      });
+      return res.end(content);
+    }
+
+    if (req.url.includes('/anyshare/list')) {
+      const urlObj = new URL(req.url, `http://${req.headers.host}`);
+      const noteId = urlObj.searchParams.get('note_id');
+      if (noteId) {
+        const accessInfo = await getNotebookAccessLevelForUser(userId, noteId);
+        if (accessInfo.access === 'none') return end(res, 403, { error: '无权访问该笔记' });
+        const { rows } = await pool.query('SELECT * FROM attachments WHERE note_id = $1 AND storage_provider = $2 ORDER BY created_at DESC', [noteId, 'anyshare']);
+        return end(res, 200, { success: true, data: rows });
+      }
+      const { rows } = await pool.query('SELECT * FROM attachments WHERE user_id = $1 AND storage_provider = $2 ORDER BY created_at DESC', [userId, 'anyshare']);
+      return end(res, 200, { success: true, data: rows });
+    }
+
+    if (req.url.includes('/anyshare/delete') && req.method === 'POST') {
+      const { attachment_id } = body || {};
+      if (!attachment_id) return end(res, 400, { error: '缺少 attachment_id' });
+      const { rows } = await pool.query('SELECT * FROM attachments WHERE id = $1 AND storage_provider = $2', [attachment_id, 'anyshare']);
+      if (!rows.length) return end(res, 404, { error: '附件不存在' });
+      const att = rows[0];
+      if (att.note_id) {
+        const accessInfo = await getNotebookAccessLevelForUser(userId, att.note_id);
+        if (accessInfo.access !== 'edit') return end(res, 403, { error: '无权删除该附件' });
+      } else if (att.user_id !== userId) {
+        return end(res, 403, { error: '无权删除该附件' });
+      }
+      const { rows: accounts } = await pool.query('SELECT * FROM anyshare_accounts WHERE user_id = $1', [att.user_id]);
+      if (!accounts.length) return end(res, 400, { error: '附件所有者未绑定 AnyShare' });
+      await deleteAnyShareFile(accounts[0], att.onedrive_file_id || att.onedrive_path);
+      await pool.query('DELETE FROM attachments WHERE id = $1', [attachment_id]);
+      if (att.note_id) {
+        const delAttachNb = await pool.query('SELECT root_notebook_id FROM notes WHERE id = $1', [att.note_id]);
+        if (delAttachNb.rows[0]?.root_notebook_id) {
+          sseBroadcast(delAttachNb.rows[0].root_notebook_id, { type: 'note_updated', noteId: att.note_id, updatedBy: userId, notebookId: delAttachNb.rows[0].root_notebook_id, reason: 'attachment_changed' }, userId).catch(() => {});
+        }
+      }
+      return end(res, 200, { success: true });
+    }
+
     if (req.url.includes('/collab-config')) {
       const { noteId } = body;
       if (!noteId) return end(res, 400, { success: false, error: 'Missing noteId' });
@@ -672,6 +1651,13 @@ const server = http.createServer(async (req, res) => {
         return shareCheck.rows.length > 0;
       }
       return false;
+    };
+
+    const isJiangsuOrgStructureNote = (note) => {
+      if (!note) return false;
+      return note.id === ORG_PLAN_NOTEBOOK_ID ||
+        note.root_notebook_id === ORG_PLAN_NOTEBOOK_ID ||
+        isProtectedOrgNoteContent(note.content);
     };
 
     // [云存储切换] 设置笔记本的云存储提供商
@@ -789,8 +1775,11 @@ const server = http.createServer(async (req, res) => {
       let existingContent = '';
       let hasCollabDocument = false;
       if (n.id) {
-        const existing = await pool.query('SELECT owner_id, root_notebook_id, type, is_locked, locked_by, content FROM notes WHERE id = $1', [n.id]);
+        const existing = await pool.query('SELECT id, owner_id, root_notebook_id, type, is_locked, locked_by, content FROM notes WHERE id = $1', [n.id]);
         if (existing.rows.length > 0) {
+          if (isJiangsuOrgStructureNote(existing.rows[0]) && body.orgPlanSystemWrite !== true) {
+            return end(res, 403, { success: false, error: '江苏公司笔记本结构由 HCM 自动维护，不能手动修改' });
+          }
           existingOwnerId = existing.rows[0].owner_id;
           existingType = existing.rows[0].type || n.type;
           existingContent = existing.rows[0].content || '';
@@ -829,10 +1818,13 @@ const server = http.createServer(async (req, res) => {
         rootNotebookId = n.id;
       } else if (!rootNotebookId && (n.parent_id || n.parentId)) {
         const parentId = n.parent_id || n.parentId;
-        const parent = await pool.query('SELECT root_notebook_id, type FROM notes WHERE id = $1', [parentId]);
+        const parent = await pool.query('SELECT id, root_notebook_id, type, content FROM notes WHERE id = $1', [parentId]);
         if (parent.rows.length > 0) {
           rootNotebookId = parent.rows[0].root_notebook_id || parentId;
         }
+      }
+      if ((n.id === ORG_PLAN_NOTEBOOK_ID || rootNotebookId === ORG_PLAN_NOTEBOOK_ID || isProtectedOrgNoteContent(n.content)) && body.orgPlanSystemWrite !== true) {
+        return end(res, 403, { success: false, error: '江苏公司笔记本结构由 HCM 自动维护，不能手动修改' });
       }
       await queryAndLog(
         `INSERT INTO notes (id, title, content, parent_id, type, owner_id, order_index, icon, root_notebook_id, updated_at)
@@ -851,13 +1843,23 @@ const server = http.createServer(async (req, res) => {
 
     // [删除笔记]
     if (req.url.includes('/notes-write') && body.action === 'deleteNote') {
-      const target = await pool.query('SELECT owner_id, root_notebook_id, is_locked, locked_by FROM notes WHERE id = $1', [body.noteId]);
-      if (target.rows.length > 0 && target.rows[0].owner_id !== userId) {
+      const target = await pool.query(
+        `SELECT n.id, n.owner_id, n.root_notebook_id, n.content, n.is_locked, n.locked_by, root.owner_id AS root_owner_id
+         FROM notes n
+         LEFT JOIN notes root ON root.id = COALESCE(n.root_notebook_id, n.id)
+         WHERE n.id = $1`,
+        [body.noteId]
+      );
+      if (!target.rows.length) return end(res, 404, { success: false, error: 'Note not found' });
+      if (isJiangsuOrgStructureNote(target.rows[0]) && body.orgPlanSystemWrite !== true) {
+        return end(res, 403, { success: false, error: '江苏公司笔记本结构由 HCM 自动维护，不能手动删除' });
+      }
+      const isOwner = target.rows[0].owner_id === userId || target.rows[0].root_owner_id === userId;
+      if (!isOwner) {
         return end(res, 403, { error: 'Forbidden: only owner can delete' });
       }
       // 锁检查：被他人锁定的页面不可删除（owner 除外）
       if (target.rows.length > 0 && target.rows[0].is_locked && target.rows[0].locked_by && target.rows[0].locked_by !== userId) {
-        const isOwner = target.rows[0].owner_id === userId;
         if (!isOwner) {
           return end(res, 423, { success: false, error: 'PAGE_LOCKED_BY_OTHER' });
         }
@@ -1232,26 +2234,12 @@ const server = http.createServer(async (req, res) => {
 
     // 查找笔记所属笔记本的所有者 ID
     async function getNotebookOwnerId(noteId) {
-      const { rows } = await pool.query('SELECT owner_id, root_notebook_id, type FROM notes WHERE id = $1', [noteId]);
-      if (!rows.length) return null;
-      if ((rows[0].type === 'notebook' || rows[0].type === 'email_notebook') && rows[0].root_notebook_id === null) return rows[0].owner_id;
-      const rootId = rows[0].root_notebook_id || noteId;
-      const { rows: rootRows } = await pool.query('SELECT owner_id FROM notes WHERE id = $1', [rootId]);
-      return rootRows.length ? rootRows[0].owner_id : rows[0].owner_id;
+      return getNotebookOwnerIdForNote(noteId);
     }
 
     // 检查用户对笔记的访问权限级别（用于附件权限）
     async function getNoteAccessLevel(userId, noteId) {
-      const { rows } = await pool.query('SELECT owner_id, root_notebook_id FROM notes WHERE id = $1', [noteId]);
-      if (!rows.length) return { access: 'none', isOwner: false };
-      if (rows[0].owner_id === userId) return { access: 'edit', isOwner: true };
-      const rootId = rows[0].root_notebook_id || noteId;
-      const { rows: shareRows } = await pool.query(
-        'SELECT permission FROM note_shares WHERE notebook_id = $1 AND user_id = $2 LIMIT 1',
-        [rootId, userId]
-      );
-      if (!shareRows.length) return { access: 'none', isOwner: false };
-      return { access: shareRows[0].permission === 'edit' ? 'edit' : 'view', isOwner: false };
+      return getNotebookAccessLevelForUser(userId, noteId);
     }
 
     // 路径安全验证：确保路径在 /彩云笔记/ 目录下，防止目录穿越
@@ -1265,17 +2253,36 @@ const server = http.createServer(async (req, res) => {
 
     // [OneDrive] 获取 OAuth 授权 URL
     if (req.url.includes('/onedrive/auth-url') && req.method === 'POST') {
-      const { client_id, client_secret, cloud_type, tenant_id } = body;
+      const { include_onenote } = body;
+      let { client_id, client_secret, cloud_type, tenant_id } = body;
       if (!userId) return end(res, 401, { error: 'Not authenticated' });
+
+      if (include_onenote && (!client_id || !client_secret)) {
+        const { rows } = await pool.query(
+          'SELECT client_id, client_secret, cloud_type, tenant_id FROM onedrive_accounts WHERE user_id = $1 LIMIT 1',
+          [userId]
+        );
+        if (!rows.length) return end(res, 400, { error: '请先绑定 OneDrive 账号' });
+        client_id = rows[0].client_id;
+        client_secret = rows[0].client_secret;
+        cloud_type = rows[0].cloud_type;
+        tenant_id = rows[0].tenant_id;
+      }
+
       if (!client_id || !client_secret) return end(res, 400, { error: '缺少 client_id 或 client_secret' });
 
       const cloud = cloud_type === '世纪互联' ? '世纪互联' : 'international';
-      const scope = cloud === '世纪互联'
-        ? 'https://microsoftgraph.chinacloudapi.cn/Files.ReadWrite.ALL offline_access'
-        : 'Files.ReadWrite.All User.Read offline_access';
+      const scope = oneNoteProbe.buildOneDriveScope(cloud, !!include_onenote);
 
       const encodeB64 = (str) => Buffer.from(str).toString('base64url');
-      const state = [encodeB64(userId), encodeB64(cloud), encodeB64(tenant_id || ''), encodeB64(client_id), encodeB64(client_secret)].join('|');
+      const state = [
+        encodeB64(userId),
+        encodeB64(cloud),
+        encodeB64(tenant_id || ''),
+        encodeB64(client_id),
+        encodeB64(client_secret),
+        encodeB64(include_onenote ? '1' : '0'),
+      ].join('|');
 
       const authPath = (cloud === '世纪互联' && tenant_id)
         ? `/${tenant_id}/oauth2/v2.0/authorize`
@@ -1305,10 +2312,9 @@ const server = http.createServer(async (req, res) => {
       const parts = state.split('|');
       const client_id = parts.length >= 4 ? decodeB64(parts[3]) : '';
       const tenant_id = parts.length >= 3 ? decodeB64(parts[2]) : '';
+      const includeOneNote = parts.length >= 6 ? decodeB64(parts[5]) === '1' : false;
 
-      const scope = cloud === '世纪互联'
-        ? 'https://microsoftgraph.chinacloudapi.cn/Files.ReadWrite.ALL offline_access'
-        : 'Files.ReadWrite.All User.Read offline_access';
+      const scope = oneNoteProbe.buildOneDriveScope(cloud, includeOneNote);
 
       const authPath = (cloud === '世纪互联' && tenant_id)
         ? `/${tenant_id}/oauth2/v2.0/authorize`
@@ -1428,7 +2434,7 @@ window.onload=function(){setTimeout(notifyParent,1000)};
     // [OneDrive] 检查绑定状态
     if (req.url.includes('/onedrive/check') && !req.url.includes('/onedrive/check-notebook')) {
       if (!userId) return end(res, 401, { error: 'Not authenticated' });
-      const { rows } = await pool.query('SELECT id, display_name, cloud_type FROM onedrive_accounts WHERE user_id = $1', [userId]);
+      const { rows } = await pool.query('SELECT id, display_name, cloud_type, updated_at FROM onedrive_accounts WHERE user_id = $1', [userId]);
       if (!rows.length) return end(res, 200, { bound: false });
       return end(res, 200, { bound: true, account: rows[0] });
     }
@@ -1466,6 +2472,81 @@ window.onload=function(){setTimeout(notifyParent,1000)};
         }
       } catch (e) { console.error('[OneDrive] Token 刷新失败:', e.message); }
       return account.access_token;
+    }
+
+    async function fetchOneNoteCollection(graphEp, accessToken, target, resourcePath) {
+      try {
+        const response = await fetch(`${graphEp}${resourcePath}`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+          },
+        });
+
+        let data = {};
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          data = await response.json();
+        } else {
+          data = { error: { code: `HTTP_${response.status}`, message: response.statusText || 'Non-JSON response' } };
+        }
+
+        return {
+          target,
+          status: response.status,
+          ok: response.ok && Array.isArray(data.value),
+          data,
+          classification: oneNoteProbe.classifyGraphProbeResponse(response.status, data),
+        };
+      } catch (error) {
+        return {
+          target,
+          status: 0,
+          ok: false,
+          data: { error: { code: 'NETWORK_ERROR', message: error.message } },
+          classification: { supported: false, needs_reauth: false, code: 'NETWORK_ERROR', message: error.message },
+          error: error.message,
+        };
+      }
+    }
+
+    // [OneNote] 只读探测云端笔记本元数据，不读取页面正文
+    if (req.url.includes('/onenote/probe') && req.method === 'GET') {
+      if (!userId) return end(res, 401, { error: 'Not authenticated' });
+
+      const { rows } = await pool.query('SELECT * FROM onedrive_accounts WHERE user_id = $1 LIMIT 1', [userId]);
+      if (!rows.length) {
+        return end(res, 200, {
+          success: false,
+          supported: false,
+          needs_reauth: false,
+          notebooks_count: 0,
+          sections_count: 0,
+          pages_count: 0,
+          samples: { notebooks: [], sections: [], pages: [] },
+          errors: [{ target: 'account', status: 404, code: 'ACCOUNT_NOT_BOUND', message: '请先绑定 OneDrive 账号' }],
+        });
+      }
+
+      const account = rows[0];
+      const accessToken = await refreshOdToken(account);
+      const graphEp = getGraphEndpoint(account.cloud_type);
+      const endpoints = [
+        { target: 'notebooks', path: '/me/onenote/notebooks' },
+        { target: 'sections', path: '/me/onenote/sections' },
+        { target: 'pages', path: '/me/onenote/pages?$top=10' },
+      ];
+
+      const results = await Promise.all(endpoints.map((endpoint) =>
+        fetchOneNoteCollection(graphEp, accessToken, endpoint.target, endpoint.path)
+      ));
+      const summary = oneNoteProbe.summarizeOneNoteProbeResults(results);
+      console.log(
+        `[OneNoteProbe] user=${userId.substring(0, 8)}... cloud=${account.cloud_type} supported=${summary.supported} needs_reauth=${summary.needs_reauth} ` +
+        `counts=${summary.notebooks_count}/${summary.sections_count}/${summary.pages_count} statuses=${results.map((r) => `${r.target}:${r.status}`).join(',')}`
+      );
+
+      return end(res, 200, summary);
     }
 
     // [OneDrive] 上传文件
@@ -2883,10 +3964,133 @@ window.onload=function(){setTimeout(notifyParent,1000)};
       return end(res, 200, { success: true });
     }
 
+    // [Attachments] 统一重命名附件；不允许修改扩展名
+    if (req.url.includes('/attachments/rename') && req.method === 'POST') {
+      if (!userId) return end(res, 401, { error: 'Not authenticated' });
+      const { attachment_id, file_name } = body || {};
+      if (!attachment_id || !file_name) return end(res, 400, { error: '缺少 attachment_id 或 file_name' });
+
+      const { rows: attachments } = await pool.query('SELECT * FROM attachments WHERE id = $1', [attachment_id]);
+      if (!attachments.length) return end(res, 404, { error: '附件不存在' });
+      const att = attachments[0];
+
+      if (att.note_id) {
+        const accessInfo = await getNoteAccessLevel(userId, att.note_id);
+        if (accessInfo.access !== 'edit') return end(res, 403, { error: '无权重命名该附件' });
+      } else if (att.user_id !== userId) {
+        return end(res, 403, { error: '无权重命名该附件' });
+      }
+
+      const validation = validateAttachmentRename(att.file_name, file_name);
+      if (!validation.ok) return end(res, 400, { error: validation.error });
+      const nextFileName = validation.fileName;
+      if (nextFileName === att.file_name) return end(res, 200, { success: true, data: att });
+
+      const provider = att.storage_provider || 'onedrive';
+      let nextPath = att.onedrive_path;
+      let nextFileId = att.onedrive_file_id;
+
+      try {
+        if (provider === 'onedrive') {
+          if (!isOdPathSafe(att.onedrive_path)) return end(res, 400, { error: '非法路径' });
+          const { rows: accounts } = await pool.query('SELECT * FROM onedrive_accounts WHERE user_id = $1', [att.user_id]);
+          if (!accounts.length) return end(res, 400, { error: '附件所有者未绑定 OneDrive 账号' });
+          const account = accounts[0];
+          const accessToken = await refreshOdToken(account);
+          const graphEp = getGraphEndpoint(account.cloud_type);
+          const itemEndpoint = att.onedrive_file_id
+            ? (account.drive_id ? `drives/${account.drive_id}/items/${att.onedrive_file_id}` : `me/drive/items/${att.onedrive_file_id}`)
+            : (account.drive_id ? `drives/${account.drive_id}/root:${encodeURIComponent(att.onedrive_path)}:` : `me/drive/root:${encodeURIComponent(att.onedrive_path)}:`);
+          const renameResp = await fetch(`${graphEp}/${itemEndpoint}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name: nextFileName }),
+          });
+          if (!renameResp.ok) {
+            const errText = await renameResp.text();
+            return end(res, 500, { error: 'OneDrive 重命名失败', details: errText });
+          }
+          const renameData = await renameResp.json().catch(() => ({}));
+          nextPath = replaceFileNameInPath(att.onedrive_path, nextFileName);
+          nextFileId = renameData.id || att.onedrive_file_id;
+        } else if (provider === 'baidu') {
+          if (!isBaiduPathSafe(att.onedrive_path)) return end(res, 400, { error: '非法路径' });
+          const { rows: accounts } = await pool.query('SELECT * FROM baidu_accounts WHERE user_id = $1', [att.user_id]);
+          if (!accounts.length) return end(res, 400, { error: '附件所有者未绑定百度网盘账号' });
+          const accessToken = await refreshBaiduToken(accounts[0]);
+          const renameResp = await fetch(`https://pan.baidu.com/rest/2.0/xpan/file?method=filemanager&opera=rename&access_token=${encodeURIComponent(accessToken)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              async: '0',
+              filelist: JSON.stringify([{ path: att.onedrive_path, newname: nextFileName }]),
+              ondup: 'fail',
+            }).toString(),
+          });
+          const renameData = await renameResp.json().catch(() => ({}));
+          if (!renameResp.ok || (renameData.errno !== undefined && renameData.errno !== 0)) {
+            return end(res, 500, { error: '百度网盘重命名失败', details: renameData.errmsg || JSON.stringify(renameData) });
+          }
+          nextPath = replaceFileNameInPath(att.onedrive_path, nextFileName);
+        } else if (provider === 'qiniu') {
+          const { rows: accounts } = await pool.query('SELECT * FROM qiniu_accounts WHERE user_id = $1', [att.user_id]);
+          if (!accounts.length) return end(res, 400, { error: '附件所有者未绑定七牛云账号' });
+          const account = accounts[0];
+          const region = account.region || 'z2';
+          nextPath = replaceFileNameInPath(att.onedrive_path, nextFileName);
+          const encodedFrom = Buffer.from(`${account.bucket}:${att.onedrive_path}`).toString('base64url');
+          const encodedTo = Buffer.from(`${account.bucket}:${nextPath}`).toString('base64url');
+          const movePath = `/move/${encodedFrom}/${encodedTo}/force/true`;
+          const sign = crypto.createHmac('sha1', account.secret_key).update(`${movePath}\n`).digest('base64url');
+          const moveResp = await fetch(`https://rs-${region}.qiniuapi.com${movePath}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Authorization': `QBox ${account.access_key}:${sign}`,
+            },
+          });
+          if (!moveResp.ok) {
+            const errText = await moveResp.text();
+            return end(res, 500, { error: '七牛云重命名失败', details: errText });
+          }
+          nextFileId = nextPath;
+        } else if (provider === 'anyshare') {
+          // AnyShare 的附件使用 docid 下载；先更新彩云笔记内文件名，避免调用未确认的远端重命名接口破坏文件。
+          nextPath = att.onedrive_path;
+          nextFileId = att.onedrive_file_id;
+        }
+
+        const mimeType = getMimeType(nextFileName);
+        const { rows: updatedRows } = await pool.query(
+          `UPDATE attachments
+           SET file_name = $1, mime_type = $2, category = $3, onedrive_path = $4, onedrive_file_id = $5
+           WHERE id = $6
+           RETURNING *`,
+          [nextFileName, mimeType, getCategory(mimeType), nextPath, nextFileId, attachment_id]
+        );
+
+        if (att.note_id) {
+          const renameAttachNb = await pool.query('SELECT root_notebook_id FROM notes WHERE id = $1', [att.note_id]);
+          if (renameAttachNb.rows[0]?.root_notebook_id) {
+            sseBroadcast(renameAttachNb.rows[0].root_notebook_id, { type: 'note_updated', noteId: att.note_id, updatedBy: userId, notebookId: renameAttachNb.rows[0].root_notebook_id, reason: 'attachment_changed' }, userId).catch(() => {});
+          }
+        }
+
+        return end(res, 200, { success: true, data: updatedRows[0] });
+      } catch (renameErr) {
+        console.error('[Attachments] 重命名失败:', renameErr.message);
+        return end(res, 500, { error: '重命名失败: ' + renameErr.message });
+      }
+    }
+
 // ===== Email API Routes =====
+const emailUrl = req.url.startsWith('/api/email') ? req.url.replace(/^\/api/, '') : req.url;
 
 // 添加邮箱账号
-if (req.url === '/email/accounts' && req.method === 'POST') {
+if (emailUrl === '/email/accounts' && req.method === 'POST') {
   if (!userId) return end(res, 401, { error: '未登录' });
 
   try {
@@ -2916,81 +4120,85 @@ if (req.url === '/email/accounts' && req.method === 'POST') {
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       ON CONFLICT (user_id, email_address) DO UPDATE SET
       display_name=$3, imap_host=$4, imap_port=$5, imap_ssl=$6, smtp_host=$7, smtp_port=$8, smtp_ssl=$9, encrypted_password=$10, iv=$11, auth_tag=$12, updated_at=NOW()
-      RETURNING id, email_address, display_name, imap_host, smtp_host, last_sync_at
+      RETURNING id, user_id, email_address, display_name, imap_host, imap_port, imap_ssl, smtp_host, smtp_port, smtp_ssl, encrypted_password, iv, auth_tag, last_sync_uid, last_sync_at, note_id
     `, [userId, email_address, display_name || '', finalImapHost, finalImapPort, imap_ssl !== false, finalSmtpHost, finalSmtpPort, smtp_ssl !== false, encrypted, iv, authTag]);
 
     const account = rows[0];
+    const finalNotebookId = await ensureUserEmailNotebook(userId, notebook_id || null);
+    const sectionId = await upsertEmailAccountSection(userId, finalNotebookId, account);
 
-    const finalNotebookId = notebook_id || `email-${account.id}`;
-    if (!notebook_id) {
-      await pool.query(`
-        INSERT INTO notes (id, title, content, type, owner_id, order_index, icon, root_notebook_id, updated_at)
-        VALUES ($1,'邮箱管理','','email_notebook',$2,0,'mail',$1,NOW())
-        ON CONFLICT(id) DO UPDATE SET title='邮箱管理', updated_at=NOW()
-      `, [finalNotebookId, userId]);
-    }
+    syncEmailAccountWithPages(account.id, account).catch(e => console.error('Email sync error:', e.message));
 
-    const sectionId = `email-sec-${account.id}`;
-    await pool.query(`
-      INSERT INTO notes (id, title, content, parent_id, type, owner_id, order_index, icon, root_notebook_id, updated_at)
-      VALUES ($1,$2,'',$3,'email_account',$4,0,'mail',$3,NOW())
-      ON CONFLICT(id) DO UPDATE SET title=$2, updated_at=NOW()
-    `, [sectionId, email_address, finalNotebookId, userId]);
-
-    emailService.syncEmails(pool, account.id, { ...account, encrypted_password: encrypted, iv, auth_tag: authTag }).catch(e => console.error('Email sync error:', e.message));
-
-    return end(res, 200, { success: true, account: rows[0], notebookId, sectionId });
+    const publicAccount = {
+      id: account.id,
+      email_address: account.email_address,
+      display_name: account.display_name,
+      imap_host: account.imap_host,
+      smtp_host: account.smtp_host,
+      last_sync_at: account.last_sync_at,
+      note_id: sectionId,
+    };
+    return end(res, 200, { success: true, account: publicAccount, notebookId: finalNotebookId, sectionId });
   } catch (err) {
-    return end(res, 200, { success: false, error: err.message });
+    return end(res, err.statusCode || 200, { success: false, error: err.message });
   }
 }
 
 // 获取邮箱账号列表
-if (req.url === '/email/accounts' && req.method === 'GET') {
+if (emailUrl === '/email/accounts' && req.method === 'GET') {
   if (!userId) return end(res, 401, { error: '未登录' });
 
-  const { rows } = await pool.query('SELECT id, email_address, display_name, imap_host, smtp_host, last_sync_at, sync_enabled FROM email_accounts WHERE user_id=$1 ORDER BY created_at', [userId]);
+  const { rows } = await pool.query('SELECT id, email_address, display_name, imap_host, smtp_host, last_sync_at, sync_enabled, note_id FROM email_accounts WHERE user_id=$1 ORDER BY created_at', [userId]);
   return end(res, 200, { success: true, accounts: rows });
 }
 
 // 删除邮箱账号
-if (req.url.match(/^\/email\/accounts\/[\w-]+$/) && req.method === 'DELETE') {
+if (emailUrl.match(/^\/email\/accounts\/[\w-]+$/) && req.method === 'DELETE') {
   if (!userId) return end(res, 401, { error: '未登录' });
-  const accountId = req.url.split('/').pop();
+  const accountId = emailUrl.split('/').pop();
 
+  const { rows: accountRows } = await pool.query('SELECT note_id FROM email_accounts WHERE id=$1 AND user_id=$2', [accountId, userId]);
   await pool.query('DELETE FROM email_accounts WHERE id=$1 AND user_id=$2', [accountId, userId]);
-  await pool.query("DELETE FROM notes WHERE id LIKE $1 AND owner_id=$2", [`email-%${accountId}%`, userId]);
+  const noteId = accountRows[0]?.note_id || buildEmailAccountSectionId(accountId);
+  await pool.query(`
+    WITH RECURSIVE descendants AS (
+      SELECT id FROM notes WHERE id = $1 AND owner_id = $2
+      UNION ALL
+      SELECT n.id FROM notes n INNER JOIN descendants d ON n.parent_id = d.id
+    )
+    DELETE FROM notes WHERE id IN (SELECT id FROM descendants)
+  `, [noteId, userId]);
 
   return end(res, 200, { success: true });
 }
 
 // 手动同步
-if (req.url.match(/^\/email\/sync\/[\w-]+$/) && req.method === 'POST') {
+if (emailUrl.match(/^\/email\/sync\/[\w-]+$/) && req.method === 'POST') {
   if (!userId) return end(res, 401, { error: '未登录' });
-  const accountId = req.url.split('/').pop();
+  const accountId = emailUrl.split('/').pop();
 
   const { rows } = await pool.query('SELECT * FROM email_accounts WHERE id=$1 AND user_id=$2', [accountId, userId]);
   if (!rows.length) return end(res, 200, { success: false, error: '账号不存在' });
 
   try {
-    const result = await emailService.syncEmails(pool, accountId, rows[0]);
-    return end(res, 200, { success: true, ...result, conversations: result.conversations.size });
+    const result = await syncEmailAccountWithPages(accountId, rows[0], { full: body?.full === true });
+    return end(res, 200, { success: true, ...result });
   } catch (err) {
     return end(res, 200, { success: false, error: err.message });
   }
 }
 
 // 获取对话列表
-if (req.url.match(/^\/email\/conversations\/[\w-]+$/) && req.method === 'GET') {
+if (emailUrl.match(/^\/email\/conversations\/[\w-]+$/) && req.method === 'GET') {
   if (!userId) return end(res, 401, { error: '未登录' });
-  const accountId = req.url.split('/').pop();
+  const accountId = emailUrl.split('/').pop();
 
   const { rows: accRows } = await pool.query('SELECT id FROM email_accounts WHERE id=$1 AND user_id=$2', [accountId, userId]);
   if (!accRows.length) return end(res, 200, { success: false, error: '账号不存在' });
 
   const { rows } = await pool.query(`
-    SELECT c.*, n.id as note_id FROM email_conversations c
-    LEFT JOIN notes n ON n.content LIKE '%' || c.other_addr || '%'
+    SELECT c.*, c.note_id
+    FROM email_conversations c
     WHERE c.account_id=$1 ORDER BY c.last_email_date DESC
   `, [accountId]);
 
@@ -2998,9 +4206,9 @@ if (req.url.match(/^\/email\/conversations\/[\w-]+$/) && req.method === 'GET') {
 }
 
 // 获取对话中的邮件列表
-if (req.url.match(/^\/email\/thread\/[\w-]+\/[^/]+$/) && req.method === 'GET') {
+if (emailUrl.match(/^\/email\/thread\/[\w-]+\/[^/]+$/) && req.method === 'GET') {
   if (!userId) return end(res, 401, { error: '未登录' });
-  const parts = req.url.split('/');
+  const parts = emailUrl.split('/');
   const accountId = parts[3];
   const otherAddr = decodeURIComponent(parts[4]);
 
@@ -3017,9 +4225,9 @@ if (req.url.match(/^\/email\/thread\/[\w-]+\/[^/]+$/) && req.method === 'GET') {
 }
 
 // 获取邮件详情
-if (req.url.match(/^\/email\/message\/[\w-]+\/[\w-]+\/\d+$/) && req.method === 'GET') {
+if (emailUrl.match(/^\/email\/message\/[\w-]+\/[\w-]+\/\d+$/) && req.method === 'GET') {
   if (!userId) return end(res, 401, { error: '未登录' });
-  const parts = req.url.split('/');
+  const parts = emailUrl.split('/');
   const accountId = parts[3];
   const folder = parts[4];
   const uid = parseInt(parts[5]);
@@ -3031,8 +4239,33 @@ if (req.url.match(/^\/email\/message\/[\w-]+\/[\w-]+\/\d+$/) && req.method === '
   return end(res, 200, result);
 }
 
+// 下载邮件附件：只做即时代理，不在云服务器保存附件内容
+if (emailUrl.match(/^\/email\/attachment\/[\w-]+\/[\w-]+\/\d+\/\d+$/) && req.method === 'GET') {
+  if (!userId) return end(res, 401, { error: '未登录' });
+  const parts = emailUrl.split('/');
+  const accountId = parts[3];
+  const folder = parts[4];
+  const uid = parseInt(parts[5], 10);
+  const attachmentIndex = parseInt(parts[6], 10);
+
+  const { rows: [account] } = await pool.query('SELECT * FROM email_accounts WHERE id=$1 AND user_id=$2', [accountId, userId]);
+  if (!account) return end(res, 404, { error: '账号不存在' });
+
+  const result = await emailService.fetchEmailAttachment(account, folder, uid, attachmentIndex);
+  if (!result.success) return end(res, 404, { error: result.error || '附件不存在' });
+
+  const fileName = result.filename || `attachment-${attachmentIndex + 1}`;
+  res.writeHead(200, {
+    'Content-Type': result.contentType || 'application/octet-stream',
+    'Content-Length': result.content?.length || result.size || 0,
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    'Cache-Control': 'no-store',
+  });
+  return res.end(result.content);
+}
+
 // 发送邮件
-if (req.url === '/email/send' && req.method === 'POST') {
+if (emailUrl === '/email/send' && req.method === 'POST') {
   if (!userId) return end(res, 401, { error: '未登录' });
 
   try {
@@ -3044,7 +4277,7 @@ if (req.url === '/email/send' && req.method === 'POST') {
 
     const result = await emailService.sendEmail(account, { to, subject, text, html, cc, attachments });
     if (result.success) {
-      emailService.syncEmails(pool, account_id, account).catch(e => console.error('Post-send sync error:', e.message));
+      syncEmailAccountWithPages(account_id, account).catch(e => console.error('Post-send sync error:', e.message));
     }
     return end(res, 200, result);
   } catch (err) {
@@ -3067,6 +4300,10 @@ if (req.url === '/email/send' && req.method === 'POST') {
 
 async function start() {
   await ensureCollabTables();
+  await ensureAnyShareTables();
+  await ensureNotebookApiTables();
+  await ensureEmailTables();
+  await jiangsuOrgNotebook.ensureJiangsuOrgTables(pool);
   server.listen(PORT, HOST, () => {
     console.log('\n🚀 ========================================');
     console.log('   NotesApp v2.5 Core Running');

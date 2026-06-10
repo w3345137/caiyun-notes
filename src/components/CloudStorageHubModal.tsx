@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { X, Cloud, HardDrive, Database, CheckCircle, Settings } from 'lucide-react';
+import { X, Cloud, HardDrive, Database, CheckCircle, Settings, Server } from 'lucide-react';
 import { checkOneDriveBinding } from '../lib/onedriveService';
 import { checkBaiduBinding } from '../lib/baiduService';
 import { checkQiniuConfig } from '../lib/qiniuService';
+import { checkAnyShareBinding } from '../lib/anyshareService';
 import { OneDriveModal } from './OneDriveModal';
 import { BaiduModal } from './BaiduModal';
 import { QiniuModal } from './QiniuModal';
+import { AnyShareModal } from './AnyShareModal';
 
 interface CloudStorageHubModalProps {
   onClose: () => void;
@@ -15,6 +17,7 @@ interface ProviderStatus {
   onedrive: boolean;
   baidu: boolean;
   qiniu: boolean;
+  anyshare: boolean;
 }
 
 const PROVIDERS = [
@@ -45,11 +48,20 @@ const PROVIDERS = [
     bgColor: 'bg-orange-50',
     checkFn: checkQiniuConfig,
   },
+  {
+    key: 'anyshare' as const,
+    name: 'AnyShare',
+    icon: Server,
+    color: 'from-slate-600 to-cyan-600',
+    textColor: 'text-cyan-700',
+    bgColor: 'bg-cyan-50',
+    checkFn: checkAnyShareBinding,
+  },
 ];
 
 export const CloudStorageHubModal: React.FC<CloudStorageHubModalProps> = ({ onClose }) => {
-  const [subModal, setSubModal] = useState<'onedrive' | 'baidu' | 'qiniu' | null>(null);
-  const [status, setStatus] = useState<ProviderStatus>({ onedrive: false, baidu: false, qiniu: false });
+  const [subModal, setSubModal] = useState<'onedrive' | 'baidu' | 'qiniu' | 'anyshare' | null>(null);
+  const [status, setStatus] = useState<ProviderStatus>({ onedrive: false, baidu: false, qiniu: false, anyshare: false });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -62,11 +74,13 @@ export const CloudStorageHubModal: React.FC<CloudStorageHubModalProps> = ({ onCl
       PROVIDERS[0].checkFn(),
       PROVIDERS[1].checkFn(),
       PROVIDERS[2].checkFn(),
+      PROVIDERS[3].checkFn(),
     ]);
     setStatus({
       onedrive: results[0].status === 'fulfilled' ? results[0].value.bound : false,
       baidu: results[1].status === 'fulfilled' ? results[1].value.bound : false,
       qiniu: results[2].status === 'fulfilled' ? results[2].value.bound : false,
+      anyshare: results[3].status === 'fulfilled' ? results[3].value.bound : false,
     });
     setLoading(false);
   };
@@ -84,6 +98,9 @@ export const CloudStorageHubModal: React.FC<CloudStorageHubModalProps> = ({ onCl
   }
   if (subModal === 'qiniu') {
     return <QiniuModal onClose={handleSubModalClose} />;
+  }
+  if (subModal === 'anyshare') {
+    return <AnyShareModal onClose={handleSubModalClose} />;
   }
 
   return (

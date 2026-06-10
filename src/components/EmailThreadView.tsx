@@ -1,6 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, RefreshCw, Loader2, Mail, MailOpen, Paperclip, User } from 'lucide-react';
-import { getEmailThread, getEmailContent, sendEmail } from '../lib/emailService';
+import { Send, RefreshCw, Loader2, Mail, Paperclip, User, Download } from 'lucide-react';
+import { getEmailThread, getEmailContent, sendEmail, syncEmails, downloadEmailAttachment } from '../lib/emailService';
+import {
+  getCachedEmailContent,
+  getCachedEmailThread,
+  getEmailContentCacheKey,
+  getEmailThreadCacheKey,
+  normalizeEmailContentPayload,
+  setCachedEmailContent,
+  setCachedEmailThread,
+  type EmailContentDisplay,
+  type EmailAttachmentMeta,
+} from '../lib/emailContentCache';
 import toast from 'react-hot-toast';
 import DOMPurify from 'dompurify';
 
@@ -29,71 +40,142 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
   const [loading, setLoading] = useState(true);
   const [contentCache, setContentCache] = useState<Record<string, string>>({});
   const [htmlContentCache, setHtmlContentCache] = useState<Record<string, boolean>>({});
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [attachmentCache, setAttachmentCache] = useState<Record<string, EmailAttachmentMeta[]>>({});
+  const [contentErrorIds, setContentErrorIds] = useState<Set<string>>(() => new Set());
   const [showCompose, setShowCompose] = useState(false);
   const [composeSubject, setComposeSubject] = useState('');
   const [composeText, setComposeText] = useState('');
   const [sending, setSending] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const contentCacheRef = useRef<Record<string, string>>({});
+  const htmlContentCacheRef = useRef<Record<string, boolean>>({});
+  const attachmentCacheRef = useRef<Record<string, EmailAttachmentMeta[]>>({});
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [emails]);
 
-  const sanitizeEmailHtml = (html: string) => DOMPurify.sanitize(html, {
+  useEffect(() => {
+    contentCacheRef.current = contentCache;
+  }, [contentCache]);
+
+  useEffect(() => {
+    htmlContentCacheRef.current = htmlContentCache;
+  }, [htmlContentCache]);
+
+  useEffect(() => {
+    attachmentCacheRef.current = attachmentCache;
+  }, [attachmentCache]);
+
+  const sanitizeEmailHtml = useCallback((html: string) => DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
-    FORBID_ATTR: ['style'],
-  });
+  }), []);
 
-  const loadEmails = useCallback(async () => {
+  const storeEmailBody = useCallback((emailId: string, content: EmailContentDisplay) => {
+    contentCacheRef.current = { ...contentCacheRef.current, [emailId]: content.body };
+    htmlContentCacheRef.current = { ...htmlContentCacheRef.current, [emailId]: content.isHtml };
+    attachmentCacheRef.current = { ...attachmentCacheRef.current, [emailId]: content.attachments || [] };
+    setContentCache(contentCacheRef.current);
+    setHtmlContentCache(htmlContentCacheRef.current);
+    setAttachmentCache(attachmentCacheRef.current);
+  }, []);
+
+  const loadContentForEmail = useCallback(async (email: EmailItem) => {
+    if (Object.prototype.hasOwnProperty.call(contentCacheRef.current, email.id)) return;
+
+    const cacheKey = getEmailContentCacheKey(accountId, email.folder, email.uid);
+    const cachedContent = getCachedEmailContent(cacheKey);
+    if (cachedContent) {
+      storeEmailBody(email.id, cachedContent);
+      return;
+    }
+
+    setContentErrorIds(prev => {
+      const next = new Set(prev);
+      next.delete(email.id);
+      return next;
+    });
+    try {
+      const result = await getEmailContent(accountId, email.folder, email.uid);
+      if (result.success) {
+        const normalized = normalizeEmailContentPayload(result);
+        const displayContent = {
+          body: normalized.isHtml ? sanitizeEmailHtml(normalized.body) : normalized.body,
+          isHtml: normalized.isHtml,
+          attachments: normalized.attachments,
+        };
+        storeEmailBody(email.id, displayContent);
+        setCachedEmailContent(cacheKey, displayContent);
+      } else {
+        setContentErrorIds(prev => new Set(prev).add(email.id));
+      }
+    } catch (e) {
+      setContentErrorIds(prev => new Set(prev).add(email.id));
+      toast.error('加载邮件内容失败');
+    }
+  }, [accountId, sanitizeEmailHtml, storeEmailBody]);
+
+  const preloadEmailContents = useCallback(async (nextEmails: EmailItem[]) => {
+    const pendingEmails = nextEmails.filter(email => !Object.prototype.hasOwnProperty.call(contentCacheRef.current, email.id));
+    const workers = Array.from({ length: Math.min(4, pendingEmails.length) }, async (_, workerIndex) => {
+      for (let i = workerIndex; i < pendingEmails.length; i += 4) {
+        await loadContentForEmail(pendingEmails[i]);
+      }
+    });
+    await Promise.all(workers);
+  }, [loadContentForEmail]);
+
+  const applyEmails = useCallback((nextEmails: EmailItem[]) => {
+    setEmails(nextEmails);
+    void preloadEmailContents(nextEmails);
+    if (nextEmails.length > 0) {
+      const lastEmail = nextEmails[nextEmails.length - 1];
+      if (lastEmail.subject) setComposeSubject(lastEmail.subject.replace(/^Re:\s*/i, ''));
+    }
+  }, [preloadEmailContents]);
+
+  const loadEmails = useCallback(async (opts: { syncFirst?: boolean } = {}) => {
+    const threadCacheKey = getEmailThreadCacheKey(accountId, otherAddr);
+    if (!opts.syncFirst) {
+      const cachedThread = getCachedEmailThread<EmailItem>(threadCacheKey);
+      if (cachedThread) {
+        applyEmails(cachedThread.emails);
+        setLoading(false);
+        setSyncing(false);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
+      if (opts.syncFirst) {
+        setSyncing(true);
+        const syncResult = await syncEmails(accountId);
+        if (!syncResult.success) {
+          toast.error(syncResult.error || '收取邮件失败');
+        } else {
+          window.dispatchEvent(new CustomEvent('refresh-notes'));
+        }
+      }
       const result = await getEmailThread(accountId, otherAddr);
       if (result.success) {
-        setEmails(result.emails || []);
-        if (result.emails?.length > 0) {
-          const lastEmail = result.emails[result.emails.length - 1];
-          if (lastEmail.subject) setComposeSubject(lastEmail.subject.replace(/^Re:\s*/i, ''));
-        }
+        const nextEmails = result.emails || [];
+        applyEmails(nextEmails);
+        setCachedEmailThread(threadCacheKey, nextEmails);
       }
     } catch (e) {
       toast.error('加载邮件失败');
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
-  }, [accountId, otherAddr]);
+  }, [accountId, applyEmails, otherAddr]);
 
   useEffect(() => {
     loadEmails();
   }, [loadEmails]);
-
-  const loadContent = async (email: EmailItem) => {
-    if (contentCache[email.id]) {
-      setExpandedId(expandedId === email.id ? null : email.id);
-      return;
-    }
-    try {
-      const result = await getEmailContent(accountId, email.folder, email.uid);
-      if (result.success) {
-        let textContent = '';
-        let isHtmlContent = false;
-        if (result.html) {
-          textContent = sanitizeEmailHtml(result.html);
-          isHtmlContent = true;
-        } else if (result.text) {
-          textContent = result.text.replace(/\r\n/g, '\n').trim();
-        } else if (result.source) {
-          textContent = result.source.substring(0, 500);
-        }
-        setContentCache(prev => ({ ...prev, [email.id]: textContent }));
-        setHtmlContentCache(prev => ({ ...prev, [email.id]: isHtmlContent }));
-        setExpandedId(email.id);
-      }
-    } catch (e) {
-      toast.error('加载邮件内容失败');
-    }
-  };
 
   const handleSend = async () => {
     if (!composeText.trim()) return;
@@ -109,7 +191,7 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
         toast.success('邮件已发送');
         setComposeText('');
         setShowCompose(false);
-        setTimeout(loadEmails, 2000);
+        setTimeout(() => loadEmails({ syncFirst: true }), 2000);
       } else {
         toast.error(result.error || '发送失败');
       }
@@ -117,6 +199,25 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
       toast.error('发送失败');
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleDownloadAttachment = async (email: EmailItem, attachmentIndex: number, attachment?: EmailAttachmentMeta) => {
+    try {
+      const result = await downloadEmailAttachment(accountId, email.folder, email.uid, attachmentIndex);
+      if (!result.success || !result.blob) {
+        toast.error(result.error || '附件下载失败');
+        return;
+      }
+
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.fileName || attachment?.filename || `attachment-${attachmentIndex + 1}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error('附件下载失败');
     }
   };
 
@@ -146,8 +247,8 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
             <div className="text-xs text-gray-500">{otherAddr}</div>
           </div>
         </div>
-        <button onClick={loadEmails} className="p-1.5 hover:bg-gray-200 rounded" title="刷新">
-          <RefreshCw className="w-4 h-4 text-gray-500" />
+        <button onClick={() => loadEmails({ syncFirst: true })} className="p-1.5 hover:bg-gray-200 rounded" title="收取并刷新">
+          <RefreshCw className={`w-4 h-4 text-gray-500 ${syncing ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
@@ -161,10 +262,13 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
         )}
         {emails.map(email => {
           const fromMe = isFromMe(email);
+          const hasContent = Object.prototype.hasOwnProperty.call(contentCache, email.id);
+          const bodyContent = contentCache[email.id] || '';
+          const attachments = attachmentCache[email.id] || [];
           return (
-            <div key={email.id} className={`flex ${fromMe ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[70%] rounded-xl px-4 py-3 ${
-                fromMe ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+            <div key={email.id} className={`flex w-full ${fromMe ? 'justify-end' : 'justify-start'}`}>
+              <div className={`email-message-bubble max-w-[75%] rounded-xl px-4 py-3 overflow-hidden ${
+                fromMe ? 'bg-blue-50 text-gray-800 border border-blue-100' : 'bg-gray-100 text-gray-800'
               }`}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xs opacity-70">{fromMe ? '我' : (email.from_name || email.from_addr)}</span>
@@ -176,21 +280,46 @@ const EmailThreadView: React.FC<EmailThreadViewProps> = ({ accountId, otherAddr,
                     {email.subject}
                   </div>
                 )}
-                <button onClick={() => loadContent(email)} className="text-left w-full">
-                  {expandedId === email.id && contentCache[email.id] ? (
+                <div className="text-left w-full">
+                  {hasContent ? (
                     htmlContentCache[email.id] ? (
-                      <div className={`text-sm prose prose-sm max-w-none ${fromMe ? 'text-white prose-invert' : 'text-gray-700'}`} dangerouslySetInnerHTML={{ __html: contentCache[email.id] }} />
+                      bodyContent.trim() ? (
+                        <div className="email-html-body text-sm text-gray-800" dangerouslySetInnerHTML={{ __html: bodyContent }} />
+                      ) : (
+                        <div className={`text-sm ${fromMe ? 'text-blue-700' : 'text-gray-500'}`}>（空白邮件）</div>
+                      )
                     ) : (
-                      <div className={`text-sm whitespace-pre-wrap ${fromMe ? 'text-white' : 'text-gray-700'}`}>
-                        {contentCache[email.id]}
+                      <div className="email-text-body text-sm leading-6 whitespace-pre-wrap break-words text-gray-700">
+                        {bodyContent.trim() || '（空白邮件）'}
                       </div>
                     )
+                  ) : contentErrorIds.has(email.id) ? (
+                    <div className={`text-sm ${fromMe ? 'text-blue-700' : 'text-gray-500'}`}>
+                      邮件内容加载失败
+                    </div>
                   ) : (
-                    <div className={`text-sm ${fromMe ? 'text-blue-100' : 'text-gray-500'}`}>
-                      点击查看邮件内容 ▼
+                    <div className={`text-sm flex items-center gap-1.5 ${fromMe ? 'text-blue-700' : 'text-gray-500'}`}>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      正在加载邮件内容...
                     </div>
                   )}
-                </button>
+                  {attachments.length > 0 && (
+                    <div className="email-attachment-list mt-3 flex flex-wrap gap-2">
+                      {attachments.map((attachment, index) => (
+                        <button
+                          key={`${email.id}-${index}`}
+                          onClick={() => handleDownloadAttachment(email, index, attachment)}
+                          className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 hover:border-blue-300 hover:bg-blue-50"
+                          title={attachment.filename || `附件 ${index + 1}`}
+                        >
+                          <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-gray-500" />
+                          <span className="truncate">{attachment.filename || `附件 ${index + 1}`}</span>
+                          <Download className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           );

@@ -90,6 +90,8 @@ const TabGroup = atomBlock('tabGroup', 'div[data-tab-group]', {
   activeIndex: { default: 0 },
   tabs: { default: [{ id: '1', title: '页签1' }] },
   contents: { default: { '1': { type: 'doc', content: [{ type: 'paragraph' }] } } },
+  structureLocked: { default: false },
+  orgPlan: { default: null },
 });
 
 const Mindmap = atomBlock('mindmap', 'div[data-mindmap]', {

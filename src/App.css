@@ -2,6 +2,54 @@
   margin: 0 auto;
 }
 
+.email-text-body {
+  overflow-wrap: anywhere;
+}
+
+.email-message-bubble {
+  min-width: 0;
+}
+
+.email-html-body,
+.email-html-body * {
+  box-sizing: border-box;
+  max-width: 100% !important;
+}
+
+.email-html-body {
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+  width: 100%;
+  word-break: break-word;
+  line-height: 1.55;
+}
+
+.email-html-body img {
+  height: auto !important;
+  max-width: 100% !important;
+  object-fit: contain;
+}
+
+.email-html-body table {
+  table-layout: auto;
+  max-width: 100% !important;
+  width: auto !important;
+}
+
+.email-html-body td,
+.email-html-body th {
+  max-width: 100% !important;
+  overflow-wrap: anywhere;
+}
+
+.email-html-body a {
+  word-break: break-all;
+}
+
+.email-html-body pre {
+  white-space: pre-wrap;
+}
+
 /* Tiptap Editor Styles */
 .ProseMirror {
   outline: none;
@@ -17,6 +65,27 @@
 /* 页签容器内编辑区域间距 */
 .tab-content-wrapper {
   padding: 18px;
+}
+
+.tab-group-header,
+.tab-group-tab-scroll,
+.tab-group-actions {
+  height: 40px;
+  min-height: 40px;
+}
+
+.tab-group-tab-track,
+.tab-group-tab-item,
+.tab-group-tab-shell,
+.tab-group-tab-button,
+.tab-group-tab-menu-button {
+  height: 100%;
+}
+
+.tab-group-tab-button,
+.tab-group-tab-menu-button {
+  display: flex;
+  align-items: center;
 }
 
 /* 图片大小调整样式 */

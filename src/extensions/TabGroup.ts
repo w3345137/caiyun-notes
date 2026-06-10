@@ -71,6 +71,23 @@ export const TabGroup = Node.create<TabGroupOptions>({
           'data-contents': JSON.stringify(attributes.contents),
         }),
       },
+      structureLocked: {
+        default: false,
+        parseHTML: (element) => element.getAttribute('data-structure-locked') === 'true',
+        renderHTML: (attributes) => ({
+          'data-structure-locked': attributes.structureLocked ? 'true' : 'false',
+        }),
+      },
+      orgPlan: {
+        default: null,
+        parseHTML: (element) => {
+          const data = element.getAttribute('data-org-plan');
+          return data ? JSON.parse(data) : null;
+        },
+        renderHTML: (attributes) => ({
+          'data-org-plan': attributes.orgPlan ? JSON.stringify(attributes.orgPlan) : '',
+        }),
+      },
     };
   },
 
@@ -102,6 +119,8 @@ export const TabGroup = Node.create<TabGroupOptions>({
               type: this.name,
               attrs: {
                 activeIndex: 0,
+                structureLocked: false,
+                orgPlan: null,
                 tabs: [{ id: '1', title: '页签1' }],
                 contents: {
                   '1': { type: 'doc', content: [{ type: 'paragraph' }] },

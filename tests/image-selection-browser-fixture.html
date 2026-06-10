@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Image Selection Fixture</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 24px;
+      }
+      .ProseMirror {
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="outside-editor" type="button">outside editor</button>
+    <div id="editor"></div>
+    <script type="module">
+      import React from 'react';
+      import { createRoot } from 'react-dom/client';
+      import { EditorContent, useEditor } from '@tiptap/react';
+      import StarterKit from '@tiptap/starter-kit';
+      import { ResizableImage } from '/src/extensions/ResizableImage.tsx';
+
+      const imageSrc = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="240" height="120">
+          <rect width="240" height="120" fill="#dbeafe"/>
+          <text x="120" y="66" text-anchor="middle" font-size="18" fill="#1d4ed8">fixture image</text>
+        </svg>
+      `);
+
+      function Fixture() {
+        const editor = useEditor({
+          extensions: [
+            StarterKit.configure({ undoRedo: false }),
+            ResizableImage,
+          ],
+          content: {
+            type: 'doc',
+            content: [
+              { type: 'paragraph', content: [{ type: 'text', text: 'before image' }] },
+              { type: 'image', attrs: { src: imageSrc, width: 240 } },
+              { type: 'paragraph', content: [{ type: 'text', text: 'after image' }] },
+            ],
+          },
+        });
+
+        window.editor = editor;
+        return React.createElement(EditorContent, { editor });
+      }
+
+      createRoot(document.querySelector('#editor')).render(React.createElement(Fixture));
+    </script>
+  </body>
+</html>

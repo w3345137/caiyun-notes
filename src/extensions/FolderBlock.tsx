@@ -1,22 +1,32 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Download, Trash2, FileText, Image, Video, Volume2, FileCode, Cloud, Upload, FolderOpen, Loader2, Plus, X, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Download, Trash2, FileText, Image, Video, Volume2, FileCode, Cloud, Upload, FolderOpen, Loader2, Plus, X, Eye, ArrowUpDown, ArrowUp, ArrowDown, Pencil } from 'lucide-react';
 import { downloadFromOneDrive, uploadToOneDrive, formatFileSize, getFileIconType, getAttachments, deleteAttachment } from '../lib/onedriveService';
-import { downloadFromBaidu, uploadToBaidu, deleteBaiduAttachment } from '../lib/baiduService';
-import { downloadFromQiniu, uploadToQiniu, deleteQiniuAttachment } from '../lib/qiniuService';
+import { downloadFromBaidu, uploadToBaidu, deleteBaiduAttachment, getBaiduAttachments } from '../lib/baiduService';
+import { downloadFromQiniu, uploadToQiniu, deleteQiniuAttachment, getQiniuAttachments } from '../lib/qiniuService';
+import { downloadFromAnyShare, uploadToAnyShare, deleteAnyShareAttachment, getAnyShareAttachments } from '../lib/anyshareService';
+import { renameAttachment } from '../lib/attachmentService';
+import {
+  getCachedFolderFiles,
+  getFolderFilesCacheKey,
+  getFreshFolderFilesFromCache,
+  getOrLoadFolderFiles,
+  invalidateFolderFilesCache,
+} from '../lib/folderFilesCache';
+import { compareNaturalText } from '../lib/naturalSort';
 import { useAuth } from '../components/authContext';
 import { useNoteStore } from '../store/noteStore';
 import toast from 'react-hot-toast';
 
-type StorageProvider = 'onedrive' | 'baidu' | 'qiniu';
+type StorageProvider = 'onedrive' | 'baidu' | 'qiniu' | 'anyshare';
 
 interface FolderFile {
   id: string;
   file_name: string;
   file_size: number;
   mime_type: string;
-  onedrive_path: string;
+  onedrive_path?: string;
   category: string;
   created_at: string;
   storage_provider?: StorageProvider;
@@ -37,7 +47,14 @@ interface FolderBlockAttrs {
 }
 
 const getProvider = (provider?: string): StorageProvider => {
-  return provider === 'baidu' || provider === 'qiniu' ? provider : 'onedrive';
+  return provider === 'baidu' || provider === 'qiniu' || provider === 'anyshare' ? provider : 'onedrive';
+};
+
+const getFileExtension = (fileName: string) => {
+  const name = fileName.trim();
+  const dotIndex = name.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex === name.length - 1) return '';
+  return name.slice(dotIndex).toLowerCase();
 };
 
 const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
@@ -57,19 +74,41 @@ const uploadFile = async (provider: StorageProvider, file: File, noteId: string,
   if (provider === 'qiniu') {
     return uploadToQiniu(noteId, file.name, await fileToBase64(file));
   }
+  if (provider === 'anyshare') {
+    return uploadToAnyShare(file, noteId);
+  }
   return uploadToOneDrive(file, noteId, '/彩云笔记', folderName);
 };
 
 const downloadFile = (provider: StorageProvider, attachmentId: string) => {
   if (provider === 'baidu') return downloadFromBaidu(attachmentId);
   if (provider === 'qiniu') return downloadFromQiniu(attachmentId);
+  if (provider === 'anyshare') return downloadFromAnyShare(attachmentId);
   return downloadFromOneDrive(attachmentId);
 };
 
 const deleteFile = (provider: StorageProvider, attachmentId: string) => {
   if (provider === 'baidu') return deleteBaiduAttachment(attachmentId);
   if (provider === 'qiniu') return deleteQiniuAttachment(attachmentId);
+  if (provider === 'anyshare') return deleteAnyShareAttachment(attachmentId);
   return deleteAttachment(attachmentId);
+};
+
+const listFiles = async (provider: StorageProvider, noteId: string): Promise<FolderFile[]> => {
+  const result =
+    provider === 'baidu' ? await getBaiduAttachments(noteId) :
+    provider === 'qiniu' ? await getQiniuAttachments(noteId) :
+    provider === 'anyshare' ? await getAnyShareAttachments(noteId) :
+    await getAttachments(noteId);
+
+  if (!result.success) {
+    throw new Error(result.error || '获取附件列表失败');
+  }
+
+  return (result.data || []).map((file) => ({
+    ...file,
+    storage_provider: file.storage_provider || provider,
+  }));
 };
 
 // 文件预览弹窗
@@ -178,20 +217,27 @@ const FolderBlockView: React.FC<{
   const { user } = useAuth();
   const attrs = node.attrs;
   const folderRefreshTrigger = useNoteStore((state) => state.folderRefreshTrigger);
-  const [files, setFiles] = useState<FolderFile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const folderRefreshNoteId = useNoteStore((state) => state.folderRefreshNoteId);
+  const provider = getProvider(attrs.storageProvider);
+  const cacheKey = getFolderFilesCacheKey(provider, attrs.noteId, user?.id);
+  const initialFiles = getFreshFolderFilesFromCache<FolderFile>(cacheKey);
+  const [files, setFiles] = useState<FolderFile[]>(() => initialFiles || []);
+  const [loading, setLoading] = useState(() => Boolean(attrs.noteId) && !initialFiles);
   const [uploading, setUploading] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<FolderFile | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [renamingFile, setRenamingFile] = useState<FolderFile | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameSubmitting, setRenameSubmitting] = useState(false);
   const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'date-asc' | 'date-desc'>('name-asc');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const sortedFiles = useMemo(() => {
     const sorted = [...files];
     switch (sortBy) {
-      case 'name-asc': return sorted.sort((a, b) => a.file_name.localeCompare(b.file_name, 'zh'));
-      case 'name-desc': return sorted.sort((a, b) => b.file_name.localeCompare(a.file_name, 'zh'));
+      case 'name-asc': return sorted.sort((a, b) => compareNaturalText(a.file_name, b.file_name));
+      case 'name-desc': return sorted.sort((a, b) => compareNaturalText(b.file_name, a.file_name));
       case 'date-asc': return sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       case 'date-desc': return sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
@@ -212,28 +258,40 @@ const FolderBlockView: React.FC<{
     }
   };
 
-  const loadFiles = useCallback(async () => {
+  const loadFiles = useCallback(async (opts: { force?: boolean } = {}) => {
     if (!attrs.noteId) return;
-    setLoading(true);
+    const cachedFiles = opts.force ? null : getCachedFolderFiles<FolderFile>(cacheKey);
+    if (cachedFiles) {
+      setFiles(cachedFiles);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     try {
-      const result = await getAttachments(attrs.noteId);
-      if (result.success && result.data) {
-        setFiles(result.data);
-      }
+      const nextFiles = await getOrLoadFolderFiles(
+        cacheKey,
+        () => listFiles(provider, attrs.noteId),
+        { force: opts.force },
+      );
+      setFiles(nextFiles);
     } catch (e) {
       console.error('Load folder files error:', e);
     } finally {
       setLoading(false);
     }
-  }, [attrs.noteId]);
+  }, [attrs.noteId, cacheKey, provider]);
 
   useEffect(() => {
     loadFiles();
   }, [loadFiles]);
 
   useEffect(() => {
-    if (folderRefreshTrigger > 0) loadFiles();
-  }, [folderRefreshTrigger, loadFiles]);
+    if (folderRefreshTrigger > 0 && (!folderRefreshNoteId || folderRefreshNoteId === attrs.noteId)) {
+      invalidateFolderFilesCache(cacheKey);
+      loadFiles({ force: true });
+    }
+  }, [attrs.noteId, cacheKey, folderRefreshNoteId, folderRefreshTrigger, loadFiles]);
 
   // 清理预览blob
   useEffect(() => {
@@ -250,7 +308,8 @@ const FolderBlockView: React.FC<{
       const result = await uploadFile(getProvider(attrs.storageProvider), file, attrs.noteId, attrs.folderName);
       if (result.success) {
         toast.success('上传成功');
-        await loadFiles();
+        invalidateFolderFilesCache(cacheKey);
+        await loadFiles({ force: true });
       } else {
         toast.error(result.error || '上传失败');
       }
@@ -312,12 +371,59 @@ const FolderBlockView: React.FC<{
       const result = await deleteFile(getProvider(file.storage_provider || attrs.storageProvider), file.id);
       if (result.success) {
         toast.success('已删除');
-        await loadFiles();
+        invalidateFolderFilesCache(cacheKey);
+        await loadFiles({ force: true });
       } else {
         toast.error(result.error || '删除失败');
       }
     } catch {
       toast.error('删除失败');
+    }
+  };
+
+  const handleRenameFile = (file: FolderFile) => {
+    setRenamingFile(file);
+    setRenameValue(file.file_name);
+  };
+
+  const closeRenameDialog = () => {
+    if (renameSubmitting) return;
+    setRenamingFile(null);
+    setRenameValue('');
+  };
+
+  const submitRenameFile = async () => {
+    if (!renamingFile) return;
+    const trimmedName = renameValue.trim();
+    if (!trimmedName) {
+      toast.error('文件名不能为空');
+      return;
+    }
+    if (trimmedName === renamingFile.file_name) {
+      closeRenameDialog();
+      return;
+    }
+    if (getFileExtension(trimmedName) !== getFileExtension(renamingFile.file_name)) {
+      toast.error('不允许修改文件扩展名');
+      return;
+    }
+
+    setRenameSubmitting(true);
+    try {
+      const result = await renameAttachment(renamingFile.id, trimmedName);
+      if (result.success) {
+        toast.success('已重命名');
+        setRenamingFile(null);
+        setRenameValue('');
+        invalidateFolderFilesCache(cacheKey);
+        await loadFiles({ force: true });
+      } else {
+        toast.error(result.error || '重命名失败');
+      }
+    } catch {
+      toast.error('重命名失败');
+    } finally {
+      setRenameSubmitting(false);
     }
   };
 
@@ -448,6 +554,17 @@ const FolderBlockView: React.FC<{
                     )}
                   </button>
                   <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRenameFile(file);
+                    }}
+                    className="p-1 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded transition-colors"
+                    title="重命名"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                  <button
                     onClick={() => handleDeleteFile(file)}
                     className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
                     title="删除"
@@ -467,6 +584,71 @@ const FolderBlockView: React.FC<{
         blobUrl={previewBlobUrl}
         onClose={closePreview}
       />
+
+      {renamingFile && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 px-4"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (e.target === e.currentTarget) closeRenameDialog();
+          }}
+        >
+          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800">重命名文件</h3>
+                <p className="text-xs text-slate-400 mt-0.5">不允许修改扩展名</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeRenameDialog}
+                disabled={renameSubmitting}
+                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 disabled:opacity-50"
+                title="关闭"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form
+              className="p-4 space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitRenameFile();
+              }}
+            >
+              <input
+                autoFocus
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') closeRenameDialog();
+                }}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                placeholder="输入新的文件名"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeRenameDialog}
+                  disabled={renameSubmitting}
+                  className="px-3 py-1.5 text-sm rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={renameSubmitting}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  {renameSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  确定
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </NodeViewWrapper>
   );
 };

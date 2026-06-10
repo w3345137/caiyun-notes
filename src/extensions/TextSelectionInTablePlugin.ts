@@ -1,5 +1,6 @@
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state';
+import type { EditorState } from '@tiptap/pm/state';
 import { CellSelection } from 'prosemirror-tables';
 
 /**
@@ -11,6 +12,21 @@ import { CellSelection } from 'prosemirror-tables';
  * 解决方案：拦截 CellSelection，当 anchor 和 head 在同一个单元格内时，
  * 转换为普通的 TextSelection，让用户可以正常选字。
  */
+function createSafeInlineTextSelection(state: EditorState, anchor: number, head: number): Selection | null {
+  try {
+    const maxPos = state.doc.content.size;
+    const clamp = (pos: number) => Math.max(0, Math.min(maxPos, pos));
+    const $anchor = state.doc.resolve(clamp(anchor));
+    const $head = state.doc.resolve(clamp(head));
+    if (!$anchor.parent.inlineContent || !$head.parent.inlineContent) {
+      return null;
+    }
+    return TextSelection.between($anchor, $head, 1);
+  } catch {
+    return null;
+  }
+}
+
 export const textSelectionInTablePlugin = new Plugin({
   key: new PluginKey('textSelectionInTable'),
 
@@ -26,8 +42,10 @@ export const textSelectionInTablePlugin = new Plugin({
     if ($anchorCell.pos === $headCell.pos) {
       const anchor = selection.$anchor.pos;
       const head = selection.$head.pos;
+      const textSelection = createSafeInlineTextSelection(newState, anchor, head);
+      if (!textSelection) return null;
       const tr = newState.tr;
-      tr.setSelection(TextSelection.create(newState.doc, anchor, head));
+      tr.setSelection(textSelection);
       return tr;
     }
 
@@ -37,6 +55,7 @@ export const textSelectionInTablePlugin = new Plugin({
 
 export const TextSelectionInTableExtension = Extension.create({
   name: 'textSelectionInTable',
+  priority: 1001,
 
   addProseMirrorPlugins() {
     return [textSelectionInTablePlugin];

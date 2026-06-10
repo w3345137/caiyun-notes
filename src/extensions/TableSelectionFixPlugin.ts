@@ -1,4 +1,5 @@
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state';
+import type { EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { CellSelection } from 'prosemirror-tables';
 
@@ -8,10 +9,25 @@ import { CellSelection } from 'prosemirror-tables';
  * 方案：完全不阻止 CellSelection 的创建，而是在创建后立即转换回 TextSelection
  * 同时隐藏单元格选区的视觉效果
  */
+function createSafeInlineTextSelection(state: EditorState, anchor: number, head: number): Selection | null {
+  try {
+    const maxPos = state.doc.content.size;
+    const clamp = (pos: number) => Math.max(0, Math.min(maxPos, pos));
+    const $anchor = state.doc.resolve(clamp(anchor));
+    const $head = state.doc.resolve(clamp(head));
+    if (!$anchor.parent.inlineContent || !$head.parent.inlineContent) {
+      return null;
+    }
+    return TextSelection.between($anchor, $head, 1);
+  } catch {
+    return null;
+  }
+}
+
 export const TableSelectionFixPlugin = new Plugin({
   key: new PluginKey('tableSelectionFix'),
 
-  appendTransactions(transactions, prevState, nextState) {
+  appendTransaction(transactions, prevState, nextState) {
     const transactionsThatNeedNormalization = transactions.filter(tr => tr.docChanged);
 
     if (transactionsThatNeedNormalization.length === 0) {
@@ -32,9 +48,11 @@ export const TableSelectionFixPlugin = new Plugin({
     if ($anchorCell.pos === $headCell.pos) {
       const anchor = selection.$anchor.pos;
       const head = selection.$head.pos;
+      const textSelection = createSafeInlineTextSelection(nextState, anchor, head);
+      if (!textSelection) return undefined;
       const tr = nextState.tr;
-      tr.setSelection(TextSelection.create(nextState.doc, anchor, head));
-      return { resize: tr };
+      tr.setSelection(textSelection);
+      return tr;
     }
 
     return undefined;

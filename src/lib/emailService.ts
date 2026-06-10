@@ -58,8 +58,11 @@ export async function deleteEmailAccount(accountId: string) {
   return emailFetch(`/accounts/${accountId}`, { method: 'DELETE' });
 }
 
-export async function syncEmails(accountId: string) {
-  return emailFetch(`/sync/${accountId}`, { method: 'POST' });
+export async function syncEmails(accountId: string, options?: { full?: boolean }) {
+  return emailFetch(`/sync/${accountId}`, {
+    method: 'POST',
+    body: JSON.stringify(options || {}),
+  });
 }
 
 export async function getConversations(accountId: string) {
@@ -72,6 +75,37 @@ export async function getEmailThread(accountId: string, otherAddr: string) {
 
 export async function getEmailContent(accountId: string, folder: string, uid: number) {
   return emailFetch(`/message/${accountId}/${folder}/${uid}`);
+}
+
+export async function downloadEmailAttachment(
+  accountId: string,
+  folder: string,
+  uid: number,
+  attachmentIndex: number,
+): Promise<{ success: boolean; blob?: Blob; fileName?: string; error?: string }> {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/attachment/${accountId}/${folder}/${uid}/${attachmentIndex}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (res.status === 401) {
+    localStorage.removeItem('notesapp_token');
+    return { success: false, error: '登录已过期，请重新登录' };
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    return { success: false, error: data.error || `下载失败(${res.status})` };
+  }
+
+  const disposition = res.headers.get('content-disposition') || '';
+  const fileNameMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  const fallbackMatch = disposition.match(/filename="?([^";]+)"?/i);
+  const fileName = fileNameMatch
+    ? decodeURIComponent(fileNameMatch[1])
+    : (fallbackMatch ? fallbackMatch[1] : undefined);
+
+  return { success: true, blob: await res.blob(), fileName };
 }
 
 export async function sendEmail(config: {

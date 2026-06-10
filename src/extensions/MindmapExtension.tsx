@@ -1,12 +1,13 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
+import { NodeSelection } from '@tiptap/pm/state';
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import MindMap from 'simple-mind-map';
 import Drag from 'simple-mind-map/src/plugins/Drag.js';
 import Select from 'simple-mind-map/src/plugins/Select.js';
 import Export from 'simple-mind-map/src/plugins/Export.js';
 import RainbowLines from 'simple-mind-map/src/plugins/RainbowLines.js';
-import { registerMindmap, unregisterMindmap } from '../lib/mindmapActions';
+import { registerMindmap, setActiveMindmap, unregisterMindmap } from '../lib/mindmapActions';
 import './MindmapExtension.css';
 
 // simple-mind-map 的 usePlugin 是普通插件注册 API，不是 React Hook。
@@ -91,7 +92,14 @@ export const MindmapExtension = Node.create({
   },
 });
 
-const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: boolean; deleteNode: () => void; }> = ({ node, updateAttributes, selected, deleteNode }) => {
+const MindmapNodeView: React.FC<{
+  node: any;
+  updateAttributes: any;
+  selected: boolean;
+  deleteNode: () => void;
+  editor: any;
+  getPos: () => number;
+}> = ({ node, updateAttributes, selected, deleteNode, editor, getPos }) => {
   const mountCountRef = useRef(0);
   mountCountRef.current++;
   
@@ -107,6 +115,27 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
   const saveDataRef = useRef<() => void>(() => {});
 
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const activateMindmap = useCallback(() => {
+    containerRef.current?.focus();
+    if (registryIdRef.current) {
+      setActiveMindmap(registryIdRef.current);
+    }
+
+    try {
+      const pos = typeof getPos === 'function' ? getPos() : null;
+      if (typeof pos !== 'number' || !editor?.view || editor.isDestroyed) return;
+      const { state, view } = editor;
+      if ((state.selection as any).node?.type?.name === 'mindmap') return;
+      view.dispatch(
+        state.tr
+          .setSelection(NodeSelection.create(state.doc, pos))
+          .setMeta('addToHistory', false)
+      );
+    } catch {
+      // 协同初始化或节点刚卸载时，忽略这次激活；下一次点击会重新设置。
+    }
+  }, [editor, getPos]);
 
   const saveData = useCallback(() => {
     const mm = mmRef.current;
@@ -361,7 +390,7 @@ const MindmapNodeView: React.FC<{ node: any; updateAttributes: any; selected: bo
     <NodeViewWrapper className="mindmap-node-view" data-drag-handle="">
       <div className={`mindmap-outer ${selected ? 'mindmap-selected' : ''} ${isFullscreen ? 'mindmap-fullscreen' : ''}`}>
         <div className="mindmap-canvas-wrapper">
-          <div ref={containerRef} className="mindmap-container" tabIndex={0} onPointerDown={() => containerRef.current?.focus()} />
+          <div ref={containerRef} className="mindmap-container" tabIndex={0} onPointerDown={activateMindmap} onFocus={activateMindmap} />
         </div>
       </div>
     </NodeViewWrapper>

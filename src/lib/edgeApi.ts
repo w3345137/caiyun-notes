@@ -80,3 +80,36 @@ export const apiSetCloudProvider = async (notebookId: string, provider: string |
 export const apiGetCloudProvider = async (notebookId: string) => {
   return call('/notes-query', { action: 'getCloudProvider', notebook_id: notebookId });
 };
+
+// === 笔记本智能体 API Key 管理 ===
+export const apiListNotebookApiTokens = (notebookId: string) =>
+  call('/notebook-api-manage', { action: 'listTokens', notebookId });
+
+export const apiCreateNotebookApiToken = (notebookId: string, name: string, expiresDays: number = 365) =>
+  call('/notebook-api-manage', { action: 'createToken', notebookId, name, expiresDays });
+
+export const apiRevokeNotebookApiToken = (tokenId: string) =>
+  call('/notebook-api-manage', { action: 'revokeToken', tokenId });
+
+// === 江苏公司组织周计划特殊笔记本 ===
+export const apiOrgPlanStatus = () => call('/org-plan', { action: 'status' });
+export const apiOrgPlanSync = (hcmDate?: string) => call('/org-plan', { action: 'sync', hcmDate });
+export const apiOrgPlanBinding = () => call('/org-plan', { action: 'binding' });
+export const apiOrgPlanSendIdentityCode = (employeeId: string, employeeName: string) =>
+  call('/org-plan', { action: 'sendIdentityCode', employeeId, employeeName });
+export const apiOrgPlanVerifyIdentityCode = (employeeId: string, employeeName: string, code: string) =>
+  call('/org-plan', { action: 'verifyIdentityCode', employeeId, employeeName, code });
+export const apiOrgPlanListTabs = (noteId: string) => call('/org-plan', { action: 'listTabs', noteId });
+export const apiOrgPlanGetTabContent = (assignmentId: string) => call('/org-plan', { action: 'getTabContent', assignmentId });
+export const apiOrgPlanSaveTabContent = (noteId: string, assignmentId: string, content: any) =>
+  call('/org-plan', { action: 'saveTabContent', noteId, assignmentId, content });
+export const apiOrgPlanLockTab = (assignmentId: string, userName?: string) =>
+  call('/org-plan', { action: 'lockTab', assignmentId, userName });
+export const apiOrgPlanUnlockTab = (assignmentId: string) =>
+  call('/org-plan', { action: 'unlockTab', assignmentId });
+
+// === 江苏公司知识库课件只读浏览 ===
+export const apiCoursewareList = (prefix: string = '', marker: string = '') =>
+  call('/courseware', { action: 'list', prefix, marker });
+export const apiCoursewareDownload = (key: string) =>
+  call('/courseware', { action: 'download', key });

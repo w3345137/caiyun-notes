@@ -5,6 +5,7 @@ const { simpleParser } = require('mailparser');
 
 const ENCRYPTION_KEY = process.env.EMAIL_ENCRYPTION_KEY || 'caiyun-notes-email-encryption-key-32b';
 const ALGORITHM = 'aes-256-gcm';
+const EMAIL_SYNC_WINDOW_DAYS = 90;
 
 function encrypt(text) {
   const iv = crypto.randomBytes(16);
@@ -48,6 +49,52 @@ function detectProvider(email) {
   return null;
 }
 
+function getEmailSyncSinceDate(now = new Date(), days = EMAIL_SYNC_WINDOW_DAYS) {
+  const date = new Date(now);
+  date.setDate(date.getDate() - days);
+  return date;
+}
+
+function buildEmailSearchCriteria({ full = false, latestUid = 0, now = new Date(), syncWindowDays = EMAIL_SYNC_WINDOW_DAYS } = {}) {
+  const startUid = full ? 1 : Math.max(Number(latestUid || 0) + 1, 1);
+  return { uid: `${startUid}:*`, since: getEmailSyncSinceDate(now, syncWindowDays) };
+}
+
+function getStoredEmailFolder(folderName, sentFolder) {
+  return folderName === sentFolder ? 'Sent' : folderName;
+}
+
+function shouldCountFetchedEmail({ full = false, latestUid = 0, uid = 0 } = {}) {
+  if (full) return true;
+  return Number(uid || 0) > Number(latestUid || 0);
+}
+
+function getFetchEmailContentOptions() {
+  return { uid: true };
+}
+
+function getFetchEmailAttachmentOptions() {
+  return { uid: true };
+}
+
+function hasBodyStructureAttachment(part) {
+  if (!part || typeof part !== 'object') return false;
+
+  const disposition = String(part.disposition || '').toLowerCase();
+  const hasFilename = Boolean(
+    part.filename ||
+    part.parameters?.filename ||
+    part.parameters?.name ||
+    part.dispositionParameters?.filename ||
+    part.dispositionParameters?.name
+  );
+
+  if (disposition === 'attachment' || hasFilename) return true;
+
+  const children = Array.isArray(part.childNodes) ? part.childNodes : [];
+  return children.some(hasBodyStructureAttachment);
+}
+
 async function testImapConnection(config) {
   const client = new ImapFlow({
     host: config.imap_host,
@@ -81,7 +128,97 @@ async function testSmtpConnection(config) {
   }
 }
 
-async function syncEmails(pool, accountId, accountConfig) {
+function buildConversationSummaries(accountId, myEmail, emails) {
+  const myAddr = String(myEmail || '').toLowerCase();
+  const conversations = new Map();
+
+  for (const email of emails) {
+    const folder = email.folder;
+    const isSent = folder === 'Sent';
+    const otherAddr = (isSent ? extractFirstAddress(email.to_list || '') : email.from_addr || '').toLowerCase();
+    if (!otherAddr) continue;
+
+    const key = `${accountId}-${otherAddr}`;
+    const otherName = isSent ? extractFirstName(email.to_list || '') : (email.from_name || '');
+    const date = email.date ? new Date(email.date) : null;
+    const existing = conversations.get(key);
+
+    if (!existing) {
+      conversations.set(key, {
+        account_id: accountId,
+        other_addr: otherAddr,
+        other_name: otherName || (otherAddr === myAddr ? myEmail : ''),
+        last_email_date: date,
+        last_subject: email.subject || '',
+        total_count: 1,
+        unread_count: folder === 'INBOX' && !email.is_read ? 1 : 0,
+      });
+      continue;
+    }
+
+    existing.total_count += 1;
+    if (folder === 'INBOX' && !email.is_read) existing.unread_count += 1;
+    if (!existing.other_name && otherName) existing.other_name = otherName;
+    if (date && (!existing.last_email_date || date > existing.last_email_date)) {
+      existing.last_email_date = date;
+      existing.last_subject = email.subject || '';
+      if (otherName) existing.other_name = otherName;
+    }
+  }
+
+  return [...conversations.values()];
+}
+
+async function refreshEmailConversations(pool, accountId, myEmail) {
+  const { rows } = await pool.query(
+    `SELECT folder, from_addr, from_name, to_list, subject, date, is_read
+     FROM email_index
+     WHERE account_id = $1`,
+    [accountId]
+  );
+  const summaries = buildConversationSummaries(accountId, myEmail, rows);
+  const summaryAddrs = summaries.map(conversation => conversation.other_addr).filter(Boolean);
+
+  for (const conversation of summaries) {
+    await pool.query(`
+      INSERT INTO email_conversations (id, account_id, other_addr, other_name, last_email_date, last_subject, total_count, unread_count)
+      VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (account_id, other_addr) DO UPDATE SET
+      other_name=$3, last_email_date=$4, last_subject=$5, total_count=$6, unread_count=$7, updated_at=NOW()
+    `, [
+      conversation.account_id,
+      conversation.other_addr,
+      conversation.other_name,
+      conversation.last_email_date,
+      conversation.last_subject,
+      conversation.total_count,
+      conversation.unread_count,
+    ]);
+  }
+
+  if (summaryAddrs.length > 0) {
+    await pool.query(
+      `DELETE FROM email_conversations
+       WHERE account_id = $1 AND NOT (other_addr = ANY($2::text[]))`,
+      [accountId, summaryAddrs]
+    );
+  } else {
+    await pool.query('DELETE FROM email_conversations WHERE account_id = $1', [accountId]);
+  }
+
+  return summaries;
+}
+
+async function pruneEmailIndexToWindow(pool, accountId, cutoffDate) {
+  await pool.query(
+    `DELETE FROM email_index
+     WHERE account_id = $1 AND (date IS NULL OR date < $2)`,
+    [accountId, cutoffDate]
+  );
+}
+
+async function syncEmails(pool, accountId, accountConfig, options = {}) {
+  const syncNow = options.now || new Date();
   const password = decrypt(accountConfig.encrypted_password, accountConfig.iv, accountConfig.auth_tag);
   const client = new ImapFlow({
     host: accountConfig.imap_host,
@@ -91,54 +228,54 @@ async function syncEmails(pool, accountId, accountConfig) {
     logger: false,
   });
 
-  const results = { inbox: 0, sent: 0, conversations: new Map() };
+  const results = { inbox: 0, sent: 0, conversations: 0 };
 
   try {
     await client.connect();
 
-    for (const folder of ['INBOX', 'Sent']) {
-      const folderName = folder === 'Sent' ? (await findSentFolder(client) || 'Sent') : 'INBOX';
+    const sentFolder = await findSentFolder(client);
+    const folders = [
+      { remoteName: 'INBOX', storedName: 'INBOX' },
+      { remoteName: sentFolder || 'Sent', storedName: 'Sent' },
+    ];
+
+    for (const folder of folders) {
       let lock;
       try {
-        lock = await client.getMailboxLock(folderName);
+        lock = await client.getMailboxLock(folder.remoteName);
       } catch (e) {
         continue;
       }
 
       try {
-        const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const searchCriteria = { since, uid: accountConfig.last_sync_uid > 0 ? `${accountConfig.last_sync_uid + 1}:*` : '1:*' };
+        const { rows: [folderState] } = await pool.query(
+          'SELECT COALESCE(MAX(uid), 0) AS latest_uid FROM email_index WHERE account_id = $1 AND folder = $2',
+          [accountId, folder.storedName]
+        );
+        const latestUid = Number(folderState?.latest_uid || 0);
+        const searchCriteria = buildEmailSearchCriteria({
+          full: options.full === true,
+          latestUid,
+          now: syncNow,
+        });
 
-        for await (const msg of client.fetch(searchCriteria, { envelope: true, flags: true, uid: true, size: true })) {
+        for await (const msg of client.fetch(searchCriteria, { envelope: true, flags: true, uid: true, size: true, bodyStructure: true })) {
           const fromAddr = msg.envelope.from?.[0]?.address || '';
           const fromName = msg.envelope.from?.[0]?.name || '';
           const toList = msg.envelope.to?.map(t => `${t.name || ''} <${t.address}>`).join(', ') || '';
           const ccList = msg.envelope.cc?.map(c => `${c.name || ''} <${c.address}>`).join(', ') || '';
 
-          const emailId = `${accountId}-${folder}-${msg.uid}`;
           await pool.query(`
-            INSERT INTO email_index (id, account_id, uid, folder, message_id, from_addr, from_name, to_list, cc_list, subject, date, has_attachments, is_read, is_starred, size)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+            INSERT INTO email_index (account_id, uid, folder, message_id, from_addr, from_name, to_list, cc_list, subject, date, has_attachments, is_read, is_starred, size)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             ON CONFLICT (account_id, uid, folder) DO UPDATE SET
-            from_addr=$6, from_name=$7, to_list=$8, cc_list=$9, subject=$10, date=$11, is_read=$13, is_starred=$14
-          `, [emailId, accountId, msg.uid, folder, msg.envelope.messageId, fromAddr, fromName, toList, ccList,
-            msg.envelope.subject, msg.envelope.date, false, !msg.flags?.has('\\Seen'), msg.flags?.has('\\Flagged') || false, msg.size]);
+            from_addr=$5, from_name=$6, to_list=$7, cc_list=$8, subject=$9, date=$10, is_read=$12, is_starred=$13
+          `, [accountId, msg.uid, folder.storedName, msg.envelope.messageId, fromAddr, fromName, toList, ccList,
+            msg.envelope.subject, msg.envelope.date, hasBodyStructureAttachment(msg.bodyStructure), msg.flags?.has('\\Seen') || false, msg.flags?.has('\\Flagged') || false, msg.size]);
 
-          if (folder === 'INBOX') results.inbox++;
-          else results.sent++;
-
-          const otherAddr = folder === 'INBOX' ? fromAddr : extractFirstAddress(toList);
-          if (otherAddr) {
-            const key = `${accountId}-${otherAddr.toLowerCase()}`;
-            if (!results.conversations.has(key)) {
-              results.conversations.set(key, { addr: otherAddr.toLowerCase(), name: folder === 'INBOX' ? fromName : extractFirstName(toList), date: msg.envelope.date, subject: msg.envelope.subject });
-            } else {
-              const existing = results.conversations.get(key);
-              if (msg.envelope.date > existing.date) {
-                existing.date = msg.envelope.date;
-                existing.subject = msg.envelope.subject;
-              }
-            }
+          if (shouldCountFetchedEmail({ full: options.full === true, latestUid, uid: msg.uid })) {
+            if (folder.storedName === 'INBOX') results.inbox++;
+            else results.sent++;
           }
         }
       } finally {
@@ -146,14 +283,11 @@ async function syncEmails(pool, accountId, accountConfig) {
       }
     }
 
-    for (const conv of results.conversations.values()) {
-      await pool.query(`
-        INSERT INTO email_conversations (id, account_id, other_addr, other_name, last_email_date, last_subject, total_count)
-        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 1)
-        ON CONFLICT (account_id, other_addr) DO UPDATE SET
-        other_name=$3, last_email_date=$4, last_subject=$5, total_count=email_conversations.total_count+1, updated_at=NOW()
-      `, [accountId, conv.addr, conv.name, conv.date, conv.subject]);
-    }
+    const cutoffDate = getEmailSyncSinceDate(syncNow);
+    await pruneEmailIndexToWindow(pool, accountId, cutoffDate);
+
+    const conversations = await refreshEmailConversations(pool, accountId, accountConfig.email_address);
+    results.conversations = conversations.length;
 
     await pool.query('UPDATE email_accounts SET last_sync_at=NOW(), last_sync_uid=(SELECT COALESCE(MAX(uid),0) FROM email_index WHERE account_id=$1) WHERE id=$1', [accountId]);
 
@@ -198,7 +332,7 @@ async function fetchEmailContent(accountConfig, folder, uid) {
     const folderName = folder === 'Sent' ? (await findSentFolder(client) || 'Sent') : 'INBOX';
     const lock = await client.getMailboxLock(folderName);
     try {
-      const msg = await client.fetchOne(uid, { source: true });
+      const msg = await client.fetchOne(uid, { source: true }, getFetchEmailContentOptions());
       const rawSource = msg.source?.toString();
       if (!rawSource) return { success: false, error: '邮件内容为空' };
 
@@ -222,6 +356,50 @@ async function fetchEmailContent(accountConfig, folder, uid) {
       } catch (parseErr) {
         return { success: true, source: rawSource, parseError: parseErr.message };
       }
+    } finally {
+      lock.release();
+    }
+  } catch (e) {
+    return { success: false, error: e.message };
+  } finally {
+    try { await client.logout(); } catch (e) {}
+  }
+}
+
+async function fetchEmailAttachment(accountConfig, folder, uid, attachmentIndex) {
+  const password = decrypt(accountConfig.encrypted_password, accountConfig.iv, accountConfig.auth_tag);
+  const client = new ImapFlow({
+    host: accountConfig.imap_host,
+    port: accountConfig.imap_port,
+    secure: accountConfig.imap_ssl !== false,
+    auth: { user: accountConfig.email_address, pass: password },
+    logger: false,
+  });
+
+  try {
+    await client.connect();
+    const folderName = folder === 'Sent' ? (await findSentFolder(client) || 'Sent') : 'INBOX';
+    const lock = await client.getMailboxLock(folderName);
+    try {
+      const msg = await client.fetchOne(uid, { source: true }, getFetchEmailAttachmentOptions());
+      const rawSource = msg.source?.toString();
+      if (!rawSource) return { success: false, error: '邮件内容为空' };
+
+      const parsed = await simpleParser(rawSource);
+      const attachments = parsed.attachments || [];
+      const index = Number(attachmentIndex);
+      if (!Number.isInteger(index) || index < 0 || index >= attachments.length) {
+        return { success: false, error: '附件不存在' };
+      }
+
+      const attachment = attachments[index];
+      return {
+        success: true,
+        filename: attachment.filename || `attachment-${index + 1}`,
+        contentType: attachment.contentType || 'application/octet-stream',
+        size: attachment.size || attachment.content?.length || 0,
+        content: attachment.content,
+      };
     } finally {
       lock.release();
     }
@@ -256,6 +434,11 @@ async function sendEmail(accountConfig, { to, subject, text, html, cc, attachmen
 module.exports = {
   encrypt, decrypt, detectProvider, COMMON_PROVIDERS,
   testImapConnection, testSmtpConnection, syncEmails,
-  fetchEmailContent, sendEmail, findSentFolder,
+  fetchEmailContent, fetchEmailAttachment, sendEmail, findSentFolder,
   extractFirstAddress, extractFirstName,
+  buildEmailSearchCriteria, getStoredEmailFolder,
+  shouldCountFetchedEmail, getFetchEmailContentOptions, getFetchEmailAttachmentOptions,
+  hasBodyStructureAttachment,
+  getEmailSyncSinceDate, pruneEmailIndexToWindow,
+  buildConversationSummaries, refreshEmailConversations,
 };

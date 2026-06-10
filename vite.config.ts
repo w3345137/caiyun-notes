@@ -3,6 +3,35 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import sourceIdentifierPlugin from 'vite-plugin-source-identifier'
 
+function patchYTiptapTextSelection() {
+  return {
+    name: 'patch-y-tiptap-text-selection',
+    enforce: 'pre' as const,
+    transform(code: string, id: string) {
+      if (!id.includes('@tiptap/y-tiptap/dist/y-tiptap')) return null;
+
+      const unsafeSelection = 'tr.setSelection(TextSelection.create(tr.doc, clampedAnchor, clampedHead))';
+      if (!code.includes(unsafeSelection)) return null;
+
+      return {
+        code: code.replace(
+          unsafeSelection,
+          `{
+          const $clampedAnchor = tr.doc.resolve(clampedAnchor)
+          const $clampedHead = tr.doc.resolve(clampedHead)
+          if ($clampedAnchor.parent.inlineContent && $clampedHead.parent.inlineContent) {
+            tr.setSelection(TextSelection.create(tr.doc, clampedAnchor, clampedHead))
+          } else {
+            tr.setSelection(TextSelection.near($clampedAnchor, 1))
+          }
+        }`
+        ),
+        map: null,
+      };
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const isProd = mode === 'prod'
   const isTest = mode === 'test'
@@ -10,6 +39,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
+      patchYTiptapTextSelection(),
       sourceIdentifierPlugin({
         enabled: !isProd,
         attributePrefix: 'data-matrix',

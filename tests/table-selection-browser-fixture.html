@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Table Selection Fixture</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 24px;
+      }
+      .ProseMirror {
+        outline: none;
+      }
+      table {
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      td,
+      th {
+        border: 1px solid #8b95a1;
+        min-width: 130px;
+        height: 52px;
+        padding: 8px;
+      }
+      .selectedCell {
+        box-shadow: inset 0 0 0 2px #2563eb;
+        background: rgba(37, 99, 235, 0.12);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="editor"></div>
+    <script type="module">
+      import { Editor } from '@tiptap/core';
+      import StarterKit from '@tiptap/starter-kit';
+      import Collaboration from '@tiptap/extension-collaboration';
+      import TaskList from '@tiptap/extension-task-list';
+      import TaskItem from '@tiptap/extension-task-item';
+      import * as Y from 'yjs';
+      import { TableWithDefaultWidth } from '/src/extensions/TableWithDefaultWidth.ts';
+      import { TableRowWithTextSelection } from '/src/extensions/TableRowWithTextSelection.ts';
+      import { TableCellWithColor } from '/src/extensions/TableCellWithColor.ts';
+      import { TableHeaderWithColor } from '/src/extensions/TableHeaderWithColor.ts';
+      import { TextSelectionInTableExtension } from '/src/extensions/TextSelectionInTablePlugin.ts';
+
+      const cell = (text) => ({ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+      const tableJson = {
+        type: 'doc',
+        content: [
+          {
+            type: 'table',
+            content: [
+              { type: 'tableRow', content: [cell('A1'), cell('B1'), cell('C1')] },
+              { type: 'tableRow', content: [cell('A2'), cell('B2'), cell('C2')] },
+              { type: 'tableRow', content: [cell('A3'), cell('B3'), cell('C3')] },
+            ],
+          },
+        ],
+      };
+      const useCollab = new URLSearchParams(location.search).get('collab') === '1';
+      const ydoc = useCollab ? new Y.Doc() : null;
+      const extensions = [
+        StarterKit.configure({ undoRedo: false }),
+        TableWithDefaultWidth.configure({ resizable: true, handleWidth: 3 }),
+        TableRowWithTextSelection,
+        TableCellWithColor,
+        TableHeaderWithColor,
+        TaskList,
+        TaskItem,
+        TextSelectionInTableExtension,
+      ];
+      if (ydoc) {
+        extensions.push(Collaboration.configure({ document: ydoc, field: 'default' }));
+      }
+
+      window.editor = new Editor({
+        element: document.querySelector('#editor'),
+        extensions,
+        content: useCollab ? undefined : tableJson,
+        onCreate: ({ editor }) => {
+          if (useCollab && editor.isEmpty) {
+            editor.commands.insertContent(tableJson.content);
+          }
+        },
+      });
+      window.ydoc = ydoc;
+    </script>
+  </body>
+</html>

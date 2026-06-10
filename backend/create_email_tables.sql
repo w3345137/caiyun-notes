@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS email_accounts (
   encrypted_password TEXT NOT NULL,
   iv TEXT NOT NULL,
   auth_tag TEXT,
+  note_id TEXT,
   last_sync_uid BIGINT DEFAULT 0,
   last_sync_at TIMESTAMPTZ,
   sync_enabled BOOLEAN DEFAULT true,

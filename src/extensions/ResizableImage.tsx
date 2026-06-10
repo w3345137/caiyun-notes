@@ -1,5 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
+import { NodeSelection } from '@tiptap/pm/state';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 
 interface ResizableImageAttrs {
@@ -41,22 +42,39 @@ export const ResizableImage = Node.create({
   },
 });
 
-const ResizableImageView: React.FC<{ node: any; updateAttributes: any; selected: boolean; deleteNode: () => void }> = ({
+const ResizableImageView: React.FC<{
+  node: any;
+  updateAttributes: any;
+  selected: boolean;
+  deleteNode: () => void;
+  editor: any;
+  getPos: () => number;
+}> = ({
   node,
   updateAttributes,
   selected,
   deleteNode,
+  editor,
+  getPos,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState<ResizeCorner>(false);
   const [size, setSize] = useState<{ width: number; height: number | 'auto' }>({ width: node.attrs.width || 300, height: node.attrs.height || 'auto' });
-  const [isSelected, setIsSelected] = useState(selected);
+  const [isEditorFocused, setIsEditorFocused] = useState(() => editor?.isFocused ?? false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const aspectRatioRef = useRef<number>(1);
 
   useEffect(() => {
-    setIsSelected(selected);
-  }, [selected]);
+    if (!editor) return;
+    const updateFocusState = () => setIsEditorFocused(editor.isFocused);
+    editor.on('focus', updateFocusState);
+    editor.on('blur', updateFocusState);
+    updateFocusState();
+    return () => {
+      editor.off('focus', updateFocusState);
+      editor.off('blur', updateFocusState);
+    };
+  }, [editor]);
 
   useEffect(() => {
     if (node.attrs.width) {
@@ -126,20 +144,39 @@ const ResizableImageView: React.FC<{ node: any; updateAttributes: any; selected:
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
-    setIsSelected(true);
-  }, []);
+    if (!editor?.view || editor.isDestroyed) return;
+
+    try {
+      const pos = typeof getPos === 'function' ? getPos() : null;
+      if (typeof pos !== 'number') return;
+      const { state, view } = editor;
+      view.focus();
+      view.dispatch(
+        state.tr
+          .setSelection(NodeSelection.create(state.doc, pos))
+          .setMeta('addToHistory', false)
+      );
+      setIsEditorFocused(true);
+    } catch {
+      // 节点刚卸载或协同文档正在替换时忽略本次点击。
+    }
+  }, [editor, getPos]);
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     deleteNode();
   }, [deleteNode]);
+
+  const showControls = selected && (isEditorFocused || Boolean(isResizing));
 
   return (
     <NodeViewWrapper className="resizable-image-wrapper" data-drag-handle>
       <div
         ref={containerRef}
-        className={`relative inline-block ${isSelected ? 'z-50' : ''}`}
+        className={`relative inline-block ${showControls ? 'z-50' : ''}`}
         onClick={handleClick}
       >
         <img
@@ -152,7 +189,7 @@ const ResizableImageView: React.FC<{ node: any; updateAttributes: any; selected:
           }}
           className="block rounded-lg"
         />
-        {isSelected && (
+        {showControls && (
           <>
             {/* 选中边框 */}
             <div className="absolute inset-0 border-2 border-blue-500 rounded-lg pointer-events-none" />
@@ -179,6 +216,10 @@ const ResizableImageView: React.FC<{ node: any; updateAttributes: any; selected:
             </div>
             {/* 删除按钮 */}
             <button
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
               onClick={handleDelete}
               className="absolute -top-2.5 -right-2.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs shadow-md hover:bg-red-600 hover:scale-110 transition-all"
               title="删除图片"

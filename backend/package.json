@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "sync:jiangsu-org": "node scripts/syncJiangsuOrgNotebook.js"
   },
   "dependencies": {
     "@hocuspocus/server": "^4.0.0",
@@ -28,6 +29,7 @@
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.4.2",
     "imapflow": "^1.3.2",
+    "jszip": "^3.10.1",
     "mailparser": "^3.9.8",
     "nodemailer": "^8.0.7",
     "pg": "^8.11.3",

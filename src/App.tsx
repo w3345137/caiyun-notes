@@ -5,9 +5,21 @@ import { NoteEditor } from './components/NoteEditor';
 import { AuthProvider } from './components/AuthProvider';
 import { useAuth } from './components/authContext';
 import { AuthModal } from './components/AuthModal';
+import { AppUpdateModal } from './components/AppUpdateModal';
 import { useNoteStore, setUpdateLogsCache } from './store/noteStore';
 import toast, { Toaster } from 'react-hot-toast';
 import { signIn, parseJWTPayload, refreshToken } from './lib/auth';
+import {
+  createAvailableUpdateState,
+  createCheckingUpdateState,
+  createDownloadingUpdateState,
+  createErrorUpdateState,
+  createIdleUpdateState,
+  createRelaunchingUpdateState,
+  reduceDownloadEvent,
+  type AppUpdateInfo,
+  type AppUpdateState,
+} from './lib/appUpdateState';
 import { getUpdateLogs } from './lib/initDatabase';
 import { sseService } from './lib/sseService';
 import logoUrl from '/logo.png';
@@ -36,6 +48,7 @@ function LoadingScreen({ progress, status }: { progress: number; status: string 
 function AppContent() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [appUpdateState, setAppUpdateState] = useState<AppUpdateState>(() => createIdleUpdateState());
   const { user, loading } = useAuth();
   const quickLoginEmail = import.meta.env.VITE_TEST_LOGIN_EMAIL;
   const quickLoginPassword = import.meta.env.VITE_TEST_LOGIN_PASSWORD;
@@ -53,6 +66,8 @@ function AppContent() {
   const setSyncError = useNoteStore((state) => state.setSyncError);
   const refreshInProgressRef = useRef(false);
   const tokenRefreshInProgressRef = useRef(false);
+  const appUpdateRef = useRef<any>(null);
+  const appUpdateInProgressRef = useRef(false);
 
   // 用户登录后加载数据
   useEffect(() => {
@@ -180,35 +195,87 @@ function AppContent() {
 
   // APP 更新检查（仅 Tauri 环境有效）
   useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-      const checkAndUpdate = async () => {
-        try {
-          const { check } = await import('@tauri-apps/plugin-updater');
-          const { relaunch } = await import('@tauri-apps/plugin-process');
-          const update = await check();
-          if (update) {
-            toast(`发现新版本 ${update.version}，正在下载...`, {
-              icon: '🚀',
-              duration: 5000,
-            });
-            await update.downloadAndInstall((event) => {
-              if (event.event === 'Started') {
-                toast.loading('正在下载更新...', { id: 'app-update-download' });
-              } else if (event.event === 'Finished') {
-                toast.dismiss('app-update-download');
-                toast.success('下载完成，即将重启安装...', { duration: 3000 });
-              }
-            });
-            await relaunch();
-          }
-        } catch (e) {
-          console.error('[Updater] 检查更新失败:', e);
-          toast.error('检查更新失败，请稍后再试', { duration: 5000 });
+    if (typeof window === 'undefined' || !(window as any).__TAURI_INTERNALS__) return;
+
+    let cancelled = false;
+    const checkAndPrompt = async () => {
+      setAppUpdateState((current) => current.phase === 'idle' ? createCheckingUpdateState() : current);
+      try {
+        const { check } = await import('@tauri-apps/plugin-updater');
+        const update = await check();
+        if (cancelled) return;
+
+        if (!update) {
+          setAppUpdateState(createIdleUpdateState());
+          return;
         }
-      };
-      setTimeout(checkAndUpdate, 3000);
-    }
+
+        appUpdateRef.current = update;
+        const updateInfo: AppUpdateInfo = {
+          version: update.version,
+          currentVersion: update.currentVersion,
+          date: update.date,
+          body: update.body,
+        };
+        setAppUpdateState(createAvailableUpdateState(updateInfo));
+      } catch (e) {
+        if (!cancelled) {
+          setAppUpdateState(createIdleUpdateState());
+        }
+        console.warn('[Updater] 检查更新失败:', e);
+      }
+    };
+
+    const timer = window.setTimeout(() => void checkAndPrompt(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
+
+  const handleDismissAppUpdate = useCallback(() => {
+    if (appUpdateState.phase === 'downloading' || appUpdateState.phase === 'installing' || appUpdateState.phase === 'relaunching') {
+      return;
+    }
+    setAppUpdateState(createIdleUpdateState());
+  }, [appUpdateState.phase]);
+
+  const handleStartAppUpdate = useCallback(async () => {
+    if (appUpdateInProgressRef.current) return;
+    const update = appUpdateRef.current;
+    const updateInfo = appUpdateState.update;
+    if (!update || !updateInfo) return;
+
+    appUpdateInProgressRef.current = true;
+
+    try {
+      if (userId && hasPendingSaves()) {
+        if (!dbReady) {
+          setAppUpdateState(createErrorUpdateState(updateInfo, '数据库未就绪，自动同步未完成，已取消更新'));
+          return;
+        }
+
+        const result = await syncToCloud();
+        if (!result.success) {
+          setAppUpdateState(createErrorUpdateState(updateInfo, `自动同步未完成，已取消更新: ${result.error || '请重试'}`));
+          return;
+        }
+      }
+
+      setAppUpdateState(createDownloadingUpdateState(updateInfo));
+      const { relaunch } = await import('@tauri-apps/plugin-process');
+      await update.downloadAndInstall((event: any) => {
+        setAppUpdateState((current) => reduceDownloadEvent(current, event));
+      });
+      setAppUpdateState((current) => createRelaunchingUpdateState(current));
+      await relaunch();
+    } catch (e: any) {
+      console.error('[Updater] 更新失败:', e);
+      setAppUpdateState(createErrorUpdateState(updateInfo, e?.message || '更新失败，请稍后重试'));
+    } finally {
+      appUpdateInProgressRef.current = false;
+    }
+  }, [appUpdateState.update, dbReady, hasPendingSaves, syncToCloud, userId]);
 
   // 自动保存模式下拦截浏览器保存页面快捷键；刷新前如有未完成的自动同步任务，先静默刷完队列。
   useEffect(() => {
@@ -292,8 +359,8 @@ function AppContent() {
     );
   }
 
-  // 加载中 → 显示加载页面
-  if (loading || isLoading) {
+  // 认证初始化期间显示全屏加载；笔记树云端刷新改为后台进行，避免冷启动长时间空白。
+  if (loading) {
     return <LoadingScreen progress={loadingProgress} status={loadingStatus || '正在初始化...'} />;
   }
 
@@ -338,6 +405,19 @@ function AppContent() {
           <NoteEditor />
         </div>
       </div>
+
+      <AppUpdateModal
+        state={appUpdateState}
+        onStartUpdate={handleStartAppUpdate}
+        onDismiss={handleDismissAppUpdate}
+      />
+
+      {isLoading && (
+        <div className="fixed right-4 bottom-4 z-[180] px-3.5 py-2 rounded-lg bg-white/95 border border-blue-100 shadow-lg text-xs text-gray-600 flex items-center gap-2">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+          <span>{loadingStatus === '正在加载...' ? '正在同步最新内容' : (loadingStatus || '正在同步')}</span>
+        </div>
+      )}
 
       {/* 数据库错误提示 */}
       {dbError && (

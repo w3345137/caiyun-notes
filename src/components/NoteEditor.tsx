@@ -25,7 +25,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import { FontSize } from '@tiptap/extension-font-size';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
-import { getActiveInternalEditor } from '../lib/nodeViewEditorManager';
+import { getActiveInternalEditor, useActiveInternalEditor } from '../lib/nodeViewEditorManager';
 import { ListKeymap } from '@tiptap/extension-list-keymap';
 import { useNoteStore, markNoteAsEditing, markNoteAsEditingEnd, SSENotification } from '../store/noteStore';
 import { useAuth } from '../components/authContext';
@@ -40,14 +40,18 @@ import toast from 'react-hot-toast';
 import html2canvas from 'html2canvas';
 import { HistoryPanel } from '../components/HistoryPanel';
 import { AttachmentInsertModal } from '../components/AttachmentInsertModal';
+import EmailThreadView from '../components/EmailThreadView';
+import CoursewarePageView from '../components/CoursewarePageView';
 import { apiGetNotebookShares, apiGetCloudProvider, apiGetCollabConfig } from '../lib/edgeApi';
 import { PROSEMIRROR_CSS } from '../lib/editorStyles';
+import { renderSelectionCopyCanvas } from '../lib/copySelectionAsImage';
 import { checkNotebookOnedrive } from '../lib/onedriveService';
 import { checkNotebookBaidu } from '../lib/baiduService';
 import { checkNotebookQiniu } from '../lib/qiniuService';
+import { checkNotebookAnyShare } from '../lib/anyshareService';
 import { getNotebookLLMConfig } from '../lib/llmService';
 
-type RecordingCloudProvider = 'onedrive' | 'baidu' | 'qiniu';
+type RecordingCloudProvider = 'onedrive' | 'baidu' | 'qiniu' | 'anyshare';
 type CollabPermission = 'read' | 'write';
 type CollabStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -70,10 +74,11 @@ const recordingCloudLabels: Record<RecordingCloudProvider, string> = {
   onedrive: 'OneDrive',
   baidu: '百度网盘',
   qiniu: '七牛云',
+  anyshare: 'AnyShare',
 };
 
 const isRecordingCloudProvider = (value: unknown): value is RecordingCloudProvider => (
-  value === 'onedrive' || value === 'baidu' || value === 'qiniu'
+  value === 'onedrive' || value === 'baidu' || value === 'qiniu' || value === 'anyshare'
 );
 
 const COLLAB_COLORS = ['#2563eb', '#059669', '#dc2626', '#7c3aed', '#ea580c', '#0891b2', '#be123c', '#4d7c0f'];
@@ -123,6 +128,7 @@ const getSafeEditorView = (editor: any) => {
 };
 
 const createEmptyEditorDoc = () => ({ type: 'doc', content: [{ type: 'paragraph' }] });
+const ORG_PLAN_NOTEBOOK_ID = 'jiangsu-company';
 
 const parseEditorSnapshot = (rawContent: unknown) => {
   if (typeof rawContent === 'string' && rawContent) {
@@ -139,6 +145,145 @@ const parseEditorSnapshot = (rawContent: unknown) => {
   }
 
   return createEmptyEditorDoc();
+};
+
+interface EmailThreadMeta {
+  kind: 'email_thread';
+  accountId: string;
+  otherAddr: string;
+  otherName?: string;
+  myEmail: string;
+}
+
+const parseEmailThreadMeta = (rawContent: unknown): EmailThreadMeta | null => {
+  if (!rawContent) return null;
+  try {
+    const parsed = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
+    if (
+      parsed &&
+      parsed.kind === 'email_thread' &&
+      typeof parsed.accountId === 'string' &&
+      typeof parsed.otherAddr === 'string' &&
+      typeof parsed.myEmail === 'string'
+    ) {
+      return parsed as EmailThreadMeta;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+interface EmailAccountMeta {
+  kind: 'email_account';
+  accountId: string;
+  emailAddress: string;
+  displayName?: string;
+}
+
+const parseEmailAccountMeta = (rawContent: unknown): EmailAccountMeta | null => {
+  if (!rawContent) return null;
+  try {
+    const parsed = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
+    if (
+      parsed &&
+      parsed.kind === 'email_account' &&
+      typeof parsed.accountId === 'string' &&
+      typeof parsed.emailAddress === 'string'
+    ) {
+      return parsed as EmailAccountMeta;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+interface OrgPlanPageMeta {
+  kind: 'org_plan_page';
+  pageKey: string;
+  sectionTitle?: string;
+}
+
+interface CoursewarePageMeta {
+  kind: 'courseware_page';
+  title?: string;
+  prefix?: string;
+  readonly?: boolean;
+}
+
+const parseOrgPlanPageMeta = (rawContent: unknown): OrgPlanPageMeta | null => {
+  if (!rawContent) return null;
+  try {
+    const parsed = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
+    if (
+      parsed &&
+      parsed.kind === 'org_plan_page' &&
+      typeof parsed.pageKey === 'string'
+    ) {
+      return parsed as OrgPlanPageMeta;
+    }
+    const tabGroup = (parsed?.content || []).find((node: any) => node?.type === 'tabGroup' && node?.attrs?.orgPlan);
+    if (tabGroup?.attrs?.orgPlan?.kind === 'org_plan_page') {
+      return tabGroup.attrs.orgPlan as OrgPlanPageMeta;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const parseCoursewarePageMeta = (rawContent: unknown): CoursewarePageMeta | null => {
+  if (!rawContent) return null;
+  try {
+    const parsed = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
+    if (parsed?.kind === 'courseware_page') return parsed as CoursewarePageMeta;
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const selectOrgPlanPageMeta = (notes: any[], selectedNoteId: string | null): OrgPlanPageMeta | null => {
+  const note = notes.find((n) => n.id === selectedNoteId);
+  if (!note || note.type !== 'page') return null;
+  if (note.rootNotebookId === ORG_PLAN_NOTEBOOK_ID || note.root_notebook_id === ORG_PLAN_NOTEBOOK_ID) {
+    const parsed = parseOrgPlanPageMeta(note.content);
+    if (parsed) return parsed;
+    const noteId = String(note.id || '');
+    if (noteId.startsWith('jiangsu-company-page-') || noteId.startsWith('jiangsu-company-archive-page-')) {
+      return { kind: 'org_plan_page', pageKey: note.title || '', sectionTitle: '' };
+    }
+    return null;
+  }
+  return parseOrgPlanPageMeta(note.content);
+};
+
+const selectCoursewarePageMeta = (notes: any[], selectedNoteId: string | null): CoursewarePageMeta | null => {
+  const note = notes.find((n) => n.id === selectedNoteId);
+  if (!note || note.type !== 'page') return null;
+  return parseCoursewarePageMeta(note.content);
+};
+
+const selectEmailThreadMeta = (notes: any[], selectedNoteId: string | null): EmailThreadMeta | null => {
+  const note = notes.find((n) => n.id === selectedNoteId);
+  if (!note || note.type !== 'page') return null;
+
+  const contentMeta = parseEmailThreadMeta(note.content);
+  if (contentMeta) return contentMeta;
+
+  const parent = note.parentId ? notes.find((n) => n.id === note.parentId) : null;
+  if (parent?.type !== 'email_account') return null;
+  const accountMeta = parseEmailAccountMeta(parent.content);
+  if (!accountMeta || !note.title.includes('@')) return null;
+
+  return {
+    kind: 'email_thread',
+    accountId: accountMeta.accountId,
+    otherAddr: note.title,
+    otherName: note.title,
+    myEmail: accountMeta.emailAddress,
+  };
 };
 
 const createEditorExtensions = (undoRedo: false | undefined, collaborationExtensions: any[] = []) => [
@@ -296,6 +441,12 @@ const FONT_SIZES = [
   { label: '48', value: '48px' },
 ];
 
+const isMindmapToolbarActive = (editor: any) => {
+  if (!editor?.state) return false;
+  const selection = editor.state.selection as any;
+  return selection?.node?.type?.name === 'mindmap' || editor.isActive?.('mindmap') === true;
+};
+
 // 图片上传到服务器，返回永久 URL
 async function uploadImageToServer(file: File): Promise<string> {
   const formData = new FormData();
@@ -311,7 +462,7 @@ async function uploadImageToServer(file: File): Promise<string> {
   return data.url;
 }
 
-const EditorToolbar: React.FC<{
+export const EditorToolbar: React.FC<{
   editor: any;
   onMindmapClick: () => void;
   onAttachmentClick: () => void;
@@ -321,7 +472,7 @@ const EditorToolbar: React.FC<{
   handleCellColor: (color: string) => void;
   disabled?: boolean;
   wordCount?: number;
-}> = React.memo(({ editor: externalEditor, onMindmapClick, onAttachmentClick, onRecorderClick, showColorPicker, setShowColorPicker, handleCellColor, disabled, wordCount = 0 }) => {
+}> = React.memo(({ editor: externalEditor, onMindmapClick, onAttachmentClick, onRecorderClick, showColorPicker, setShowColorPicker, handleCellColor: _handleCellColor, disabled, wordCount = 0 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showFontSizeDropdown, setShowFontSizeDropdown] = useState(false);
   const [showAlignDropdown, setShowAlignDropdown] = useState(false);
@@ -337,52 +488,57 @@ const EditorToolbar: React.FC<{
   const [showMindmapExportDropdown, setShowMindmapExportDropdown] = useState(false);
   const [, forceToolbarUpdate] = useState(0); // 强制工具栏重渲染
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const preventToolbarMouseDown = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+  }, []);
 
   // 优先使用内部编辑器（如果在页签内），否则使用外部编辑器
-  const activeInternal = getActiveInternalEditor();
+  const activeInternal = useActiveInternalEditor();
   const editor = activeInternal || externalEditor;
+  const isEditingInsideTabGroup = Boolean(activeInternal);
 
   // 监听 editor 的 selection 变化，触发工具栏状态更新
   useEffect(() => {
     if (!editor) return;
 
     let rafId: number;
+    let cachedTableActive = false;
     let cachedMindmapActive = false;
+    let activeStatesInitialized = false;
 
-    // 文档结构变化时扫描是否有 mindmap 节点（O(n) 遍历，仅在增删节点时触发）
-    const scanMindmap = () => {
-      let found = false;
-      editor.state.doc.descendants((node: any) => {
-        if (node.type.name === 'mindmap') {
-          found = true;
-          return false;
-        }
-      });
-      if (found !== cachedMindmapActive) {
-        cachedMindmapActive = found;
-        setIsMindmapActive(found);
+    const updateActiveStates = () => {
+      const nextTableActive = editor.isActive('table');
+      if (!activeStatesInitialized || nextTableActive !== cachedTableActive) {
+        cachedTableActive = nextTableActive;
+        setIsTableActive(nextTableActive);
       }
+
+      const nextMindmapActive = isMindmapToolbarActive(editor);
+      if (!activeStatesInitialized || nextMindmapActive !== cachedMindmapActive) {
+        cachedMindmapActive = nextMindmapActive;
+        setIsMindmapActive(nextMindmapActive);
+        if (!nextMindmapActive) {
+          setShowMindmapAddDropdown(false);
+          setShowMindmapExportDropdown(false);
+        }
+      }
+
+      activeStatesInitialized = true;
+      forceToolbarUpdate(n => n + 1);
     };
 
-    // 初始扫描
-    scanMindmap();
-
-    // 选区变化：只更新格式状态（轻量）
-    const onSelectionUpdate = () => {
-      rafId = requestAnimationFrame(() => {
-        setIsTableActive(editor.isActive('table'));
-        forceToolbarUpdate(n => n + 1);
-      });
+    const scheduleActiveStateUpdate = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updateActiveStates);
     };
 
-    // transaction：只在文档结构变化时重新扫描 mindmap
+    updateActiveStates();
+
+    const onSelectionUpdate = scheduleActiveStateUpdate;
+
     const onTransaction = ({ transaction }: any) => {
-      if (transaction.docChanged) {
-        rafId = requestAnimationFrame(() => {
-          scanMindmap();
-          setIsTableActive(editor.isActive('table'));
-          forceToolbarUpdate(n => n + 1);
-        });
+      if (transaction.docChanged || transaction.selectionSet) {
+        scheduleActiveStateUpdate();
       }
     };
 
@@ -506,6 +662,26 @@ const EditorToolbar: React.FC<{
     }
   }, [editor]);
 
+  const applyCellColor = useCallback((color: string) => {
+    if (editor) {
+      try {
+        editor.chain().focus().updateAttributes('tableCell', { backgroundColor: color }).run();
+        editor.chain().focus().updateAttributes('tableHeader', { backgroundColor: color }).run();
+      } catch (e) {
+        console.error('设置单元格底色失败:', e);
+      }
+      setShowColorPicker(false);
+    }
+  }, [editor, setShowColorPicker]);
+
+  const runTableCommand = useCallback((commandName: string) => {
+    const command = editor?.commands?.[commandName];
+    if (typeof command === 'function') {
+      command();
+      editor.commands.focus();
+    }
+  }, [editor]);
+
   const handleTextColor = useCallback((color: string) => {
     editor.chain().focus().setColor(color).run();
     setShowTextColorPicker(false);
@@ -559,7 +735,7 @@ const EditorToolbar: React.FC<{
           <span className="text-xs font-medium">{getCurrentFontSize()}</span>
         </ToolbarButton>
         {showFontSizeDropdown && (
-          <div className="absolute top-full mt-2 left-0 bg-white rounded-xl shadow-2xl border border-gray-200 py-2 z-[9999] min-w-[80px]">
+          <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-2 left-0 bg-white rounded-xl shadow-2xl border border-gray-200 py-2 z-[9999] min-w-[80px]">
             {FONT_SIZES.map((size) => (
               <button
                 key={size.value}
@@ -576,7 +752,7 @@ const EditorToolbar: React.FC<{
           <span className="text-xs font-bold" style={{ color: getCurrentTextColor() }}>A</span>
         </ToolbarButton>
         {showTextColorPicker && (
-          <div className="absolute top-full mt-2 left-0 bg-white rounded-xl shadow-2xl border border-gray-200 p-3 z-[9999] min-w-[180px]">
+          <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-2 left-0 bg-white rounded-xl shadow-2xl border border-gray-200 p-3 z-[9999] min-w-[180px]">
             <p className="text-xs font-medium text-gray-700 mb-2">选择文字颜色</p>
             <div className="grid grid-cols-6 gap-1.5">
               {textColors.map((color, i) => (
@@ -621,7 +797,7 @@ const EditorToolbar: React.FC<{
           </svg>
         </ToolbarButton>
         {showAlignDropdown && (
-          <div className="absolute top-full mt-2 left-0 bg-white rounded-xl shadow-2xl border border-gray-200 py-2 z-50 min-w-[100px]">
+          <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-2 left-0 bg-white rounded-xl shadow-2xl border border-gray-200 py-2 z-50 min-w-[100px]">
             <button onClick={() => { editor.chain().focus().setTextAlign('left').run(); setShowAlignDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 flex items-center gap-2">
               <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
               左对齐
@@ -671,7 +847,7 @@ const EditorToolbar: React.FC<{
         </ToolbarButton>
         {showInsertDropdown && (
           <div
-            onMouseDown={(e) => e.preventDefault()}
+            onMouseDown={preventToolbarMouseDown}
             className="absolute top-full mt-2 right-0 bg-white rounded-xl shadow-2xl border border-gray-200 py-2 z-[9999] min-w-[140px]"
           >
             {/* 插入图片 */}
@@ -713,16 +889,17 @@ const EditorToolbar: React.FC<{
             {/* 插入页签 */}
             <button
               onClick={() => {
-                if (!editor) return;
-                // 如果光标在TabGroup内，添加新页签；否则创建新TabGroup容器
-                if (editor.isActive('tabGroup')) {
-                  editor.chain().focus().addTab().run();
-                } else {
-                  editor.chain().focus().insertTabGroup().run();
-                }
+                if (!externalEditor || isEditingInsideTabGroup) return;
+                externalEditor.chain().focus().insertTabGroup().run();
                 setShowInsertDropdown(false);
               }}
-              className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
+              disabled={isEditingInsideTabGroup}
+              title={isEditingInsideTabGroup ? '页签内容里不能再插入页签' : '插入页签'}
+              className={`w-full px-4 py-2 text-sm text-left ${
+                isEditingInsideTabGroup
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'hover:bg-gray-100'
+              }`}
             >
               插入页签
             </button>
@@ -774,153 +951,11 @@ const EditorToolbar: React.FC<{
             }
 
             try {
-              const editorView = getSafeEditorView(editor);
-              if (!editorView) {
-                toast.error('编辑器尚未准备好，请稍后重试');
+              const canvas = await renderSelectionCopyCanvas(editor, PROSEMIRROR_CSS, html2canvas);
+              if (!canvas) {
+                toast.error('无法识别选中的内容');
                 return;
               }
-              const editorEl = editorView.dom;
-              const container = document.createElement('div');
-              container.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff;padding:16px;font-family:inherit;max-width:800px;';
-              const computedStyle = window.getComputedStyle(editorEl);
-              container.style.fontSize = computedStyle.fontSize;
-              container.style.lineHeight = computedStyle.lineHeight;
-              container.style.color = computedStyle.color;
-
-              // 检测是否是表格单元格选择（CellSelection）
-              const isCellSelection = !!(sel as any).ranges && (sel as any).$anchorCell;
-
-              if (isCellSelection) {
-                // CellSelection：找到包含所有选中单元格的表格，克隆整个表格但只保留选中的行/列
-                const cellSel = sel as any;
-                const anchorCell = cellSel.$anchorCell;
-                // 找到表格节点的 DOM
-                const tableNode = editorView.domAtPos(anchorCell.start(-1)).node;
-                const tableEl = tableNode instanceof HTMLElement && tableNode.tagName === 'TABLE'
-                  ? tableNode
-                  : (tableNode as HTMLElement)?.closest?.('table') || tableNode.parentElement?.closest?.('table');
-
-                if (tableEl) {
-                  // 收集所有选中的单元格 DOM 节点
-                  const selectedCells = new Set<HTMLElement>();
-                  const ranges = (sel as any).ranges as { $from: any; $to: any }[];
-                  for (const r of ranges) {
-                    for (let pos = r.$from.pos; pos <= r.$to.pos; pos++) {
-                      try {
-                        const domNode = editorView.domAtPos(pos).node;
-                        const cell = domNode instanceof HTMLElement
-                          ? (domNode.closest('td, th') || domNode)
-                          : (domNode.parentElement?.closest('td, th') || null);
-                        if (cell && cell instanceof HTMLElement) selectedCells.add(cell);
-                      } catch { /* skip */ }
-                    }
-                  }
-
-                  // 克隆整个表格
-                  const clonedTable = tableEl.cloneNode(true) as HTMLTableElement;
-                  // 找出选中的行索引和列索引
-                  const selectedRowIndices = new Set<number>();
-                  const selectedColIndices = new Set<number>();
-                  const rows = tableEl.querySelectorAll('tr');
-                  rows.forEach((row, ri) => {
-                    const cells = row.querySelectorAll('td, th');
-                    cells.forEach((cell, ci) => {
-                      if (selectedCells.has(cell as HTMLElement)) {
-                        selectedRowIndices.add(ri);
-                        selectedColIndices.add(ci);
-                      }
-                    });
-                  });
-
-                  // 移除未选中的行和列
-                  const clonedRows = clonedTable.querySelectorAll('tr');
-                  const sortedColIndices = Array.from(selectedColIndices).sort((a, b) => b - a);
-                  clonedRows.forEach((row, ri) => {
-                    if (!selectedRowIndices.has(ri)) {
-                      row.remove();
-                    } else {
-                      const cells = row.querySelectorAll('td, th');
-                      sortedColIndices.forEach(() => {}); // 保留所有列（CellSelection 通常是矩形区域）
-                      // 如果不是全部列被选中，移除未选中的列
-                      if (selectedColIndices.size < (rows[0]?.querySelectorAll('td, th').length || 0)) {
-                        const cellsArr = Array.from(cells);
-                        for (let ci = cellsArr.length - 1; ci >= 0; ci--) {
-                          if (!selectedColIndices.has(ci)) {
-                            cellsArr[ci].remove();
-                          }
-                        }
-                      }
-                    }
-                  });
-
-                  // 移除 colgroup 中未选中的 col（如果有）
-                  const colgroup = clonedTable.querySelector('colgroup');
-                  if (colgroup && selectedColIndices.size < (rows[0]?.querySelectorAll('td, th').length || 0)) {
-                    const cols = Array.from(colgroup.querySelectorAll('col'));
-                    for (let ci = cols.length - 1; ci >= 0; ci--) {
-                      if (!selectedColIndices.has(ci)) {
-                        cols[ci].remove();
-                      }
-                    }
-                  }
-
-                  // 移除选中高亮背景
-                  clonedTable.querySelectorAll('.selectedCell').forEach(el => {
-                    el.classList.remove('selectedCell');
-                  });
-
-                  container.appendChild(clonedTable);
-                } else {
-                  toast.error('无法识别选中的表格');
-                  return;
-                }
-              } else {
-                // 普通文本选择：使用 Range 克隆
-                const domStart = editorView.domAtPos(from);
-                const domEnd = editorView.domAtPos(to);
-                const range = document.createRange();
-                range.setStart(domStart.node, domStart.offset);
-                range.setEnd(domEnd.node, domEnd.offset);
-                const fragment = range.cloneContents();
-
-                // 检查克隆的内容是否包含不完整的表格（有 td/th 但没有 table 包裹）
-                const tempDiv = document.createElement('div');
-                tempDiv.appendChild(fragment);
-                const orphanCells = tempDiv.querySelectorAll('td, th');
-                if (orphanCells.length > 0 && !tempDiv.querySelector('table')) {
-                  // 找到原始表格并完整克隆
-                  const firstCellDom = editorView.domAtPos(from).node;
-                  const origTable = firstCellDom instanceof HTMLElement
-                    ? firstCellDom.closest('table')
-                    : firstCellDom.parentElement?.closest('table');
-                  if (origTable) {
-                    const clonedTable = origTable.cloneNode(true) as HTMLTableElement;
-                    clonedTable.querySelectorAll('.selectedCell').forEach(el => el.classList.remove('selectedCell'));
-                    container.appendChild(clonedTable);
-                  } else {
-                    container.appendChild(tempDiv);
-                  }
-                } else {
-                  container.appendChild(tempDiv);
-                }
-              }
-
-              document.body.appendChild(container);
-
-              // 注入完整的编辑器样式（内嵌 App.css 中所有 ProseMirror 相关规则）
-              const styleEl = document.createElement('style');
-              styleEl.textContent = PROSEMIRROR_CSS;
-              container.prepend(styleEl);
-              container.classList.add('ProseMirror');
-
-              const canvas = await html2canvas(container, {
-                backgroundColor: '#ffffff',
-                scale: 2,
-                useCORS: true,
-                logging: false,
-              });
-
-              document.body.removeChild(container);
 
               // 三级剪贴板策略：Tauri API → Web Clipboard API → 下载降级
               const blobToBase64 = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
@@ -998,11 +1033,11 @@ const EditorToolbar: React.FC<{
               <Plus className="w-4 h-4" />
             </ToolbarButton>
             {showTableInsertDropdown && (
-              <div className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px]">
-                <button onClick={() => { editor.chain().focus().addRowBefore().run(); setShowTableInsertDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">上方插入行</button>
-                <button onClick={() => { editor.chain().focus().addRowAfter().run(); setShowTableInsertDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">下方插入行</button>
-                <button onClick={() => { editor.chain().focus().addColumnBefore().run(); setShowTableInsertDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">左侧插入列</button>
-                <button onClick={() => { editor.chain().focus().addColumnAfter().run(); setShowTableInsertDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">右侧插入列</button>
+              <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px]">
+                <button onClick={() => { runTableCommand('addRowBefore'); setShowTableInsertDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">上方插入行</button>
+                <button onClick={() => { runTableCommand('addRowAfter'); setShowTableInsertDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">下方插入行</button>
+                <button onClick={() => { runTableCommand('addColumnBefore'); setShowTableInsertDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">左侧插入列</button>
+                <button onClick={() => { runTableCommand('addColumnAfter'); setShowTableInsertDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">右侧插入列</button>
               </div>
             )}
           </div>
@@ -1013,9 +1048,9 @@ const EditorToolbar: React.FC<{
               <Minus className="w-4 h-4" />
             </ToolbarButton>
             {showDeleteDropdown && (
-              <div className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
-                <button onClick={() => { editor.chain().focus().deleteRow().run(); setShowDeleteDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">删除行</button>
-                <button onClick={() => { editor.chain().focus().deleteColumn().run(); setShowDeleteDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">删除列</button>
+              <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
+                <button onClick={() => { runTableCommand('deleteRow'); setShowDeleteDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">删除行</button>
+                <button onClick={() => { runTableCommand('deleteColumn'); setShowDeleteDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">删除列</button>
               </div>
             )}
           </div>
@@ -1026,9 +1061,9 @@ const EditorToolbar: React.FC<{
               <TableIcon className="w-4 h-4" />
             </ToolbarButton>
             {showCellOpDropdown && (
-              <div className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
-                <button onClick={() => { editor.chain().focus().mergeCells?.().run(); setShowCellOpDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">合并</button>
-                <button onClick={() => { editor.chain().focus().splitCell?.().run(); setShowCellOpDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">拆分</button>
+              <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
+                <button onClick={() => { runTableCommand('mergeCells'); setShowCellOpDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">合并</button>
+                <button onClick={() => { runTableCommand('splitCell'); setShowCellOpDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">拆分</button>
               </div>
             )}
           </div>
@@ -1039,13 +1074,13 @@ const EditorToolbar: React.FC<{
               <PaintBucket className="w-4 h-4" />
             </ToolbarButton>
             {showColorPicker && (
-              <div className="absolute top-full mt-1 right-0 bg-white rounded-xl shadow-2xl border border-gray-200 p-3 z-50 min-w-[200px]">
+              <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-1 right-0 bg-white rounded-xl shadow-2xl border border-gray-200 p-3 z-50 min-w-[200px]">
                 <p className="text-xs font-medium text-gray-700 mb-2">选择单元格底色</p>
                 <div className="grid grid-cols-6 gap-1.5">
                   {colors.map((color, i) => (
                     <button
                       key={i}
-                      onClick={() => handleCellColor(color)}
+                      onClick={() => applyCellColor(color)}
                       className="w-6 h-6 rounded border border-gray-200 hover:scale-110 hover:border-blue-500 transition-all"
                       style={{ backgroundColor: color }}
                     />
@@ -1065,7 +1100,7 @@ const EditorToolbar: React.FC<{
               </svg>
             </ToolbarButton>
             {showCellAlignDropdown && (
-              <div className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
+              <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[100px]">
                 <button onClick={() => { handleCellVerticalAlign('top'); setShowCellAlignDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">顶部对齐</button>
                 <button onClick={() => { handleCellVerticalAlign('center'); setShowCellAlignDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">垂直居中</button>
                 <button onClick={() => { handleCellVerticalAlign('bottom'); setShowCellAlignDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">底部对齐</button>
@@ -1085,7 +1120,7 @@ const EditorToolbar: React.FC<{
               <CirclePlus className="w-4 h-4" />
             </ToolbarButton>
             {showMindmapAddDropdown && (
-              <div className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px]">
+              <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px]">
                 <button onClick={() => { getActiveMindmapActions()?.addChild(); setShowMindmapAddDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">子节点</button>
                 <button onClick={() => { getActiveMindmapActions()?.addSibling(); setShowMindmapAddDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100">同级节点</button>
               </div>
@@ -1103,7 +1138,7 @@ const EditorToolbar: React.FC<{
               <Download className="w-4 h-4" />
             </ToolbarButton>
             {showMindmapExportDropdown && (
-              <div className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px]">
+              <div onMouseDown={preventToolbarMouseDown} className="absolute top-full mt-1 left-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[120px]">
                 <button onClick={() => { getActiveMindmapActions()?.exportImage(); setShowMindmapExportDropdown(false); }} className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-100 flex items-center gap-2">
                   <Image className="w-3 h-3" /> 导出为图片
                 </button>
@@ -1149,7 +1184,7 @@ const EditorToolbar: React.FC<{
 
 EditorToolbar.displayName = 'EditorToolbar';
 
-export const NoteEditor: React.FC = () => {
+const RichNoteEditor: React.FC = () => {
   const { user } = useAuth();
   const selectedNoteId = useNoteStore((state) => state.selectedNoteId);
   const updateNote = useNoteStore((state) => state.updateNote);
@@ -1183,10 +1218,22 @@ export const NoteEditor: React.FC = () => {
       id: note.id,
       title: note.title,
       type: note.type,
+      content: note.content,
+      parentId: note.parentId,
+      rootNotebookId: note.rootNotebookId,
       updatedAt: note.updatedAt,
       lockedBy: note.lockedBy,
       lockedByName: note.lockedByName,
     };
+  }));
+  const emailThreadMeta = useNoteStore(useShallow((state) => {
+    return selectEmailThreadMeta(state.notes, state.selectedNoteId);
+  }));
+  const orgPlanPageMeta = useNoteStore(useShallow((state) => {
+    return selectOrgPlanPageMeta(state.notes, state.selectedNoteId);
+  }));
+  const coursewarePageMeta = useNoteStore(useShallow((state) => {
+    return selectCoursewarePageMeta(state.notes, state.selectedNoteId);
   }));
 
   // 获取用户信息
@@ -1206,7 +1253,10 @@ export const NoteEditor: React.FC = () => {
   const isLocked = selectedNote?.lockedBy != null;
   const isLockedByMe = selectedNote?.lockedBy === userId;
   const isLockedByOther = selectedNote ? isNoteLockedByOther(selectedNote.id, userId) : false;
-  const isCollabPage = selectedNote?.type === 'page';
+  const isEmailThreadPage = !!emailThreadMeta;
+  const isOrgPlanPage = !!orgPlanPageMeta;
+  const isCoursewarePage = !!coursewarePageMeta;
+  const isCollabPage = selectedNote?.type === 'page' && !isEmailThreadPage && !isOrgPlanPage && !isCoursewarePage;
   const isCollabSessionActive = !!(isCollabPage && collabSession && collabSession.noteId === selectedNoteId);
   const isCollabReady = !!(isCollabSessionActive && collabInitialSynced);
   const collabCanWrite = !!(isCollabReady && collabSession?.permission === 'write');
@@ -1256,7 +1306,7 @@ export const NoteEditor: React.FC = () => {
   }, []);
 
   // page 内容统一走 CRDT；页面锁只决定本机是否可写，不阻止远端同步到当前页面。
-  const canEdit = isCollabPage ? collabCanWrite : (!isLocked || isLockedByMe);
+  const canEdit = isCoursewarePage ? false : (isOrgPlanPage ? true : (isCollabPage ? collabCanWrite : (!isLocked || isLockedByMe)));
   const sharedStatusCacheRef = useRef<Map<string, boolean>>(new Map());
 
   // 检查当前页面是否属于共享笔记本
@@ -1522,6 +1572,10 @@ export const NoteEditor: React.FC = () => {
     shouldRerenderOnTransaction: false,
     onUpdate: ({ editor }) => {
       if (selectedNoteId && !isLoadingRef.current) {
+        if (isEmailThreadPage || isOrgPlanPage || isCoursewarePage) {
+          return;
+        }
+
         if (isCollabPage) {
           scheduleWordCount(() => editor.getJSON());
           if (collabCanWrite) {
@@ -1567,7 +1621,7 @@ export const NoteEditor: React.FC = () => {
         }
       }
     },
-  }, [selectedNoteId, isCollabPage, isCollabSessionActive, collabSession?.documentName, collabCanWrite, touchNoteUpdatedAt, editorExtensions]);
+  }, [selectedNoteId, isEmailThreadPage, isOrgPlanPage, isCoursewarePage, isCollabPage, isCollabSessionActive, collabSession?.documentName, collabCanWrite, touchNoteUpdatedAt, editorExtensions]);
 
   // 保存 editor 实例引用
   editorRef.current = editor;
@@ -1616,22 +1670,6 @@ export const NoteEditor: React.FC = () => {
       const handleKeyDown = (event: KeyboardEvent) => {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
           event.preventDefault();
-          if (!selectedNoteId) return;
-
-          if (isCollabPage) {
-            if (collabStatus === 'error') {
-              toast.error(collabError || '同步暂不可用');
-            } else if (!isCollabReady || !collabSynced) {
-              toast('正在同步正文内容');
-            } else {
-              toast.success('正文已实时同步');
-            }
-            return;
-          }
-
-          useNoteStore.getState().saveNoteById(selectedNoteId)
-            .then(() => toast.success('已同步'))
-            .catch((error: any) => toast.error(error?.message || '同步失败'));
           return;
         }
 
@@ -1691,6 +1729,24 @@ export const NoteEditor: React.FC = () => {
   // 当切换笔记时，加载对应内容；协同页面只渲染快照预览，避免普通编辑器和 CRDT 编辑器二次接管。
   useEffect(() => {
     if (!editor || !selectedNoteId) return;
+
+    if (isEmailThreadPage || isCoursewarePage) {
+      setWordCount(0);
+      setCollabPreviewHtml('');
+      lastSavedContentRef.current = selectedNote?.content || '';
+      return () => {
+        if (autoSaveTimeoutRef.current) {
+          clearTimeout(autoSaveTimeoutRef.current);
+          autoSaveTimeoutRef.current = null;
+        }
+        if (wordCountTimeoutRef.current) {
+          clearTimeout(wordCountTimeoutRef.current);
+          wordCountTimeoutRef.current = null;
+        }
+        pendingContentRef.current = null;
+        markNoteAsEditingEnd(selectedNoteId);
+      };
+    }
 
     if (isCollabPage) {
       if (!isCollabReady) {
@@ -1793,7 +1849,7 @@ export const NoteEditor: React.FC = () => {
       // 切换离开时标记结束编辑
       markNoteAsEditingEnd(selectedNoteId);
     };
-  }, [selectedNoteId, editor, calculateWordCount, updateNote, isCollabPage, isCollabReady, previewExtensions]);
+  }, [selectedNoteId, editor, calculateWordCount, updateNote, isCollabPage, isCollabReady, isEmailThreadPage, isCoursewarePage, selectedNote?.content, previewExtensions]);
 
   const handleCellColor = useCallback((color: string) => {
     if (editor) {
@@ -1810,8 +1866,9 @@ export const NoteEditor: React.FC = () => {
   }, [editor]);
 
   const handleMindmapClick = () => {
-    if (editor) {
-      (editor.chain().focus() as any).insertMindmap().run();
+    const targetEditor = getActiveInternalEditor() || editor;
+    if (targetEditor) {
+      (targetEditor.chain().focus() as any).insertMindmap().run();
       toast.success('思维导图已添加');
     }
   };
@@ -1833,6 +1890,8 @@ export const NoteEditor: React.FC = () => {
       return checkNotebookBaidu(noteId);
     } else if (provider === 'qiniu') {
       return checkNotebookQiniu(noteId);
+    } else if (provider === 'anyshare') {
+      return checkNotebookAnyShare(noteId);
     }
     return { bound: false, isOwner: false, access: 'none' };
   }, []);
@@ -1842,7 +1901,7 @@ export const NoteEditor: React.FC = () => {
     if (!user || !selectedNote?.id) return;
     const cp = await getNoteCloudProvider(selectedNote.id);
     const checkResult = await checkCloudProvider(selectedNote.id, cp);
-    const providerName = cp === 'baidu' ? '百度网盘' : cp === 'qiniu' ? '七牛云' : 'OneDrive';
+    const providerName = cp ? recordingCloudLabels[cp] : 'OneDrive';
     if (!checkResult.bound) {
       if (checkResult.isOwner) {
         toast.error(`请先绑定 ${providerName} 账号`);
@@ -1855,8 +1914,9 @@ export const NoteEditor: React.FC = () => {
       toast.error('只有查看权限，无法上传文件');
       return;
     }
-    if (editor) {
-      editor.chain().focus().insertFolderBlock({ noteId: selectedNote.id, folderName: '附件文件夹', storageProvider: cp || 'onedrive' }).run();
+    const targetEditor = getActiveInternalEditor() || editor;
+    if (targetEditor) {
+      targetEditor.chain().focus().insertFolderBlock({ noteId: selectedNote.id, folderName: '附件文件夹', storageProvider: cp || 'onedrive' }).run();
     }
   };
 
@@ -1902,8 +1962,9 @@ export const NoteEditor: React.FC = () => {
       toast('当前大模型不支持语音转写，录音仍可正常保存', { duration: 5000 });
     }
 
-    if (editor) {
-      editor.chain().focus().insertAudioBlock({ noteId: selectedNote.id, uploadEnabled: true, transcriptionEnabled, storageProvider }).run();
+    const targetEditor = getActiveInternalEditor() || editor;
+    if (targetEditor) {
+      targetEditor.chain().focus().insertAudioBlock({ noteId: selectedNote.id, uploadEnabled: true, transcriptionEnabled, storageProvider }).run();
     }
   };
 
@@ -1957,17 +2018,19 @@ export const NoteEditor: React.FC = () => {
             </button>
           )}
         </div>
-        <EditorToolbar
-          editor={editor}
-          onMindmapClick={handleMindmapClick}
-          onAttachmentClick={handleAttachmentClick}
-          onRecorderClick={handleRecorderClick}
-          showColorPicker={showColorPicker}
-          setShowColorPicker={setShowColorPicker}
-          handleCellColor={handleCellColor}
-          disabled={!canEdit}
-          wordCount={wordCount}
-        />
+        {!isEmailThreadPage && !isCoursewarePage && (
+          <EditorToolbar
+            editor={editor}
+            onMindmapClick={handleMindmapClick}
+            onAttachmentClick={handleAttachmentClick}
+            onRecorderClick={handleRecorderClick}
+            showColorPicker={showColorPicker}
+            setShowColorPicker={setShowColorPicker}
+            handleCellColor={handleCellColor}
+            disabled={!canEdit}
+            wordCount={wordCount}
+          />
+        )}
       </div>
 
       {/* 底部信息栏 - 放在编辑区上方 */}
@@ -1975,9 +2038,15 @@ export const NoteEditor: React.FC = () => {
         <div className="flex items-center gap-3 pl-4">
           <span>最后修改: {displayedUpdatedAt ? new Date(displayedUpdatedAt).toLocaleString('zh-CN') : '-'}</span>
           <span className="text-gray-300">|</span>
-          <span>字数: {wordCount.toLocaleString()}</span>
+          <span>{isEmailThreadPage ? '邮件会话' : isOrgPlanPage ? '组织周计划' : isCoursewarePage ? '知识库课件' : `字数: ${wordCount.toLocaleString()}`}</span>
         </div>
-        {isCollabPage ? (
+        {isEmailThreadPage ? (
+          <span className="text-gray-400">邮箱同步</span>
+        ) : isOrgPlanPage ? (
+          <span className="text-gray-400">页签独立编辑</span>
+        ) : isCoursewarePage ? (
+          <span className="text-gray-400">只读浏览</span>
+        ) : isCollabPage ? (
           <span className={collabStatus === 'error' ? 'text-red-500' : 'text-gray-400'}>{collabStatusText}</span>
         ) : (
           <span className="text-gray-400">{canEdit ? '自动保存' : '只读'}</span>
@@ -2025,13 +2094,26 @@ export const NoteEditor: React.FC = () => {
         className="flex-1 min-h-0 pl-9 px-5 pt-6 overflow-auto editor-scroll"
         style={{ maxWidth: '100%', boxSizing: 'border-box' }}
       >
-        {showCollabPreview && (
+        {emailThreadMeta ? (
+          <div className="-ml-9 -mx-5 -mt-6 h-full">
+            <EmailThreadView
+              accountId={emailThreadMeta.accountId}
+              otherAddr={emailThreadMeta.otherAddr}
+              otherName={emailThreadMeta.otherName}
+              myEmail={emailThreadMeta.myEmail}
+            />
+          </div>
+        ) : isCoursewarePage ? (
+          <div className="-ml-9 -mx-5 -mt-6 h-full">
+            <CoursewarePageView />
+          </div>
+        ) : showCollabPreview && (
           <div
             className="ProseMirror outline-none"
             dangerouslySetInnerHTML={{ __html: collabPreviewHtml || '<p></p>' }}
           />
         )}
-        <div className={showCollabPreview ? 'hidden' : ''}>
+        <div className={showCollabPreview || isEmailThreadPage || isCoursewarePage ? 'hidden' : ''}>
           <EditorContent editor={editor} />
         </div>
       </div>
@@ -2096,4 +2178,63 @@ export const NoteEditor: React.FC = () => {
 
     </div>
   );
+};
+
+const EmailThreadStandaloneEditor: React.FC<{
+  selectedNote: {
+    title: string;
+    updatedAt?: string | null;
+  };
+  emailThreadMeta: EmailThreadMeta;
+}> = ({ selectedNote, emailThreadMeta }) => {
+  return (
+    <div className="flex-1 flex flex-col bg-white relative max-w-full overflow-hidden h-full">
+      <div className="px-4 py-2 flex items-center justify-between gap-3 border-b border-gray-100 bg-white overflow-visible shrink-0 z-50 relative">
+        <div className="flex items-center gap-2 pl-4 min-w-0">
+          <h1 className="text-lg font-bold text-gray-800 truncate">{selectedNote.title}</h1>
+        </div>
+      </div>
+
+      <div className="px-4 py-1.5 text-xs text-gray-400 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3 pl-4">
+          <span>最后修改: {selectedNote.updatedAt ? new Date(selectedNote.updatedAt).toLocaleString('zh-CN') : '-'}</span>
+          <span className="text-gray-300">|</span>
+          <span>邮件会话</span>
+        </div>
+        <span className="text-gray-400">邮箱同步</span>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <EmailThreadView
+          accountId={emailThreadMeta.accountId}
+          otherAddr={emailThreadMeta.otherAddr}
+          otherName={emailThreadMeta.otherName}
+          myEmail={emailThreadMeta.myEmail}
+        />
+      </div>
+
+      <div className="px-4 py-2 text-xs text-gray-400 text-center border-t border-gray-100 shrink-0">
+        献给热爱知识管理的你——彬
+      </div>
+    </div>
+  );
+};
+
+export const NoteEditor: React.FC = () => {
+  const selectedNote = useNoteStore(useShallow((state) => {
+    const note = state.notes.find((n) => n.id === state.selectedNoteId);
+    return note ? {
+      id: note.id,
+      title: note.title,
+      type: note.type,
+      updatedAt: note.updatedAt,
+    } : null;
+  }));
+  const emailThreadMeta = useNoteStore(useShallow((state) => selectEmailThreadMeta(state.notes, state.selectedNoteId)));
+
+  if (selectedNote && emailThreadMeta) {
+    return <EmailThreadStandaloneEditor selectedNote={selectedNote} emailThreadMeta={emailThreadMeta} />;
+  }
+
+  return <RichNoteEditor />;
 };

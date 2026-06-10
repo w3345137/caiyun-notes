@@ -60,6 +60,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: .
           tauriScript: npx tauri
@@ -94,9 +95,10 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")"
-          BASE_URL="https://notes.binapp.top/updates"
+          GITEE_BASE_URL="https://gitee.com/binbin3344/cloudnote/raw/master/updates"
+          SERVER_BASE_URL="https://notes.binapp.top/updates"
 
-          export TAG VERSION BASE_URL
+          export TAG VERSION GITEE_BASE_URL SERVER_BASE_URL
 
           mkdir -p staged/windows-x86_64 staged/darwin-x86_64 staged/darwin-aarch64 staged/linux-x86_64
 
@@ -109,7 +111,8 @@ jobs:
 
           version = os.environ['VERSION']
           tag = os.environ['TAG']
-          base_url = os.environ['BASE_URL']
+          gitee_base_url = os.environ['GITEE_BASE_URL']
+          server_base_url = os.environ['SERVER_BASE_URL']
 
           downloads = list(glob.glob('downloads/*'))
 
@@ -151,8 +154,9 @@ jobs:
                       assigned.add(f)
                       print(f"[{dest}] (fallback) {fn}")
 
-          # 构建 latest.json
-          data = {
+          # 构建 manifest 模板。Gitee 是第一更新源，服务器是备用源；
+          # 两个 latest 里的包 URL 必须分别指向自己的源。
+          manifest_base = {
               'version': version,
               'notes': f'彩云笔记 {tag} 更新',
               'pub_date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -193,18 +197,39 @@ jobs:
                   if os.path.exists(sig_path):
                       with open(sig_path, 'r') as sf:
                           sig_content = sf.read().strip()
-                  data['platforms'][pid] = {
-                      'url': f'{base_url}/{pid}/{pkg_file}',
+                  manifest_base['platforms'][pid] = {
+                      'package': pkg_file,
                       'signature': sig_content,
                   }
                   print(f"[{pid}] pkg={pkg_file} sig={'YES' if sig_content else 'MISSING'}")
 
-          with open('latest.json', 'w', encoding='utf-8') as f:
-              json.dump(data, f, indent=2, ensure_ascii=False)
-          print("=== Generated latest.json ===")
-          print(json.dumps(data, indent=2, ensure_ascii=False))
+          def build_manifest(base_url):
+              manifest = {
+                  'version': manifest_base['version'],
+                  'notes': manifest_base['notes'],
+                  'pub_date': manifest_base['pub_date'],
+                  'platforms': {},
+              }
+              for pid, payload in manifest_base['platforms'].items():
+                  manifest['platforms'][pid] = {
+                      'url': f"{base_url}/{pid}/{payload['package']}",
+                      'signature': payload['signature'],
+                  }
+              return manifest
 
-          # 复制 latest.json 到各平台子目录
+          gitee_manifest = build_manifest(gitee_base_url)
+          server_manifest = build_manifest(server_base_url)
+
+          with open('latest.json', 'w', encoding='utf-8') as f:
+              json.dump(gitee_manifest, f, indent=2, ensure_ascii=False)
+          with open('latest-server.json', 'w', encoding='utf-8') as f:
+              json.dump(server_manifest, f, indent=2, ensure_ascii=False)
+          print("=== Generated Gitee latest.json ===")
+          print(json.dumps(gitee_manifest, indent=2, ensure_ascii=False))
+          print("=== Generated server latest-server.json ===")
+          print(json.dumps(server_manifest, indent=2, ensure_ascii=False))
+
+          # Gitee updates 目录内的子目录也保留第一源 latest.json。
           for staged_dir in platform_ids:
               shutil.copy2('latest.json', staged_dir)
           PYEOF
@@ -212,7 +237,36 @@ jobs:
       - name: Upload latest.json to GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.ref_name }} latest.json --repo ${{ github.repository }} --clobber
+        run: gh release upload ${{ github.ref_name }} latest.json latest-server.json --repo ${{ github.repository }} --clobber
+
+      - name: Stage Gitee update files
+        run: |
+          rm -rf updates
+          mkdir -p updates
+          cp -R staged/* updates/
+          cp -f latest.json updates/latest.json
+          echo "=== Gitee updates payload ==="
+          find updates -type f | sort
+
+      - name: Push update files to Gitee
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -z "${GITEE_USERNAME:-}" ] || [ -z "${GITEE_TOKEN:-}" ]; then
+            echo "::warning::GITEE_USERNAME/GITEE_TOKEN secrets are not configured; skipped publishing updates to Gitee."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add updates
+          if git diff --cached --quiet; then
+            echo "No Gitee update file changes to publish."
+            exit 0
+          fi
+          git commit -m "chore: publish app updates ${TAG_NAME}"
+          git push "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/binbin3344/cloudnote.git" HEAD:master
 
       - name: Upload platform files to server
         uses: appleboy/scp-action@v0.1.7
@@ -230,7 +284,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "latest.json"
+          source: "latest-server.json"
           target: "/cloudnotes/updates-tmp"
           strip_components: 0
 
@@ -245,8 +299,8 @@ jobs:
             for dir in /cloudnotes/updates-tmp/*/; do
               [ -d "$dir" ] && cp -r "$dir" /cloudnotes/updates/
             done
-            # 把根 latest.json 放到正式目录
-            cp -f /cloudnotes/updates-tmp/latest.json /cloudnotes/updates/latest.json 2>/dev/null || true
+            # 把服务器备用源 latest-server.json 放到正式目录的 latest.json
+            cp -f /cloudnotes/updates-tmp/latest-server.json /cloudnotes/updates/latest.json 2>/dev/null || true
             rm -rf /cloudnotes/updates-tmp
             echo "=== Updates directory after deploy ==="
             find /cloudnotes/updates -type f | sort
