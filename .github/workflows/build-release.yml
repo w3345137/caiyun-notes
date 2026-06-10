@@ -258,6 +258,11 @@ jobs:
             echo "::warning::GITEE_USERNAME/GITEE_TOKEN secrets are not configured; skipped publishing updates to Gitee."
             exit 0
           fi
+          rm -rf gitee-publish
+          git clone --depth 1 "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/binbin3344/cloudnote.git" gitee-publish
+          rm -rf gitee-publish/updates
+          cp -R updates gitee-publish/updates
+          cd gitee-publish
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add updates
@@ -266,7 +271,7 @@ jobs:
             exit 0
           fi
           git commit -m "chore: publish app updates ${TAG_NAME}"
-          git push "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/binbin3344/cloudnote.git" HEAD:master
+          git push origin HEAD:master
 
       - name: Upload platform files to server
         uses: appleboy/scp-action@v0.1.7

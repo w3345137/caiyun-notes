@@ -50,7 +50,12 @@ assert.match(
 );
 assert.match(
   releaseWorkflow,
-  /git push "https:\/\/\$\{GITEE_USERNAME\}:\$\{GITEE_TOKEN\}@gitee\.com\/binbin3344\/cloudnote\.git" HEAD:master/,
+  /git clone --depth 1 "https:\/\/\$\{GITEE_USERNAME\}:\$\{GITEE_TOKEN\}@gitee\.com\/binbin3344\/cloudnote\.git" gitee-publish/,
+  'Release workflow should clone Gitee master before publishing updates to avoid non-fast-forward failures',
+);
+assert.match(
+  releaseWorkflow,
+  /git push origin HEAD:master/,
   'Release workflow should push the updates directory to the Gitee master branch used by the updater endpoint',
 );
 
