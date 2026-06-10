@@ -16,6 +16,9 @@ try {
 
   await page.goto('http://127.0.0.1:5198/tests/app-update-modal-fixture.html?phase=available');
   await page.getByRole('dialog', { name: '发现新版本' }).waitFor();
+  let bodyText = await page.locator('body').innerText();
+  assert.match(bodyText, /p7\s*→\s*p8/, 'available state should show the app release upgrade path');
+  assert.match(bodyText, /客户端版本 v2\.5\.0\s*→\s*v2\.5\.1/, 'available state should keep semver as secondary detail');
   await assert.rejects(
     page.getByRole('progressbar').waitFor({ timeout: 500 }),
     /Timeout/,
@@ -38,8 +41,10 @@ try {
   const progress = page.locator('[role="progressbar"]');
   await progress.waitFor({ state: 'attached' });
   assert.equal(await progress.getAttribute('aria-valuenow'), '42');
-  assert.match(await page.locator('body').innerText(), /42%/);
-  assert.ok((await page.locator('body').innerText()).includes('420 B / 1000 B'));
+  bodyText = await page.locator('body').innerText();
+  assert.match(bodyText, /p7\s*→\s*p8/, 'downloading state should keep the app release upgrade path visible');
+  assert.match(bodyText, /42%/);
+  assert.ok(bodyText.includes('420 B / 1000 B'));
   assert.equal(await page.getByRole('button', { name: '立即更新' }).count(), 0);
   assert.equal(await page.getByRole('button', { name: '稍后' }).count(), 0);
 

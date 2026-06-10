@@ -11,6 +11,30 @@ interface AppUpdateModalProps {
 const isWorkingPhase = (phase: AppUpdateState['phase']) =>
   phase === 'downloading' || phase === 'installing' || phase === 'relaunching';
 
+const APP_RELEASE_BY_VERSION: Record<string, string> = {
+  '2.5.0': 'p7',
+  '2.5.1': 'p8',
+};
+
+function normalizeVersion(version?: string) {
+  return version?.replace(/^v/i, '').trim();
+}
+
+function releaseLabelFromBody(body?: string) {
+  const match = body?.match(/\bp\d+(?:\.\d+)?\b/i);
+  return match?.[0]?.toLowerCase();
+}
+
+function releaseLabelFromVersion(version?: string) {
+  const normalized = normalizeVersion(version);
+  return normalized ? APP_RELEASE_BY_VERSION[normalized] : undefined;
+}
+
+function formatVersion(version?: string) {
+  const normalized = normalizeVersion(version);
+  return normalized ? `v${normalized}` : undefined;
+}
+
 export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   state,
   onStartUpdate,
@@ -22,8 +46,18 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   const isWorking = isWorkingPhase(state.phase);
   const canDismiss = !isWorking;
   const progressWidth = state.progressPercent === null ? 34 : Math.max(4, state.progressPercent);
-  const versionText = update?.version ? `v${update.version}` : '新版本';
-  const currentVersionText = update?.currentVersion ? `当前版本 v${update.currentVersion}` : '当前版本';
+  const nextReleaseLabel = releaseLabelFromBody(update?.body) || releaseLabelFromVersion(update?.version);
+  const currentReleaseLabel = releaseLabelFromVersion(update?.currentVersion);
+  const nextVersionText = formatVersion(update?.version);
+  const currentVersionText = formatVersion(update?.currentVersion);
+  const releaseTitle = currentReleaseLabel && nextReleaseLabel
+    ? `${currentReleaseLabel} → ${nextReleaseLabel}`
+    : nextReleaseLabel || nextVersionText || '新版本';
+  const versionDetail = currentVersionText && nextVersionText
+    ? `客户端版本 ${currentVersionText} → ${nextVersionText}`
+    : nextVersionText
+      ? `客户端版本 ${nextVersionText}`
+      : '客户端版本';
   const bytesText = state.totalBytes
     ? `${formatBytes(state.downloadedBytes)} / ${formatBytes(state.totalBytes)}`
     : state.downloadedBytes > 0
@@ -75,9 +109,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               {phaseTitle}
             </h2>
             <p className="mt-1 text-sm leading-5 text-slate-500">
-              {versionText}
+              <span className="font-semibold text-slate-700">{releaseTitle}</span>
               <span className="mx-2 text-slate-300">|</span>
-              {currentVersionText}
+              {versionDetail}
             </p>
           </div>
         </div>

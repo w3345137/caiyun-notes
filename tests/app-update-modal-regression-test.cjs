@@ -29,6 +29,18 @@ assert.match(
 
 assert.match(
   modalSource,
+  /releaseTitle/,
+  'update modal should display the desktop app release label such as p7 to p8',
+);
+
+assert.match(
+  modalSource,
+  /versionDetail/,
+  'update modal should keep semver details secondary to the app release label',
+);
+
+assert.match(
+  modalSource,
   /稍后/,
   'update modal should let users postpone an available update',
 );
