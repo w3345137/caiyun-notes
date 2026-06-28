@@ -1,0 +1,325 @@
+name: Build & Release NotesApp
+
+on:
+  push:
+    tags:
+      - 'p*'  # p1, p2, p3... APP 版本标签
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install shell dependencies
+        run: npm install
+
+      - name: Build Tauri app (signed)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: .
+          tauriScript: npx tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: '彩云笔记 ${{ github.ref_name }}'
+          releaseBody: 'See the assets below to download and install this version.'
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+  # 发布后上传更新文件到服务器
+  deploy-updates:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p downloads
+          # 直接按 tag 下载 release assets
+          cd downloads
+          gh release download ${{ github.ref_name }} --repo ${{ github.repository }} --clobber
+          cd ..
+          echo "=== Downloaded files ==="
+          ls -la downloads/ || echo "No files downloaded"
+
+      - name: Generate latest.json & organize files
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")"
+          GITEE_BASE_URL="https://gitee.com/binbin3344/cloudnote/raw/master/updates"
+          SERVER_BASE_URL="https://notes.binapp.top/updates"
+
+          export TAG VERSION GITEE_BASE_URL SERVER_BASE_URL
+
+          mkdir -p staged/windows-x86_64 staged/darwin-x86_64 staged/darwin-aarch64 staged/linux-x86_64
+
+          echo "=== Downloads contents ==="
+          ls -la downloads/ || true
+
+          # 使用 Python 完成所有文件操作，避免 shell glob 对 Unicode 文件名的处理问题
+          python3 << 'PYEOF'
+          import json, datetime, os, shutil, glob
+
+          version = os.environ['VERSION']
+          tag = os.environ['TAG']
+          gitee_base_url = os.environ['GITEE_BASE_URL']
+          server_base_url = os.environ['SERVER_BASE_URL']
+
+          downloads = list(glob.glob('downloads/*'))
+
+          # 平台分发规则：(目标目录, 匹配关键词列表)
+          # 文件名同时检查 .sig 和安装包
+          platform_rules = [
+              ('staged/windows-x86_64', ['x64-setup.nsis.zip', 'x64_en-us.msi', 'x64-setup.nsis.zip.sig', 'x64_en-us.msi.sig', 'x64-setup.exe', 'x64_en-us.msi']),
+              ('staged/darwin-x86_64',  ['x86_64.app.tar.gz', 'x64.app.tar.gz', 'x86_64.dmg', 'x64.dmg']),
+              ('staged/darwin-aarch64', ['aarch64.app.tar.gz', 'aarch64.dmg']),
+              ('staged/linux-x86_64',   ['amd64.AppImage.tar.gz', 'amd64.deb', 'amd64.AppImage.tar.gz.sig', 'amd64.deb.sig']),
+          ]
+          # macOS x64 fallback: .app.tar.gz 或 .dmg 且不含 aarch64
+          platform_fallbacks = [
+              ('staged/darwin-x86_64', lambda f: ('.app.tar.gz' in f or '.dmg' in f) and 'aarch64' not in f),
+          ]
+
+          platform_files = {r[0]: [] for r in platform_rules}
+          assigned = set()
+
+          for f in downloads:
+              fn = os.path.basename(f)
+              for dest, keywords in platform_rules:
+                  if any(k in fn for k in keywords):
+                      shutil.copy2(f, dest)
+                      platform_files[dest].append(f)
+                      assigned.add(f)
+                      print(f"[{dest}] {fn}")
+                      break
+
+          # fallback for darwin-x86_64
+          for f in downloads:
+              if f in assigned:
+                  continue
+              fn = os.path.basename(f)
+              for dest, pred in platform_fallbacks:
+                  if pred(fn):
+                      shutil.copy2(f, dest)
+                      platform_files[dest].append(f)
+                      assigned.add(f)
+                      print(f"[{dest}] (fallback) {fn}")
+
+          # 构建 manifest 模板。Gitee 是第一更新源，服务器是备用源；
+          # 两个 latest 里的包 URL 必须分别指向自己的源。
+          manifest_base = {
+              'version': version,
+              'notes': f'彩云笔记 {tag} 更新',
+              'pub_date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'platforms': {}
+          }
+
+          platform_ids = {
+              'staged/windows-x86_64': 'windows-x86_64',
+              'staged/darwin-x86_64': 'darwin-x86_64',
+              'staged/darwin-aarch64': 'darwin-aarch64',
+              'staged/linux-x86_64': 'linux-x86_64',
+          }
+
+          update_preferences = {
+              'windows-x86_64': ['.exe', '.msi', '.zip'],
+              'darwin-x86_64': ['.app.tar.gz'],
+              'darwin-aarch64': ['.app.tar.gz'],
+              'linux-x86_64': ['.deb', '.AppImage'],
+          }
+
+          def pick_by_preference(files, preferences):
+              for suffix in preferences:
+                  matches = sorted(f for f in files if f.endswith(suffix))
+                  if matches:
+                      return matches[0]
+              return sorted(files)[0] if files else None
+
+          for staged_dir, pid in platform_ids.items():
+              files_in_dir = os.listdir(staged_dir)
+              # 找 updater 安装包（排除 .sig 和 .json）。macOS 必须使用 .app.tar.gz，
+              # DMG 仅作为手动安装包，否则签名文件会与 updater URL 不匹配。
+              pkgs = [x for x in files_in_dir if not x.endswith('.sig') and not x.endswith('.json')]
+              pkg_file = pick_by_preference(pkgs, update_preferences.get(pid, []))
+              if pkg_file:
+                  sig_file = f'{pkg_file}.sig'
+                  sig_content = ''
+                  sig_path = os.path.join(staged_dir, sig_file)
+                  if os.path.exists(sig_path):
+                      with open(sig_path, 'r') as sf:
+                          sig_content = sf.read().strip()
+                  manifest_base['platforms'][pid] = {
+                      'package': pkg_file,
+                      'signature': sig_content,
+                  }
+                  print(f"[{pid}] pkg={pkg_file} sig={'YES' if sig_content else 'MISSING'}")
+
+          def build_manifest(base_url):
+              manifest = {
+                  'version': manifest_base['version'],
+                  'notes': manifest_base['notes'],
+                  'pub_date': manifest_base['pub_date'],
+                  'platforms': {},
+              }
+              for pid, payload in manifest_base['platforms'].items():
+                  manifest['platforms'][pid] = {
+                      'url': f"{base_url}/{pid}/{payload['package']}",
+                      'signature': payload['signature'],
+                  }
+              return manifest
+
+          gitee_manifest = build_manifest(gitee_base_url)
+          server_manifest = build_manifest(server_base_url)
+
+          with open('latest.json', 'w', encoding='utf-8') as f:
+              json.dump(gitee_manifest, f, indent=2, ensure_ascii=False)
+          with open('latest-server.json', 'w', encoding='utf-8') as f:
+              json.dump(server_manifest, f, indent=2, ensure_ascii=False)
+          print("=== Generated Gitee latest.json ===")
+          print(json.dumps(gitee_manifest, indent=2, ensure_ascii=False))
+          print("=== Generated server latest-server.json ===")
+          print(json.dumps(server_manifest, indent=2, ensure_ascii=False))
+
+          # Gitee updates 目录内的子目录也保留第一源 latest.json。
+          for staged_dir in platform_ids:
+              shutil.copy2('latest.json', staged_dir)
+          PYEOF
+
+      - name: Upload latest.json to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.ref_name }} latest.json latest-server.json --repo ${{ github.repository }} --clobber
+
+      - name: Stage Gitee update files
+        run: |
+          rm -rf updates
+          mkdir -p updates
+          cp -R staged/* updates/
+          cp -f latest.json updates/latest.json
+          echo "=== Gitee updates payload ==="
+          find updates -type f | sort
+
+      - name: Push update files to Gitee
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -z "${GITEE_USERNAME:-}" ] || [ -z "${GITEE_TOKEN:-}" ]; then
+            echo "::warning::GITEE_USERNAME/GITEE_TOKEN secrets are not configured; skipped publishing updates to Gitee."
+            exit 0
+          fi
+          rm -rf gitee-publish
+          git clone --depth 1 "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/binbin3344/cloudnote.git" gitee-publish
+          rm -rf gitee-publish/updates
+          cp -R updates gitee-publish/updates
+          cd gitee-publish
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add updates
+          if git diff --cached --quiet; then
+            echo "No Gitee update file changes to publish."
+            exit 0
+          fi
+          git commit -m "chore: publish app updates ${TAG_NAME}"
+          git push origin HEAD:master
+
+      - name: Upload platform files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "staged/**/*"
+          target: "/cloudnotes/updates-tmp"
+          strip_components: 1
+
+      - name: Upload latest.json to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "latest-server.json"
+          target: "/cloudnotes/updates-tmp"
+          strip_components: 0
+
+      - name: Move updates into place
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # 把各平台文件合并到正式目录
+            for dir in /cloudnotes/updates-tmp/*/; do
+              [ -d "$dir" ] && cp -r "$dir" /cloudnotes/updates/
+            done
+            # 把服务器备用源 latest-server.json 放到正式目录的 latest.json
+            cp -f /cloudnotes/updates-tmp/latest-server.json /cloudnotes/updates/latest.json 2>/dev/null || true
+            rm -rf /cloudnotes/updates-tmp
+            echo "=== Updates directory after deploy ==="
+            find /cloudnotes/updates -type f | sort
+
+      - name: Verify updates on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "=== Root latest.json ==="
+            cat /cloudnotes/updates/latest.json 2>/dev/null && echo "" || echo "CRITICAL: root latest.json MISSING"
+            echo "=== All update files ==="
+            find /cloudnotes/updates -type f | sort
+            echo ""
+            echo "=== Endpoint test ==="
+            RESP=$(curl -s -o /dev/null -w "%{http_code}" https://notes.binapp.top/updates/latest.json)
+            echo "HTTP Status: ${RESP}"
+            curl -s https://notes.binapp.top/updates/latest.json | python3 -m json.tool 2>/dev/null || echo "Invalid JSON"

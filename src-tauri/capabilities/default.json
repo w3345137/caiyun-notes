@@ -1,0 +1,42 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "fs:default",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-read-dir",
+    "fs:allow-remove",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPLOCALDATA/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$APPCONFIG/**" }
+      ]
+    },
+    "updater:default",
+    "store:default",
+    "dialog:default",
+    "process:default",
+    "process:allow-restart",
+    "process:allow-exit",
+    "clipboard-manager:default",
+    "clipboard-manager:allow-clear",
+    "clipboard-manager:allow-read-image",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-html",
+    "clipboard-manager:allow-write-image",
+    "clipboard-manager:allow-write-text",
+    "notification:default",
+    "shell:default",
+    "shell:allow-open"
+  ]
+}
