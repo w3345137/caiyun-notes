@@ -13,7 +13,7 @@ https://notes.binapp.top
 ## 版本边界
 
 - 服务/网页版本：显示在 `https://notes.binapp.top`，例如 `v2.7`。
-- 桌面客户端版本：由 `src-tauri/tauri.conf.json` 管理，例如 `p8 / 2.5.1`。
+- 桌面客户端版本：由 `src-tauri/tauri.conf.json` 管理，例如 `p9（内部 SemVer 为 9.0.0，仅用于 Tauri updater 比较）`。
 
 只有 Tauri 插件、权限、CSP、窗口、更新能力或加载地址变化时，才需要发布新的桌面客户端版本。
 

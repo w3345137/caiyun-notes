@@ -52,6 +52,9 @@ jobs:
       - name: Install shell dependencies
         run: npm install
 
+      - name: Validate Windows icon
+        run: node tests/tauri-windows-icon-regression-test.cjs
+
       - name: Build Tauri app (signed)
         uses: tauri-apps/tauri-action@v0
         env:
