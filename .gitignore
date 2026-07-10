@@ -1,5 +1,4 @@
 node_modules/
 src-tauri/target/
-dist/assets/
 .DS_Store
 *.log

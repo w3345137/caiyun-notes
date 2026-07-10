@@ -1,22 +1,26 @@
 # 彩云笔记桌面客户端壳
 
-这个仓库只包含彩云笔记的 Tauri 桌面客户端壳，用于构建 macOS、Windows 和 Linux 安装包。
-
-真实业务系统加载自：
-
-```text
-https://notes.binapp.top
-```
-
-本仓库不包含网页前端、后端服务、数据库脚本、江苏公司专属逻辑、HCM 集成或任何私有业务代码。
+这个公开仓库只包含彩云笔记 p10 桌面 App 的 Tauri 壳、经过生产构建的内置前端资源和发布工作流，不包含 TypeScript 源码、后端、数据库脚本、江苏公司专属逻辑、HCM 集成或任何生产凭据。
 
 ## 版本边界
 
-- 服务/网页版本：显示在 `https://notes.binapp.top`，例如 `v2.7`。
-- 桌面客户端版本：由 `src-tauri/tauri.conf.json` 管理，例如 `p8 / 2.5.1`。
+- Web / 服务版本：`v2.8`
+- 桌面发布标签：`p10`
+- Tauri SemVer：`10.0.0`
 
-只有 Tauri 插件、权限、CSP、窗口、更新能力或加载地址变化时，才需要发布新的桌面客户端版本。
+p10 改为内置前端入口。App 启动时先从本机加载 UI 和缓存，再通过 HTTPS / WSS 连接 `https://notes.binapp.top`；远程网页不再获得 Tauri 文件、Store、剪贴板或 updater 权限。
 
-## 发布
+## 发布流程
 
-推送 `p*` 标签后，GitHub Actions 会构建三端安装包、生成 Tauri updater 所需签名产物和 `latest.json`，并同步到 Gitee 与 `https://notes.binapp.top/updates/`。
+发布分为两个独立阶段：
+
+1. `build-release.yml` 构建 Windows、macOS x64 / arm64 和 Linux 签名候选，只创建 draft release，并输出候选哈希报告。
+2. 人工核对安装包、updater 签名和 SHA-256 后，使用 `promote-release.yml` 将版本文件同步到 Gitee 与服务器，再原子更新 `latest.json`，最后发布 GitHub release。
+
+禁止直接手工改写 `updates/latest.json`，也不能用本地 ad-hoc 签名包替代 GitHub Actions 的正式候选。
+
+## 隐私边界
+
+- `dist/` 只包含压缩后的通用前端运行资源及 `app-dist-manifest.json`。
+- `src-tauri/` 只包含桌面壳源码、图标、权限与 updater 配置。
+- 业务后端、私有扩展、组织数据和密钥不进入本仓库。

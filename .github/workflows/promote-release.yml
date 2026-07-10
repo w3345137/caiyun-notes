@@ -1,0 +1,170 @@
+name: Promote Qualified Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Qualified draft tag
+        required: true
+        type: string
+      confirmation:
+        description: Type PROMOTE
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: inputs.confirmation == 'PROMOTE'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Require a draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: test "$(gh release view '${{ inputs.tag }}' --json isDraft --jq .isDraft)" = true
+      - name: Download and verify candidate hashes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir candidate
+          gh release download "${{ inputs.tag }}" --dir candidate --clobber
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('candidate')
+          report = json.load(open(root / 'candidate-report.json'))
+          for name, expected_sha256 in report['expected_sha256'].items():
+              actual = hashlib.sha256((root / name).read_bytes()).hexdigest()
+              if actual != expected_sha256: raise SystemExit(f'hash mismatch: {name}')
+          for item in report['updater'].values():
+              if not (root / item['signatureFile']).read_text().strip(): raise SystemExit('empty updater signature')
+          PY
+      - name: Stage versioned update payload and manifests
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import datetime, json, os, pathlib, shutil
+          candidate = pathlib.Path('candidate')
+          report = json.load(open(candidate / 'candidate-report.json'))
+          version = report['version']
+          version_root = pathlib.Path('staged/updates') / version
+          for platform, item in report['updater'].items():
+              target = version_root / platform
+              target.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(candidate / item['package'], target / item['publishName'])
+              shutil.copy2(candidate / item['signatureFile'], target / f"{item['publishName']}.sig")
+          for platform, item in report['manual'].items():
+              target = version_root / platform
+              target.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(candidate / item['package'], target / item['publishName'])
+          def manifest(base):
+              return {'version': version, 'notes': f"彩云笔记 {os.environ['TAG']} 更新", 'pub_date': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'platforms': {
+                  platform: {'url': f"{base}/{version}/{platform}/{item['publishName']}", 'signature': (candidate / item['signatureFile']).read_text().strip()}
+                  for platform, item in report['updater'].items()
+              }}
+          pathlib.Path('latest-gitee.json').write_text(json.dumps(manifest('https://gitee.com/binbin3344/cloudnote/raw/master/updates'), ensure_ascii=False, indent=2) + '\n')
+          pathlib.Path('latest-server.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
+          pathlib.Path('latest-github.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
+          shutil.copy2(candidate / 'candidate-report.json', pathlib.Path('staged/updates/candidate-report.json'))
+          PY
+      - name: Publish versioned files to Gitee
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./candidate/candidate-report.json').version")
+          git clone --depth 1 "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/binbin3344/cloudnote.git" gitee-publish
+          mkdir -p "gitee-publish/updates/${VERSION}"
+          cp -R "staged/updates/${VERSION}/." "gitee-publish/updates/${VERSION}/"
+          cd gitee-publish
+          git config user.name github-actions[bot]
+          git config user.email github-actions[bot]@users.noreply.github.com
+          git add "updates/${VERSION}"
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: stage app update ${VERSION}"
+            git push origin HEAD:master
+          fi
+      - name: Clear server staging directory
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: rm -rf /cloudnotes/updates-staging && mkdir -p /cloudnotes/updates-staging
+      - name: Publish versioned files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: staged/updates/*
+          target: /cloudnotes/updates-staging
+          strip_components: 2
+      - name: Move server version into place
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            VERSION=$(python3 -c "import json;print(json.load(open('/cloudnotes/updates-staging/candidate-report.json'))['version'])" 2>/dev/null || true)
+            [ -n "$VERSION" ] || { echo "Missing candidate version"; exit 1; }
+            mkdir -p "/cloudnotes/updates/${VERSION}"
+            cp -R "/cloudnotes/updates-staging/${VERSION}/." "/cloudnotes/updates/${VERSION}/"
+      - name: Verify every versioned URL
+        run: |
+          while IFS=$'\t' read -r expected url; do
+            curl -L --fail --retry 3 --silent --show-error "$url" -o /tmp/package
+            printf '%s  %s\n' "$expected" /tmp/package | sha256sum -c -
+          done < <(python3 - <<'PY'
+          import json
+          r=json.load(open('candidate/candidate-report.json'))
+          for p,i in r['updater'].items():
+              h=r['expected_sha256'][i['package']]
+              print(f"{h}\thttps://gitee.com/binbin3344/cloudnote/raw/master/updates/{r['version']}/{p}/{i['publishName']}")
+              print(f"{h}\thttps://notes.binapp.top/updates/{r['version']}/{p}/{i['publishName']}")
+          for p,i in r['manual'].items():
+              h=r['expected_sha256'][i['package']]
+              print(f"{h}\thttps://gitee.com/binbin3344/cloudnote/raw/master/updates/{r['version']}/{p}/{i['publishName']}")
+              print(f"{h}\thttps://notes.binapp.top/updates/{r['version']}/{p}/{i['publishName']}")
+          PY
+          )
+      - name: Promote Gitee latest manifest
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          cp latest-gitee.json gitee-publish/updates/latest.json
+          cd gitee-publish
+          git add updates/latest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: promote app updater ${{ inputs.tag }}"
+            git push origin HEAD:master
+          fi
+      - name: Upload next server manifest
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: latest-server.json
+          target: /cloudnotes/updates
+      - name: Atomically promote server latest manifest
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: mv /cloudnotes/updates/latest-server.json /cloudnotes/updates/latest.json
+      - name: Publish GitHub release last
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp latest-github.json latest.json
+          gh release upload "${{ inputs.tag }}" latest.json latest-server.json latest-gitee.json --clobber
+          gh release edit "${{ inputs.tag }}" --draft=false

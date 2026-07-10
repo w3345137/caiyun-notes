@@ -7,13 +7,14 @@
   ],
   "permissions": [
     "core:default",
-    "fs:default",
     "fs:allow-read",
     "fs:allow-write",
     "fs:allow-mkdir",
     "fs:allow-exists",
     "fs:allow-read-dir",
     "fs:allow-remove",
+    "fs:allow-rename",
+    "fs:allow-stat",
     {
       "identifier": "fs:scope",
       "allow": [
@@ -25,10 +26,8 @@
     "updater:default",
     "store:default",
     "dialog:default",
-    "process:default",
     "process:allow-restart",
     "process:allow-exit",
-    "clipboard-manager:default",
     "clipboard-manager:allow-clear",
     "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-read-text",
@@ -36,7 +35,6 @@
     "clipboard-manager:allow-write-image",
     "clipboard-manager:allow-write-text",
     "notification:default",
-    "shell:default",
     "shell:allow-open"
   ]
 }

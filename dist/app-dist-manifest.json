@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "10.0.0",
+  "gitCommit": "09b584b0ccf50e9312e57494813aaf8807c20587",
+  "entryAssets": [
+    "assets/editor-AB2ay8cO.js",
+    "assets/index-Bk2sWQ2V.js",
+    "assets/index-DqU6IMEI.css",
+    "assets/mindmap-DmwcHyRe.js",
+    "assets/tauri-DR8a8byZ.js"
+  ],
+  "files": [
+    {
+      "path": "assets/editor-AB2ay8cO.js",
+      "size": 756082,
+      "sha256": "8f35b701022152c529152c664f04f9cb10e6aca4f5fa7cef3553e841820beb11"
+    },
+    {
+      "path": "assets/index-Bk2sWQ2V.js",
+      "size": 989381,
+      "sha256": "ff17b3a8ee8357d1cc4b174b23068d848843ef21ec16293da575931e52982f1a"
+    },
+    {
+      "path": "assets/index-DqU6IMEI.css",
+      "size": 71895,
+      "sha256": "234d1303d43612ffcc0491ddeb4597d7c3dc5b3a7992e4dbc3561b7a0a76f7d5"
+    },
+    {
+      "path": "assets/logo-Cw1I6IdG.png",
+      "size": 157252,
+      "sha256": "7ad751581eedd8c53b5d118728756acf727e865e5fcbce36d9405e2e2c33f0ba"
+    },
+    {
+      "path": "assets/mindmap-DmwcHyRe.js",
+      "size": 371335,
+      "sha256": "50d9ee0b42d02532a20183bb3f0449c5c4cf532e31033c761fe359f7efa698ed"
+    },
+    {
+      "path": "assets/tauri-DR8a8byZ.js",
+      "size": 9916,
+      "sha256": "20fada33f0e7261835a1d7d1ef57c34dc5203f13778991aa25addaf671530cf3"
+    },
+    {
+      "path": "index.html",
+      "size": 1375,
+      "sha256": "70179022ba93d94be26df39560cc6117d5febcf65f22bb7862a7c679b8f9c50f"
+    },
+    {
+      "path": "logo.png",
+      "size": 157252,
+      "sha256": "7ad751581eedd8c53b5d118728756acf727e865e5fcbce36d9405e2e2c33f0ba"
+    }
+  ]
+}
