@@ -89,59 +89,12 @@ jobs:
           mkdir candidate
           gh release download "${{ inputs.tag }}" --dir candidate --clobber
       - name: Build candidate report
-        env:
-          TAG: ${{ inputs.tag }}
         run: |
-          python3 - <<'PY'
-          import hashlib, json, os, pathlib
-          root = pathlib.Path('candidate')
-          files = sorted(p for p in root.iterdir() if p.is_file())
-          version = json.load(open('src-tauri/tauri.conf.json'))['version']
-          def pick(parts, suffix):
-              matches = [p for p in files if all(x.lower() in p.name.lower() for x in parts) and p.name.endswith(suffix)]
-              if len(matches) != 1: raise SystemExit(f'Expected one {parts} {suffix}, got {[p.name for p in matches]}')
-              return matches[0]
-          darwin_x64 = [p for p in files if p.name.endswith('.app.tar.gz') and 'aarch64' not in p.name.lower()]
-          if len(darwin_x64) != 1: raise SystemExit(f'Expected one darwin x64 updater, got {[p.name for p in darwin_x64]}')
-          updater = {
-              'darwin-aarch64': pick(['aarch64'], '.app.tar.gz'),
-              'darwin-x86_64': darwin_x64[0],
-              'windows-x86_64': pick([], '.nsis.zip'),
-              'linux-x86_64': pick([], '.AppImage.tar.gz'),
-          }
-          darwin_x64_dmg = [p for p in files if p.name.endswith('.dmg') and 'aarch64' not in p.name.lower()]
-          if len(darwin_x64_dmg) != 1: raise SystemExit('Missing darwin x64 DMG')
-          manual = {
-              'darwin-aarch64': pick(['aarch64'], '.dmg'),
-              'darwin-x86_64': darwin_x64_dmg[0],
-              'windows-x86_64': pick([], 'x64-setup.exe'),
-              'linux-x86_64': pick([], '_amd64.deb'),
-          }
-          publish_updater = {
-              'darwin-aarch64': f'_{version}_aarch64.app.tar.gz',
-              'darwin-x86_64': f'_{version}_x64.app.tar.gz',
-              'windows-x86_64': f'_{version}_x64.nsis.zip',
-              'linux-x86_64': f'_{version}_amd64.AppImage.tar.gz',
-          }
-          publish_manual = {
-              'darwin-aarch64': f'_{version}_aarch64.dmg',
-              'darwin-x86_64': f'_{version}_x64.dmg',
-              'windows-x86_64': f'_{version}_x64-setup.exe',
-              'linux-x86_64': f'_{version}_amd64.deb',
-          }
-          report = {'tag': os.environ['TAG'], 'version': version, 'expected_sha256': {}, 'updater': {}}
-          for platform, package in updater.items():
-              signature = pathlib.Path(str(package) + '.sig')
-              if not signature.exists() or not signature.read_text().strip(): raise SystemExit(f'Missing signature for {package.name}')
-              report['expected_sha256'][package.name] = hashlib.sha256(package.read_bytes()).hexdigest()
-              report['updater'][platform] = {'package': package.name, 'signatureFile': signature.name, 'publishName': publish_updater[platform]}
-          report['manual'] = {}
-          for platform, package in manual.items():
-              report['expected_sha256'][package.name] = hashlib.sha256(package.read_bytes()).hexdigest()
-              report['manual'][platform] = {'package': package.name, 'publishName': publish_manual[platform]}
-          pathlib.Path('candidate-report.json').write_text(json.dumps(report, indent=2) + '\n')
-          print(json.dumps(report, indent=2))
-          PY
+          node .github/scripts/build-candidate-report.cjs \
+            --candidate candidate \
+            --tauri-config src-tauri/tauri.conf.json \
+            --tag "${{ inputs.tag }}" \
+            --output candidate-report.json
       - name: Attach qualification report to draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
