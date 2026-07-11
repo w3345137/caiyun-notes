@@ -131,7 +131,7 @@ jobs:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 temp = target.with_name(target.name + '.part')
                 subprocess.run([
-                    'curl', '-L', '--fail', '--retry', '5', '--retry-all-errors',
+                    'curl', '-L', '--fail', '--retry', '5',
                     '--connect-timeout', '20', '--max-time', '1800', '--silent', '--show-error',
                     '-H', f'Authorization: Bearer {token}',
                     '-H', 'Accept: application/octet-stream',
@@ -139,7 +139,7 @@ jobs:
                 ], check=True)
                 actual = hashlib.sha256(temp.read_bytes()).hexdigest()
                 if actual != item['sha256']:
-                    temp.unlink(missing_ok=True)
+                    if temp.exists(): temp.unlink()
                     raise SystemExit(f'hash mismatch: {target.name}')
                 temp.replace(target)
                 print(f"verified {item['destination']} {actual}")
