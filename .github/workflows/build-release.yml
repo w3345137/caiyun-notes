@@ -95,6 +95,15 @@ jobs:
             --tauri-config src-tauri/tauri.conf.json \
             --tag "${{ inputs.tag }}" \
             --output candidate-report.json
+      - name: Cryptographically verify updater signatures
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          node -e "const fs=require('fs'),c=require('./src-tauri/tauri.conf.json');fs.writeFileSync('updater.pub',Buffer.from(c.plugins.updater.pubkey,'base64'))"
+          node -e "const r=require('./candidate-report.json');for(const i of Object.values(r.updater))console.log(i.package+'\\t'+i.signatureFile)" | while IFS=$'\t' read -r package signature; do
+            base64 --decode "candidate/$signature" > /tmp/updater.sig
+            minisign -Vm "candidate/$package" -p updater.pub -x /tmp/updater.sig
+          done
       - name: Attach qualification report to draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
