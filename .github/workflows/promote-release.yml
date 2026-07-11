@@ -55,22 +55,30 @@ jobs:
       - name: Stage versioned update payload and manifests
         env:
           TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          gh release view "$TAG" --json assets --jq '.assets | map({key:.name,value:.apiUrl}) | from_entries' > candidate/asset-urls.json
           python3 - <<'PY'
-          import datetime, json, os, pathlib, shutil
+          import datetime, hashlib, json, os, pathlib, shutil
           candidate = pathlib.Path('candidate')
           report = json.load(open(candidate / 'candidate-report.json'))
+          asset_urls = json.load(open(candidate / 'asset-urls.json'))
           version = report['version']
-          version_root = pathlib.Path('staged/updates') / version
+          downloads = {}
+          def add_download(source, destination, sha256=None):
+              if source not in asset_urls: raise SystemExit(f'missing release asset URL: {source}')
+              if sha256 is None:
+                  sha256 = hashlib.sha256((candidate / source).read_bytes()).hexdigest()
+              item = {'apiUrl': asset_urls[source], 'destination': destination, 'sha256': sha256}
+              if destination in downloads and downloads[destination] != item:
+                  raise SystemExit(f'conflicting server destination: {destination}')
+              downloads[destination] = item
           for platform, item in report['updater'].items():
-              target = version_root / platform
-              target.mkdir(parents=True, exist_ok=True)
-              shutil.copy2(candidate / item['package'], target / item['publishName'])
-              shutil.copy2(candidate / item['signatureFile'], target / f"{item['publishName']}.sig")
+              base = f"{version}/{platform}"
+              add_download(item['package'], f"{base}/{item['publishName']}", report['expected_sha256'][item['package']])
+              add_download(item['signatureFile'], f"{base}/{item['publishName']}.sig")
           for platform, item in report['manual'].items():
-              target = version_root / platform
-              target.mkdir(parents=True, exist_ok=True)
-              shutil.copy2(candidate / item['package'], target / item['publishName'])
+              add_download(item['package'], f"{version}/{platform}/{item['publishName']}", report['expected_sha256'][item['package']])
           def manifest(base):
               return {'version': version, 'notes': f"彩云笔记 {os.environ['TAG']} 更新", 'pub_date': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'platforms': {
                   platform: {'url': f"{base}/{version}/{platform}/{item['publishName']}", 'signature': (candidate / item['signatureFile']).read_text().strip()}
@@ -79,7 +87,10 @@ jobs:
           pathlib.Path('latest-gitee.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
           pathlib.Path('latest-server.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
           pathlib.Path('latest-github.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
-          shutil.copy2(candidate / 'candidate-report.json', pathlib.Path('staged/updates/candidate-report.json'))
+          server_stage = pathlib.Path('server-stage')
+          server_stage.mkdir()
+          shutil.copy2(candidate / 'candidate-report.json', server_stage / 'candidate-report.json')
+          (server_stage / 'server-download-plan.json').write_text(json.dumps({'downloads': list(downloads.values())}, indent=2) + '\n')
           PY
       - name: Clear server staging directory
         uses: appleboy/ssh-action@v1.0.3
@@ -88,15 +99,51 @@ jobs:
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: rm -rf /cloudnotes/updates-staging && mkdir -p /cloudnotes/updates-staging
-      - name: Publish versioned files to server
+      - name: Upload server download plan
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: staged/updates/*
+          source: server-stage/*
           target: /cloudnotes/updates-staging
-          strip_components: 2
+          strip_components: 1
+      - name: Download and verify version files on server
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: GH_TOKEN
+          command_timeout: 45m
+          script: |
+            python3 - <<'PY'
+            import hashlib, json, os, pathlib, subprocess
+            root = pathlib.Path('/cloudnotes/updates-staging').resolve()
+            plan = json.load(open(root / 'server-download-plan.json'))
+            token = os.environ.get('GH_TOKEN')
+            if not token: raise SystemExit('Missing short-lived GitHub token')
+            for item in plan['downloads']:
+                target = (root / item['destination']).resolve()
+                if root not in target.parents: raise SystemExit(f'unsafe destination: {target}')
+                target.parent.mkdir(parents=True, exist_ok=True)
+                temp = target.with_name(target.name + '.part')
+                subprocess.run([
+                    'curl', '-L', '--fail', '--retry', '5', '--retry-all-errors',
+                    '--connect-timeout', '20', '--max-time', '1800', '--silent', '--show-error',
+                    '-H', f'Authorization: Bearer {token}',
+                    '-H', 'Accept: application/octet-stream',
+                    item['apiUrl'], '-o', str(temp),
+                ], check=True)
+                actual = hashlib.sha256(temp.read_bytes()).hexdigest()
+                if actual != item['sha256']:
+                    temp.unlink(missing_ok=True)
+                    raise SystemExit(f'hash mismatch: {target.name}')
+                temp.replace(target)
+                print(f"verified {item['destination']} {actual}")
+            PY
       - name: Move server version into place
         uses: appleboy/ssh-action@v1.0.3
         with:
