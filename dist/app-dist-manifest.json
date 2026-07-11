@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "appVersion": "10.0.0",
-  "gitCommit": "379d058ad55130544960c726295813a7c4c9971b",
+  "gitCommit": "0d8e3f890bc9cd7b86c2a3ae77d8cf76da59cb35",
   "entryAssets": [
     "assets/editor-XeBT1flW.js",
-    "assets/index-BNMXA7rE.js",
+    "assets/index-DJyzQZU8.js",
     "assets/index-DqU6IMEI.css",
     "assets/mindmap-Cy1VUuQD.js",
     "assets/tauri-DR8a8byZ.js"
@@ -16,9 +16,9 @@
       "sha256": "2e1432369b8ea4da3e29e4390dfcfad0338f49fc35559720b52829e7792ce2e5"
     },
     {
-      "path": "assets/index-BNMXA7rE.js",
-      "size": 991456,
-      "sha256": "2ec60a4575b79afac8992db89dad0ef8f06004dcefd676f6d7924b8ad19924e7"
+      "path": "assets/index-DJyzQZU8.js",
+      "size": 991485,
+      "sha256": "2b03a491e8573d3cb75c7651444e204e16a84ff67301506f331891c36c5bc0e7"
     },
     {
       "path": "assets/index-DqU6IMEI.css",
@@ -43,7 +43,7 @@
     {
       "path": "index.html",
       "size": 1375,
-      "sha256": "431469065bf6d0004f11c09fa784d705937897aae303947076e6db4900e27efe"
+      "sha256": "0dfb04790c12cb3072359492cbe2b1f84ca4448bca21e721ee495a24a9ad40b9"
     },
     {
       "path": "logo.png",
