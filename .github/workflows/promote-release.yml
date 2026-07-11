@@ -69,7 +69,7 @@ jobs:
               if source not in asset_urls: raise SystemExit(f'missing release asset URL: {source}')
               if sha256 is None:
                   sha256 = hashlib.sha256((candidate / source).read_bytes()).hexdigest()
-              item = {'apiUrl': asset_urls[source], 'destination': destination, 'sha256': sha256}
+              item = {'source': source, 'apiUrl': asset_urls[source], 'destination': destination, 'sha256': sha256}
               if destination in downloads and downloads[destination] != item:
                   raise SystemExit(f'conflicting server destination: {destination}')
               downloads[destination] = item
@@ -91,6 +91,10 @@ jobs:
           server_stage.mkdir()
           shutil.copy2(candidate / 'candidate-report.json', server_stage / 'candidate-report.json')
           (server_stage / 'server-download-plan.json').write_text(json.dumps({'downloads': list(downloads.values())}, indent=2) + '\n')
+          for item in downloads.values():
+              target = server_stage / item['destination']
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(candidate / item['source'], target)
           PY
       - name: Prepare server staging directory
         uses: appleboy/ssh-action@v1.0.3
@@ -102,7 +106,7 @@ jobs:
             mkdir -p /cloudnotes/updates-staging
             find /cloudnotes/updates-staging -type f -name '*.part' -delete
             rm -f /cloudnotes/updates-staging/candidate-report.json /cloudnotes/updates-staging/server-download-plan.json
-      - name: Upload server download plan
+      - name: Upload verified server payload
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -111,6 +115,8 @@ jobs:
           source: server-stage/*
           target: /cloudnotes/updates-staging
           strip_components: 1
+          overwrite: true
+          command_timeout: 30m
       - name: Download and verify version files on server
         uses: appleboy/ssh-action@v1.0.3
         env:
