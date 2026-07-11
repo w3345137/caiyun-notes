@@ -185,7 +185,17 @@ jobs:
           GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
-          git clone --depth 1 "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/binbin3344/cloudnote.git" gitee-publish
+          for attempt in 1 2 3 4 5; do
+            if git clone --depth 1 "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/binbin3344/cloudnote.git" gitee-publish; then
+              break
+            fi
+            rm -rf gitee-publish
+            if [ "$attempt" -eq 5 ]; then
+              echo "Gitee clone failed after $attempt attempts"
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+          done
           cp latest-gitee.json gitee-publish/updates/latest.json
           cd gitee-publish
           git config user.name github-actions[bot]
