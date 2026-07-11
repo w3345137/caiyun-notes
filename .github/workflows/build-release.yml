@@ -75,6 +75,20 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.target }}
 
+      - name: Verify macOS app bundle signature
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          APP="src-tauri/target/${{ matrix.target }}/release/bundle/macos/彩云笔记.app"
+          ARCHIVE="src-tauri/target/${{ matrix.target }}/release/bundle/macos/彩云笔记.app.tar.gz"
+          test -f "$APP/Contents/_CodeSignature/CodeResources"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          tar -tzf "$ARCHIVE" | grep -q '彩云笔记.app/Contents/_CodeSignature/CodeResources'
+          EXTRACTED=$(mktemp -d)
+          trap 'rm -rf "$EXTRACTED"' EXIT
+          tar -xzf "$ARCHIVE" -C "$EXTRACTED"
+          codesign --verify --deep --strict --verbose=2 "$EXTRACTED/彩云笔记.app"
+
   qualify-draft:
     needs: build
     runs-on: ubuntu-latest
