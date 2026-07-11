@@ -1,24 +1,24 @@
 {
   "schemaVersion": 1,
   "appVersion": "10.0.0",
-  "gitCommit": "1c5798d2c32d2cad44c867ce298bc2e6037d2019",
+  "gitCommit": "379d058ad55130544960c726295813a7c4c9971b",
   "entryAssets": [
-    "assets/editor-AB2ay8cO.js",
-    "assets/index-Bk2sWQ2V.js",
+    "assets/editor-XeBT1flW.js",
+    "assets/index-BNMXA7rE.js",
     "assets/index-DqU6IMEI.css",
-    "assets/mindmap-DmwcHyRe.js",
+    "assets/mindmap-Cy1VUuQD.js",
     "assets/tauri-DR8a8byZ.js"
   ],
   "files": [
     {
-      "path": "assets/editor-AB2ay8cO.js",
-      "size": 756082,
-      "sha256": "8f35b701022152c529152c664f04f9cb10e6aca4f5fa7cef3553e841820beb11"
+      "path": "assets/editor-XeBT1flW.js",
+      "size": 756242,
+      "sha256": "2e1432369b8ea4da3e29e4390dfcfad0338f49fc35559720b52829e7792ce2e5"
     },
     {
-      "path": "assets/index-Bk2sWQ2V.js",
-      "size": 989381,
-      "sha256": "ff17b3a8ee8357d1cc4b174b23068d848843ef21ec16293da575931e52982f1a"
+      "path": "assets/index-BNMXA7rE.js",
+      "size": 991456,
+      "sha256": "2ec60a4575b79afac8992db89dad0ef8f06004dcefd676f6d7924b8ad19924e7"
     },
     {
       "path": "assets/index-DqU6IMEI.css",
@@ -31,9 +31,9 @@
       "sha256": "7ad751581eedd8c53b5d118728756acf727e865e5fcbce36d9405e2e2c33f0ba"
     },
     {
-      "path": "assets/mindmap-DmwcHyRe.js",
+      "path": "assets/mindmap-Cy1VUuQD.js",
       "size": 371335,
-      "sha256": "50d9ee0b42d02532a20183bb3f0449c5c4cf532e31033c761fe359f7efa698ed"
+      "sha256": "22fa592179af8dcb0a9426f7232ba71a3107281ffc6953bd155f59602d4a40cf"
     },
     {
       "path": "assets/tauri-DR8a8byZ.js",
@@ -43,7 +43,7 @@
     {
       "path": "index.html",
       "size": 1375,
-      "sha256": "70179022ba93d94be26df39560cc6117d5febcf65f22bb7862a7c679b8f9c50f"
+      "sha256": "431469065bf6d0004f11c09fa784d705937897aae303947076e6db4900e27efe"
     },
     {
       "path": "logo.png",
