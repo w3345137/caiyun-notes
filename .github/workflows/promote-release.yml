@@ -76,28 +76,11 @@ jobs:
                   platform: {'url': f"{base}/{version}/{platform}/{item['publishName']}", 'signature': (candidate / item['signatureFile']).read_text().strip()}
                   for platform, item in report['updater'].items()
               }}
-          pathlib.Path('latest-gitee.json').write_text(json.dumps(manifest('https://gitee.com/binbin3344/cloudnote/raw/master/updates'), ensure_ascii=False, indent=2) + '\n')
+          pathlib.Path('latest-gitee.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
           pathlib.Path('latest-server.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
           pathlib.Path('latest-github.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
           shutil.copy2(candidate / 'candidate-report.json', pathlib.Path('staged/updates/candidate-report.json'))
           PY
-      - name: Publish versioned files to Gitee
-        env:
-          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        run: |
-          VERSION=$(node -p "require('./candidate/candidate-report.json').version")
-          git clone --depth 1 "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/binbin3344/cloudnote.git" gitee-publish
-          mkdir -p "gitee-publish/updates/${VERSION}"
-          cp -R "staged/updates/${VERSION}/." "gitee-publish/updates/${VERSION}/"
-          cd gitee-publish
-          git config user.name github-actions[bot]
-          git config user.email github-actions[bot]@users.noreply.github.com
-          git add "updates/${VERSION}"
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: stage app update ${VERSION}"
-            git push origin HEAD:master
-          fi
       - name: Clear server staging directory
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -135,11 +118,9 @@ jobs:
           r=json.load(open('candidate/candidate-report.json'))
           for p,i in r['updater'].items():
               h=r['expected_sha256'][i['package']]
-              print(f"{h}\thttps://gitee.com/binbin3344/cloudnote/raw/master/updates/{r['version']}/{p}/{i['publishName']}")
               print(f"{h}\thttps://notes.binapp.top/updates/{r['version']}/{p}/{i['publishName']}")
           for p,i in r['manual'].items():
               h=r['expected_sha256'][i['package']]
-              print(f"{h}\thttps://gitee.com/binbin3344/cloudnote/raw/master/updates/{r['version']}/{p}/{i['publishName']}")
               print(f"{h}\thttps://notes.binapp.top/updates/{r['version']}/{p}/{i['publishName']}")
           PY
           )
@@ -148,8 +129,11 @@ jobs:
           GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
+          git clone --depth 1 "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/binbin3344/cloudnote.git" gitee-publish
           cp latest-gitee.json gitee-publish/updates/latest.json
           cd gitee-publish
+          git config user.name github-actions[bot]
+          git config user.email github-actions[bot]@users.noreply.github.com
           git add updates/latest.json
           if ! git diff --cached --quiet; then
             git commit -m "chore: promote app updater ${{ inputs.tag }}"

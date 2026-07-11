@@ -15,7 +15,7 @@ p10 改为内置前端入口。App 启动时先从本机加载 UI 和缓存，�
 发布分为两个独立阶段：
 
 1. `build-release.yml` 构建 Windows、macOS x64 / arm64 和 Linux 签名候选，只创建 draft release，并输出候选哈希报告。
-2. 人工核对安装包、updater 签名和 SHA-256 后，使用 `promote-release.yml` 将版本文件同步到 Gitee 与服务器，再原子更新 `latest.json`，最后发布 GitHub release。
+2. 人工核对安装包、updater 签名和 SHA-256 后，使用 `promote-release.yml` 将版本文件同步到生产下载服务器；Gitee 只发布指向该服务器的小型 `latest.json`，最后发布 GitHub release。
 
 禁止直接手工改写 `updates/latest.json`，也不能用本地 ad-hoc 签名包替代 GitHub Actions 的正式候选。
 
