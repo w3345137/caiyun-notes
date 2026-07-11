@@ -1,14 +1,14 @@
 # 彩云笔记桌面客户端壳
 
-这个公开仓库只包含彩云笔记 p10 桌面 App 的 Tauri 壳、经过生产构建的内置前端资源和发布工作流，不包含 TypeScript 源码、后端、数据库脚本、江苏公司专属逻辑、HCM 集成或任何生产凭据。
+这个公开仓库只包含彩云笔记 p11 桌面 App 的 Tauri 壳、经过生产构建的内置前端资源和发布工作流，不包含 TypeScript 源码、后端、数据库脚本、江苏公司专属逻辑、HCM 集成或任何生产凭据。
 
 ## 版本边界
 
 - Web / 服务版本：`v2.8`
-- 桌面发布标签：`p10`
-- Tauri SemVer：`10.0.0`
+- 桌面发布标签：`p11`
+- Tauri SemVer：`10.1.0`
 
-p10 改为内置前端入口。App 启动时先从本机加载 UI 和缓存，再通过 HTTPS / WSS 连接 `https://notes.binapp.top`；远程网页不再获得 Tauri 文件、Store、剪贴板或 updater 权限。
+p11 使用内置前端入口。App 启动时先从本机加载 UI 和缓存，再通过 HTTPS / WSS 连接 `https://notes.binapp.top`；远程网页不再获得 Tauri 文件、Store、剪贴板或 updater 权限。
 
 ## 发布流程
 

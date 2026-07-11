@@ -1,23 +1,23 @@
 {
-  "version": "9.0.0",
-  "notes": "彩云笔记 p9 更新",
-  "pub_date": "2026-06-29T05:43:06Z",
+  "version": "10.0.0",
+  "notes": "彩云笔记 p10 更新",
+  "pub_date": "2026-07-11T02:39:20.107572+00:00",
   "platforms": {
-    "windows-x86_64": {
-      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/windows-x86_64/_9.0.0_x64-setup.exe",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1ZrK201SVZYMmRGcVJHL295dTZ2eVZWSGFzQzhjZU8wUXY0ZUZTWTB0cnU2c1p1VnZVaXpjU3Y0bktBL0dqU2o4OFhCNk1hYjA5U0ovajhPbGltbUFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNzExNjgxCWZpbGU65b2p5LqR56yU6K6wXzkuMC4wX3g2NC1zZXR1cC5leGUKVFlRU0pEdHhUVHQ0MzFrODZxaklqVmpPM0w5V20xR2hOVUUvYXJ2SHVJVnRBY1ZueVdsbnhOcWRtWTkvb04yMTFuVHFZcy9yaUdpVjRuelRtSVJXQVE9PQo="
+    "darwin-aarch64": {
+      "url": "https://notes.binapp.top/updates/10.0.0/darwin-aarch64/_10.0.0_aarch64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1p3Tm5TUmo0SmQxU2VSVTEwbk9PUkhQQjhhZDJ2alRPcEZJM2djdHlFRVlKZ0NCUk9KWlNVcnBrQ3NMQkFnTDFLblVvcm03cUlhS1NhUzFpQUFPcFFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzM3MDkyCWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKVExqak8yVjB1UVoyMndpTlJSeFJJME0yTDVINzNYaGVPK282NFh1Nmw1bmUvWVdkanB3R080UHIrWHdxK3dnaStBYUVqVHo1VFV3U0FFandTbUFJRGc9PQo="
     },
     "darwin-x86_64": {
-      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/darwin-x86_64/_x64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1RkWnJQK3V2YUxFYU11VVp3dWVxY2I4aDNpWWJaeTdZMTJJRlhDRHNoMDNIdDA5S3cvUVJVY0N3Q2N2VWI3ZWE3VklkZndaN1ljbnRuREJybmliV3dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNzExNTQ3CWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKeXpGZUErVnRDVTRWNDc5UTRweXFrYnp4R3I3Z0dFWW1ISGZrb2lVbnkzRytjQnRlczRUVkdXS3l1TWNWUUhwSGdxWWIvd2xwRDdrbzVQMWRpMGxGQnc9PQo="
+      "url": "https://notes.binapp.top/updates/10.0.0/darwin-x86_64/_10.0.0_x64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1pLQjFWbWhzQjduZjY3bTh2RUJJMElNMnl0cVNmSEJXdjBPR2N5WlNjQ1pLNHZrNG14STFEYitRKzZDa0owcHBxT1ZpM3pTcm02QUpwQmNMTjJRNUFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzM3MjE1CWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKbEU5TkU1WVg0bG9hOXJ5UlQ5OWVSakU4OWZ6Z0VsSTV5M0lIR05ncEtjOWRhMXNOOU9xWFdwYzdQbEQ0UXpta2F6UUMzWjF0ZmVaSlh5VFNLNHRmRGc9PQo="
     },
-    "darwin-aarch64": {
-      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/darwin-aarch64/_aarch64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1lQYzJJZnp1RDh2cStrWi9ERTcyRExHYmlVWmhSaTVVZ0FwaWtOWjNhYmFhdmp3U1lPeVl3U3VONkJPUCs1ZGxTY0dRQnhkdURObDNQMGJOWElDeFEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNzExNzY0CWZpbGU65b2p5LqR56yU6K6wLmFwcC50YXIuZ3oKc3VUODNXQTNtMTFNZ0VsUHZ2SjNKN0E0ZHZMb0JnZlU0Z25qNThzRlJlQlJVZFFEb3FTTDg1eUNiSjNvUnVQdkJQZTZpZ2pIb0xTbU1hTk5uWkVoREE9PQo="
+    "windows-x86_64": {
+      "url": "https://notes.binapp.top/updates/10.0.0/windows-x86_64/_10.0.0_x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d2VOelIwUytjak90QWxueGRnOEpsei9JU2VJYUgxbFdqbU1YNW5OZmVGa2tSNENXQkpOTjd4ZzREMURjYkFxZy9jVHhUV2NQd2lMMENPME5PTnVMUVEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzM3MjQ5CWZpbGU65b2p5LqR56yU6K6wXzEwLjAuMF94NjQtc2V0dXAuZXhlCjVFcXduTDV1YTBLMHB1VUlxSzBMazczR2h5bWtPVkwyUnNPK3h2bUxCS3JzKzVvSlJVQ21zUzNBWGhpdGY5R3FXZ09GKzVzV1RMVzY1VlhoYVNWdEJ3PT0K"
     },
     "linux-x86_64": {
-      "url": "https://gitee.com/binbin3344/cloudnote/raw/master/updates/linux-x86_64/_9.0.0_amd64.deb",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d2JpN3hGQit4cnh2cEJlNk9LWGhZUzZYcVBIMDdmbWxXMFdyaVlrWDFRM092YTlzWDlHL1BESHFiZk9mVEt0aEYrYTBuSlRydTNGR2g2MG9hSUNhS2c4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNzExNjQ0CWZpbGU65b2p5LqR56yU6K6wXzkuMC4wX2FtZDY0LmRlYgpvMFJVRlArMkFWZlh5MG5kdFBlWi9rS2YyMkpYMHNlSFF6d2ZYRjFpeWZEYXU0eUFvcFdGQklNR3VwWW9QR1ZjOUdyUWlabTVvWjd0Yk1vUHhwOW9Cdz09Cg=="
+      "url": "https://notes.binapp.top/updates/10.0.0/linux-x86_64/_10.0.0_amd64.AppImage",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUQllwSTgxNWh5d1JoN3ExcmhYc1ErbnJ3T0FxSUVxbTc3SVlWbkN1V3g5MHVjWDhOTFR0NzhUa1VHVktsRVJZRmZJeVhremE3SGlEUmFobXpENUZvVisrWE1PenV3QlFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzM3MjI4CWZpbGU65b2p5LqR56yU6K6wXzEwLjAuMF9hbWQ2NC5BcHBJbWFnZQp6dGhyVjFVUEtKcXJWb1pwS3BhNzRKL0ZHL3ZhTnFJVTlUY2lQK1dGWVFyd3ZPZXYyeVJMVW9JRVQ5eHVpMU44TTBJZkQyMzcxOEEwT0FxUmEwYkhDdz09Cg=="
     }
   }
 }
