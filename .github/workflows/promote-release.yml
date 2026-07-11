@@ -92,13 +92,16 @@ jobs:
           shutil.copy2(candidate / 'candidate-report.json', server_stage / 'candidate-report.json')
           (server_stage / 'server-download-plan.json').write_text(json.dumps({'downloads': list(downloads.values())}, indent=2) + '\n')
           PY
-      - name: Clear server staging directory
+      - name: Prepare server staging directory
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          script: rm -rf /cloudnotes/updates-staging && mkdir -p /cloudnotes/updates-staging
+          script: |
+            mkdir -p /cloudnotes/updates-staging
+            find /cloudnotes/updates-staging -type f -name '*.part' -delete
+            rm -f /cloudnotes/updates-staging/candidate-report.json /cloudnotes/updates-staging/server-download-plan.json
       - name: Upload server download plan
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -129,6 +132,12 @@ jobs:
                 target = (root / item['destination']).resolve()
                 if root not in target.parents: raise SystemExit(f'unsafe destination: {target}')
                 target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    existing = hashlib.sha256(target.read_bytes()).hexdigest()
+                    if existing == item['sha256']:
+                        print(f"Reusing pre-staged {item['destination']} {existing}")
+                        continue
+                    target.unlink()
                 temp = target.with_name(target.name + '.part')
                 subprocess.run([
                     'curl', '-L', '--fail', '--retry', '5',
