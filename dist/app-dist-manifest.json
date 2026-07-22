@@ -1,58 +1,53 @@
 {
   "schemaVersion": 1,
-  "appVersion": "10.2.0",
-  "gitCommit": "84cdf6e040add0ae95e2c0f97ab44dddc4a6da90",
+  "appVersion": "10.2.2",
+  "gitCommit": "4affc01b8c34464f9e1cf66e591fa4a94bd9a3b6",
   "entryAssets": [
-    "assets/index-CW6jg-up.css",
-    "assets/index-iE_QsQWe.js",
+    "assets/index-BfEGHm9u.js",
     "assets/react-core-C-3378df.js",
-    "assets/tauri-Dfr_IEKd.js"
+    "assets/style-BxrDYSjZ.css",
+    "assets/tauri-BeO_HVdv.js"
   ],
   "files": [
     {
-      "path": "assets/App-CdNuGLSp.js",
-      "size": 179982,
-      "sha256": "d4089623d664c793e46e0b44cf365ad603ab437ed6f6ff81692e910545213df0"
+      "path": "assets/App-PZszoLG1.js",
+      "size": 128534,
+      "sha256": "cb9494c02c542c1965b0dcc332699703cd04725a4eae9dbc38c84bd7cf250923"
     },
     {
-      "path": "assets/App-DV-pNTNj.css",
-      "size": 9131,
-      "sha256": "a93f9ee480052a3926dacd6acb7745932eb959280293ec16d3537769092aa8bd"
+      "path": "assets/NoteEditor-B7TJa6D5.js",
+      "size": 437205,
+      "sha256": "30d84e6326fa9198e163e29f687a94d7b171fb6e6c125b3c735224bad849e985"
     },
     {
-      "path": "assets/NoteEditor-Bgrr9IGg.js",
-      "size": 443282,
-      "sha256": "37ef44aa0b4f8884e99ea827301d610cd40051f7d9a75608b1d5dcdf4687376f"
+      "path": "assets/Sidebar-Rb4-BjCd.js",
+      "size": 293602,
+      "sha256": "430b37909c81cf7f22cd50805933d3b8cf3c38601de97c71a3a8dc971ef09201"
     },
     {
-      "path": "assets/NoteEditor-CVg7C6f9.css",
-      "size": 9632,
-      "sha256": "62dc83d665f1127322c9d22a494ab55317fb6f3509bbb9b7f1d623ea89eac770"
+      "path": "assets/accountPreferenceStore-GzdbHZdG.js",
+      "size": 7770,
+      "sha256": "4580a99362aaa4d2ed44ef8a87cfa10d6171584a701a5962a8ed477a25c5de74"
     },
     {
-      "path": "assets/Sidebar-BCB8URzy.js",
-      "size": 289238,
-      "sha256": "c95eb13cd2a61dfba98d558fa16bc5c73529c1af5ea7c86310222f03f3d477ea"
+      "path": "assets/editor-MiJVjar0.js",
+      "size": 611827,
+      "sha256": "52eb86a00d3d7c9a7678fb66469e4186273fcfc86c31c67485cf191589c9f9dc"
     },
     {
-      "path": "assets/editor-BDa4AnIB.js",
-      "size": 612122,
-      "sha256": "9dc39b634bde956e4e97ec691a9930b10b8a105e3cc9b1a9d8406d331ff763f8"
+      "path": "assets/editorWriteGuard-DZMj4m8F.js",
+      "size": 81577,
+      "sha256": "c322676ce2e7580cecc49339c73a2c43cbcf301f405fe146b3859e4997db6a7d"
     },
     {
-      "path": "assets/emailSyncNotes-CnON0RNQ.js",
-      "size": 76882,
-      "sha256": "cf0897d299c567be29b8c74f62e26eb38843125b06c265870191f15351c00084"
+      "path": "assets/index-BfEGHm9u.js",
+      "size": 52737,
+      "sha256": "f39059b5595a2809adff551244bbfc17857758542e0168d7230858e71eaed760"
     },
     {
-      "path": "assets/index-CW6jg-up.css",
-      "size": 49271,
-      "sha256": "53f05a37f54f6cbbe8d077caf03202225c46c9e212745bfbc4b1b85cf2cce655"
-    },
-    {
-      "path": "assets/index-iE_QsQWe.js",
-      "size": 50569,
-      "sha256": "b58509eea8755410bb776bc3a2148b3f626571f25d39929b1dd927809baec655"
+      "path": "assets/localWorkspaceStore-CHjAwHlp.js",
+      "size": 80713,
+      "sha256": "9b68fdba613696e06530ed20d2882ac3c8a4253cc56bde77e211ab8425f596d1"
     },
     {
       "path": "assets/logo-Cw1I6IdG.png",
@@ -60,14 +55,14 @@
       "sha256": "7ad751581eedd8c53b5d118728756acf727e865e5fcbce36d9405e2e2c33f0ba"
     },
     {
-      "path": "assets/mindmap-D5zWCwlz.js",
-      "size": 371339,
-      "sha256": "df68d19eb3e297b2c9569dfca7e6be80967cabc8ea87859610d690f5db35a4e3"
+      "path": "assets/mindmap-BTLc72bt.js",
+      "size": 374877,
+      "sha256": "1a5f8695b6bb15a497e42cb5aee96a5e9193ae3e4f0bf416356466feaa8ab1df"
     },
     {
-      "path": "assets/nativeWorkspaceTransfer-BMcoR19_.js",
-      "size": 16647,
-      "sha256": "4d5fe3daa2f2e3220bccd7dd61f618a3301296aded2e344504f7de5eb3d92409"
+      "path": "assets/nativeWorkspaceTransfer-6LKhhGbk.js",
+      "size": 5908,
+      "sha256": "18524469eacf1cb7110da7e175c7f8c11a349c288353b32a2f32384d66dafab1"
     },
     {
       "path": "assets/react-core-C-3378df.js",
@@ -75,14 +70,29 @@
       "sha256": "4b98f29c481a82789f8fb9667f266729d016f698b2d4e51baba535f2e0bab33e"
     },
     {
-      "path": "assets/tauri-Dfr_IEKd.js",
+      "path": "assets/style-BxrDYSjZ.css",
+      "size": 68884,
+      "sha256": "63f7ecf945e7a1ec8101ab70e0c29df6a92f0c490bbac7f4e4b5a131a2c3aff6"
+    },
+    {
+      "path": "assets/syncStatusCenter-Bo4Tb8Kf.js",
+      "size": 20087,
+      "sha256": "abf11a43982a5e36f01d3205bd397997bb8e995c3ec026fe5a9ecca9413cfb8a"
+    },
+    {
+      "path": "assets/tauri-BeO_HVdv.js",
       "size": 24318,
-      "sha256": "a52a18c3c572e7e52d1005afa2c9b8f039a7de42652360a9825a44404559acb6"
+      "sha256": "3ff44b9a08ce16b47b6c77451fb8bf7663af09c33371f10ed743ace63056e643"
+    },
+    {
+      "path": "assets/treeMutationOutbox-BcOKh4gx.js",
+      "size": 8179,
+      "sha256": "64a973fa3235a88d862dfc204e901c3cf6631c098f5dafc5ba5a85edae687cb3"
     },
     {
       "path": "index.html",
       "size": 1303,
-      "sha256": "74a6d2d99af405c08ca9cfd3e1516394597514e4cbaeda63acbcb9a1ae3180a5"
+      "sha256": "1f4800ce3b8de18a6ff607573f68a96b7cd51750347b9392a4f4ae3074e9eb70"
     },
     {
       "path": "logo.png",
