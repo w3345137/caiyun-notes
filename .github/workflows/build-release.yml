@@ -36,7 +36,7 @@ jobs:
         run: |
           test -f dist/index.html
           test -f dist/app-dist-manifest.json
-          node -e "const p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'),m=require('./dist/app-dist-manifest.json'),c=require('./src-tauri/capabilities/default.json'),q=c.permissions;if(p.version!==t.version||p.version!==m.appVersion||t.app.windows[0].url!=='index.html'||!q.includes('core:window:allow-close')||!q.includes('core:window:allow-destroy'))process.exit(1)"
+          node -e "const fs=require('fs'),p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'),m=require('./dist/app-dist-manifest.json'),c=require('./src-tauri/capabilities/default.json'),q=c.permissions,r=fs.readFileSync('./src-tauri/src/lib.rs','utf8');if(p.version!==t.version||p.version!==m.appVersion||t.app.windows[0].url!=='index.html'||!r.includes('WindowEvent::CloseRequested')||!r.includes('TrayIconBuilder')||!r.includes('RunEvent::Reopen')||q.includes('core:window:allow-close')||q.includes('core:window:allow-destroy')||q.includes('process:allow-exit'))process.exit(1)"
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'

@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "appVersion": "10.2.2",
+  "appVersion": "10.2.3",
   "gitCommit": "4affc01b8c34464f9e1cf66e591fa4a94bd9a3b6",
   "entryAssets": [
-    "assets/index-BfEGHm9u.js",
+    "assets/index-BYupgMLg.js",
     "assets/react-core-C-3378df.js",
     "assets/style-BxrDYSjZ.css",
-    "assets/tauri-BeO_HVdv.js"
+    "assets/tauri-DWh9r1QE.js"
   ],
   "files": [
     {
-      "path": "assets/App-PZszoLG1.js",
-      "size": 128534,
-      "sha256": "cb9494c02c542c1965b0dcc332699703cd04725a4eae9dbc38c84bd7cf250923"
+      "path": "assets/App-LGzz5yRC.js",
+      "size": 126443,
+      "sha256": "afd6195cd1d7733338e011673bc55b5bf9fd7e76ae5afc3b4b8cc4156f44c08a"
     },
     {
-      "path": "assets/NoteEditor-B7TJa6D5.js",
+      "path": "assets/NoteEditor-BzFTMwvx.js",
       "size": 437205,
-      "sha256": "30d84e6326fa9198e163e29f687a94d7b171fb6e6c125b3c735224bad849e985"
+      "sha256": "efd4334e1cb417ad5dceb75c1acf22f35189ace4e89d5c1bc4a1735842d0c107"
     },
     {
-      "path": "assets/Sidebar-Rb4-BjCd.js",
+      "path": "assets/Sidebar-DWM7ESfv.js",
       "size": 293602,
-      "sha256": "430b37909c81cf7f22cd50805933d3b8cf3c38601de97c71a3a8dc971ef09201"
+      "sha256": "b0b7e613bd156078b585f907e3c4ea1aeef1d1e38598c33b535fa8dde8b89590"
     },
     {
-      "path": "assets/accountPreferenceStore-GzdbHZdG.js",
+      "path": "assets/accountPreferenceStore-Rjp5I1Ug.js",
       "size": 7770,
-      "sha256": "4580a99362aaa4d2ed44ef8a87cfa10d6171584a701a5962a8ed477a25c5de74"
+      "sha256": "aa8667078e8e32285078aaecd34b469a76de55527e977e98813e863c8b6875ce"
     },
     {
       "path": "assets/editor-MiJVjar0.js",
@@ -35,19 +35,19 @@
       "sha256": "52eb86a00d3d7c9a7678fb66469e4186273fcfc86c31c67485cf191589c9f9dc"
     },
     {
-      "path": "assets/editorWriteGuard-DZMj4m8F.js",
+      "path": "assets/editorWriteGuard-B8vK_wg-.js",
       "size": 81577,
-      "sha256": "c322676ce2e7580cecc49339c73a2c43cbcf301f405fe146b3859e4997db6a7d"
+      "sha256": "01c9a9af5cee7f08c35da2bcb782d1317f18641953f7e4b4fa3a6947ee1e667d"
     },
     {
-      "path": "assets/index-BfEGHm9u.js",
+      "path": "assets/index-BYupgMLg.js",
       "size": 52737,
-      "sha256": "f39059b5595a2809adff551244bbfc17857758542e0168d7230858e71eaed760"
+      "sha256": "c8dfc9b792a177e1aa164e1189a1324cc89bb843ad6d9ae58796d93ccbb3710e"
     },
     {
-      "path": "assets/localWorkspaceStore-CHjAwHlp.js",
+      "path": "assets/localWorkspaceStore-CBbIEMoE.js",
       "size": 80713,
-      "sha256": "9b68fdba613696e06530ed20d2882ac3c8a4253cc56bde77e211ab8425f596d1"
+      "sha256": "fd70410a7d5247c6f72f71afce860e0af18ded74159ab8ae8d104328f868ffa2"
     },
     {
       "path": "assets/logo-Cw1I6IdG.png",
@@ -60,9 +60,9 @@
       "sha256": "1a5f8695b6bb15a497e42cb5aee96a5e9193ae3e4f0bf416356466feaa8ab1df"
     },
     {
-      "path": "assets/nativeWorkspaceTransfer-6LKhhGbk.js",
+      "path": "assets/nativeWorkspaceTransfer-1-z4DWOA.js",
       "size": 5908,
-      "sha256": "18524469eacf1cb7110da7e175c7f8c11a349c288353b32a2f32384d66dafab1"
+      "sha256": "9a47129e2b662cf855ee76f4a549f9ff24fede3e208d89b758f2288b655df263"
     },
     {
       "path": "assets/react-core-C-3378df.js",
@@ -75,24 +75,24 @@
       "sha256": "63f7ecf945e7a1ec8101ab70e0c29df6a92f0c490bbac7f4e4b5a131a2c3aff6"
     },
     {
-      "path": "assets/syncStatusCenter-Bo4Tb8Kf.js",
+      "path": "assets/syncStatusCenter-CmvHrc51.js",
       "size": 20087,
-      "sha256": "abf11a43982a5e36f01d3205bd397997bb8e995c3ec026fe5a9ecca9413cfb8a"
+      "sha256": "e0c95989d236080a7ec880c85af73ba64c811fd610ec3bd59fce1ce7c7da2f0b"
     },
     {
-      "path": "assets/tauri-BeO_HVdv.js",
-      "size": 24318,
-      "sha256": "3ff44b9a08ce16b47b6c77451fb8bf7663af09c33371f10ed743ace63056e643"
+      "path": "assets/tauri-DWh9r1QE.js",
+      "size": 10094,
+      "sha256": "643d911c96f5ccbea15341e510cfd7637c397cfdd336f119771763d98a9b123a"
     },
     {
-      "path": "assets/treeMutationOutbox-BcOKh4gx.js",
+      "path": "assets/treeMutationOutbox-IYcVbTB5.js",
       "size": 8179,
-      "sha256": "64a973fa3235a88d862dfc204e901c3cf6631c098f5dafc5ba5a85edae687cb3"
+      "sha256": "a9118894ad2bac1b2b0bd692a29976c5f26f24df6c6a92928a304843b6ee111d"
     },
     {
       "path": "index.html",
       "size": 1303,
-      "sha256": "1f4800ce3b8de18a6ff607573f68a96b7cd51750347b9392a4f4ae3074e9eb70"
+      "sha256": "b1cee2920c43b447b4938c742e3dd5155f265c57a8eb02ef19b2fa7f8b91f502"
     },
     {
       "path": "logo.png",

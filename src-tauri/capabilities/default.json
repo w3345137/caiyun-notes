@@ -7,8 +7,6 @@
   ],
   "permissions": [
     "core:default",
-    "core:window:allow-close",
-    "core:window:allow-destroy",
     "fs:allow-read",
     "fs:allow-write",
     "fs:allow-mkdir",
@@ -29,7 +27,6 @@
     "store:default",
     "dialog:default",
     "process:allow-restart",
-    "process:allow-exit",
     "clipboard-manager:allow-clear",
     "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-read-text",

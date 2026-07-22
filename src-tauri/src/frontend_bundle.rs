@@ -254,10 +254,13 @@ impl FrontendBundleManager {
     }
 
     fn newest_local_release_id(&self) -> Option<String> {
-        [self.active_release_id(), self.read_state_file().pending_release]
-            .into_iter()
-            .flatten()
-            .max()
+        [
+            self.active_release_id(),
+            self.read_state_file().pending_release,
+        ]
+        .into_iter()
+        .flatten()
+        .max()
     }
 
     fn recover_active_release(&self) -> Result<(), String> {
@@ -1040,12 +1043,8 @@ mod tests {
             manager
                 .install_archive(&sign_payload(&payload), &payload, &archive)
                 .unwrap();
-            manager = FrontendBundleManager::new_for_test(
-                temp.path().to_path_buf(),
-                key,
-                "10.2.0",
-            )
-            .unwrap();
+            manager = FrontendBundleManager::new_for_test(temp.path().to_path_buf(), key, "10.2.0")
+                .unwrap();
         }
         let releases = fs::read_dir(temp.path().join("releases")).unwrap().count();
         assert_eq!(releases, 2);
