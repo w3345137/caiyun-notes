@@ -3,31 +3,31 @@
   "appVersion": "10.2.4",
   "gitCommit": "4affc01b8c34464f9e1cf66e591fa4a94bd9a3b6",
   "entryAssets": [
-    "assets/index-CBcdtNZr.js",
+    "assets/index-O3g1UCh-.js",
     "assets/react-core-C-3378df.js",
     "assets/style-CVIfcrg5.css",
     "assets/tauri-NauAkASM.js"
   ],
   "files": [
     {
-      "path": "assets/App-BFkTxVXw.js",
+      "path": "assets/App-BvTqYLc8.js",
       "size": 35192,
-      "sha256": "ffe6f93345a30276c5df6cfc88cf87ca3ec00f02ac3826d9d19d7d4ffe5d6d53"
+      "sha256": "40ac58dfb0b1fe77ae90c364ec906c50b38f71d5fb5fd1b05d509fd130d436c9"
     },
     {
-      "path": "assets/NoteEditor-Cz6nPGLJ.js",
+      "path": "assets/NoteEditor-CaZG9a5L.js",
       "size": 444861,
-      "sha256": "31b03eb324eecec3ca4334dde22bba5dea6372640ea78cdf77b9bfaca02f3661"
+      "sha256": "c9b6cb7bb5b64915d30065da176b0acf1bf8965a44eed73514b4890edab929b2"
     },
     {
-      "path": "assets/Sidebar-D-XyyNrb.js",
+      "path": "assets/Sidebar-NtHXpvx_.js",
       "size": 293573,
-      "sha256": "8975bf7659bbb590a755222bf27c941430e54a1510e27674ed54992b1c4ee4cf"
+      "sha256": "58117424cb80737e3e40324a1df8329c10e30f59217f3a5a8901d582986a4b53"
     },
     {
-      "path": "assets/accountPreferenceStore-CboUgwJr.js",
+      "path": "assets/accountPreferenceStore-CksYahWr.js",
       "size": 8218,
-      "sha256": "3a9d5eba12831294f63bff42ebc2f189ad59690148960a8a4d80dff153682c1d"
+      "sha256": "6033385f8b9b64e54b87a0d4a3e691dd519aa47026b537ba837438bb09e2073a"
     },
     {
       "path": "assets/editor-D-QqNaz2.js",
@@ -35,24 +35,24 @@
       "sha256": "ffa4c695e462187ee665225ee5888b219396dbfad00d64c0c0c309b189ffc3a3"
     },
     {
-      "path": "assets/editorWriteGuard-DQMuv3wJ.js",
+      "path": "assets/editorWriteGuard-Cr9hDUx-.js",
       "size": 65933,
-      "sha256": "22c4d5e6d87cffdd34be6fd6e4e66ff6ed658e829be5e90c8e71ea2c0e26c887"
+      "sha256": "800754afff4a54fe04d0483a97557d73228c617b5ddbc61843ab05e365815010"
     },
     {
-      "path": "assets/emailReplicaBackgroundSync-D0X9XOp6.js",
+      "path": "assets/emailReplicaBackgroundSync-DSLsZHf0.js",
       "size": 3176,
-      "sha256": "b67e3215ee120bbad87acd8991b7e31bc5131ce8a224cabb4baf68de3ecc4f50"
+      "sha256": "48c4088152c10a47f95dc2ce05e3095f2edcb7c0e467632b31b21af0ca8a3842"
     },
     {
-      "path": "assets/index-CBcdtNZr.js",
+      "path": "assets/index-O3g1UCh-.js",
       "size": 54534,
-      "sha256": "318f959dcee84880284ef5d6566af14bc3fe3ec0ec0312423bcc3d936713960a"
+      "sha256": "a385ac625600eb0a20f872945576b3312bacfa96c90798c894eaba746ad854aa"
     },
     {
-      "path": "assets/localWorkspaceStore-CTyPOg6w.js",
+      "path": "assets/localWorkspaceStore-C_cv4TXv.js",
       "size": 117465,
-      "sha256": "a57b15d340e8739d383e3c7652dca76d798ea26da81fb8604b67b0dee1636b54"
+      "sha256": "deaae9b63d55414d2482dbbc4b15b6c30a681bdf928a6dfc7c27a3f4b7732c3e"
     },
     {
       "path": "assets/logo-Cw1I6IdG.png",
@@ -65,14 +65,14 @@
       "sha256": "1a5f8695b6bb15a497e42cb5aee96a5e9193ae3e4f0bf416356466feaa8ab1df"
     },
     {
-      "path": "assets/nativeWorkspaceTransfer-BGuwk-2V.js",
-      "size": 5903,
-      "sha256": "62cdb543939d6416686a7fbe41f15c1b915c59afe817de3fabf6989598f6f4d9"
+      "path": "assets/nativeWorkspaceTransfer-iXcNFkd9.js",
+      "size": 8445,
+      "sha256": "e518afb443b85cf3b124496817795c59223f839ce7adaad95bf1e4557dc61b3d"
     },
     {
-      "path": "assets/noteStore-D8S6blqr.js",
+      "path": "assets/noteStore-DCk2_S_9.js",
       "size": 109039,
-      "sha256": "19900d772f06726b57af90ac67b83fe67d8475bf9e2d5aa96faa89f6923ad5aa"
+      "sha256": "2dc29643f3bfb8ef909969b07747a82f72e89b5d0c4f2c740e926b1512eb5e02"
     },
     {
       "path": "assets/react-core-C-3378df.js",
@@ -85,9 +85,9 @@
       "sha256": "aa5094c3538b30ab37c2c8b7b5e5ad79528f5d90f48ce38eb2de03da8789154c"
     },
     {
-      "path": "assets/syncStatusCenter-BFQsAcp9.js",
-      "size": 27656,
-      "sha256": "bb2f1da803062e39422e2170db7b9c1b9dad56f06499f1c166ce75079108d6ce"
+      "path": "assets/syncStatusCenter-CdCce1Wn.js",
+      "size": 28184,
+      "sha256": "70154c05c206e50d6cf2badc7db7078a09fa15ae42ae120d4cd0736942f2366b"
     },
     {
       "path": "assets/tauri-NauAkASM.js",
@@ -95,14 +95,14 @@
       "sha256": "2835a9969f3eff5ea6a9c0ffb9156501b6a132a1bc95e2ffad5b054897606a47"
     },
     {
-      "path": "assets/treeMutationOutbox-D7W7vFg6.js",
+      "path": "assets/treeMutationOutbox-CR_-e6kG.js",
       "size": 8179,
-      "sha256": "eca78ad8a566d2c0cea7da30a193c28db7b73d5c18a5231f0f0be89ca7fa5083"
+      "sha256": "4fb3a5d527893322233a4bdc103d0806e50cbf795ab3172bc0e96f52ce887023"
     },
     {
       "path": "index.html",
       "size": 1303,
-      "sha256": "e42b043ba46159174e188ec58de4d0c8553ed694192d101f93dc3f89512c9d40"
+      "sha256": "51080557743d9f3206ece0831350d81d49b368bee48b5c84db1e03ec2453f9eb"
     },
     {
       "path": "logo.png",
