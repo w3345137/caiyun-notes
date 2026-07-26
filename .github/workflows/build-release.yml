@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag, for example p10
+        description: Release tag, for example p16
         required: true
         type: string
 
@@ -36,7 +36,7 @@ jobs:
         run: |
           test -f dist/index.html
           test -f dist/app-dist-manifest.json
-          node -e "const fs=require('fs'),p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'),m=require('./dist/app-dist-manifest.json'),c=require('./src-tauri/capabilities/default.json'),q=c.permissions,r=fs.readFileSync('./src-tauri/src/lib.rs','utf8');if(p.version!==t.version||p.version!==m.appVersion||t.app.windows[0].url!=='index.html'||!r.includes('WindowEvent::CloseRequested')||!r.includes('TrayIconBuilder')||!r.includes('RunEvent::Reopen')||q.includes('core:window:allow-close')||q.includes('core:window:allow-destroy')||q.includes('process:allow-exit'))process.exit(1)"
+          node -e "const fs=require('fs'),p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'),m=require('./dist/app-dist-manifest.json'),c=require('./src-tauri/capabilities/default.json'),q=c.permissions,r=fs.readFileSync('./src-tauri/src/lib.rs','utf8'),g=fs.readFileSync('./src-tauri/Cargo.toml','utf8');if(p.version!==t.version||p.version!==m.appVersion||t.app.windows[0].url!=='index.html'||!r.includes('WindowEvent::CloseRequested')||!r.includes('TrayIconBuilder')||!r.includes('RunEvent::Reopen')||!r.includes('RunEvent::ExitRequested')||!r.includes('complete_app_exit')||!g.includes('tauri-plugin-single-instance')||q.includes('core:window:allow-close')||q.includes('core:window:allow-destroy')||q.includes('process:allow-exit'))process.exit(1)"
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -58,6 +58,13 @@ jobs:
           workspaces: src-tauri -> target
 
       - run: npm ci
+
+      - name: Validate native shell
+        shell: bash
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
 
       - name: Build signed draft artifacts
         uses: tauri-apps/tauri-action@v0

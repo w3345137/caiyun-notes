@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "10.2.3"
+version = "10.2.4"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -40,6 +40,9 @@ tauri-plugin-store = "2"
 tauri-plugin-notification = "2"
 walkdir = "2.5"
 zip = { version = "2.4", default-features = false, features = ["deflate"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+tauri-plugin-single-instance = "2"
 
 [dev-dependencies]
 tempfile = "3.20"
