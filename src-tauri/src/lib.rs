@@ -102,14 +102,14 @@ fn inspect_legacy_webkit_origin(app: tauri::AppHandle) -> Result<LegacyWebkitOri
             });
         };
         let (total_size, file_count, latest_modified_ms) = directory_stats(&origin_root);
-        return Ok(LegacyWebkitOriginInfo {
+        Ok(LegacyWebkitOriginInfo {
             supported: true,
             exists: true,
             total_size,
             file_count,
             latest_modified_ms,
             quarantined_entries,
-        });
+        })
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -146,7 +146,7 @@ fn quarantine_legacy_webkit_origin(
             .as_secs();
         let target = quarantine_root.join(format!("{timestamp}-notes-binapp-top"));
         std::fs::rename(&origin_root, &target).map_err(|error| error.to_string())?;
-        return inspect_legacy_webkit_origin(app);
+        inspect_legacy_webkit_origin(app)
     }
     #[cfg(not(target_os = "macos"))]
     {
