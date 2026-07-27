@@ -1,6 +1,7 @@
 mod frontend_bundle;
 
 use frontend_bundle::{check_frontend_bundle_update, FrontendBundleManager, FrontendBundleState};
+use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Manager};
 
@@ -11,6 +12,147 @@ use tauri::{
 };
 
 const APP_EXIT_REQUESTED_EVENT: &str = "app-exit-requested";
+const LEGACY_WEBKIT_ORIGIN_HOST: &str = "notes.binapp.top";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyWebkitOriginInfo {
+    supported: bool,
+    exists: bool,
+    total_size: u64,
+    file_count: u64,
+    latest_modified_ms: Option<u64>,
+    quarantined_entries: u64,
+}
+
+#[cfg(target_os = "macos")]
+fn directory_stats(path: &std::path::Path) -> (u64, u64, Option<u64>) {
+    let mut total_size = 0_u64;
+    let mut file_count = 0_u64;
+    let mut latest_modified_ms = None;
+    for entry in walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if metadata.is_file() {
+            total_size = total_size.saturating_add(metadata.len());
+            file_count = file_count.saturating_add(1);
+        }
+        if let Ok(modified) = metadata.modified() {
+            if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                let millis = duration.as_millis().min(u128::from(u64::MAX)) as u64;
+                latest_modified_ms = Some(latest_modified_ms.unwrap_or(0).max(millis));
+            }
+        }
+    }
+    (total_size, file_count, latest_modified_ms)
+}
+
+#[cfg(target_os = "macos")]
+fn find_legacy_webkit_origin() -> Result<Option<std::path::PathBuf>, String> {
+    let user_home = std::env::var_os("HOME").ok_or_else(|| "无法定位用户目录".to_string())?;
+    let default_root = std::path::PathBuf::from(user_home)
+        .join("Library/WebKit/com.caiyun.notes/WebsiteData/Default");
+    if !default_root.is_dir() {
+        return Ok(None);
+    }
+    let entries = std::fs::read_dir(&default_root).map_err(|error| error.to_string())?;
+    for entry in entries.filter_map(Result::ok) {
+        let candidate_root = entry.path();
+        if !candidate_root.is_dir() {
+            continue;
+        }
+        let origin = candidate_root.join(entry.file_name()).join("origin");
+        let Ok(bytes) = std::fs::read(&origin) else {
+            continue;
+        };
+        if bytes
+            .windows(LEGACY_WEBKIT_ORIGIN_HOST.len())
+            .any(|window| window == LEGACY_WEBKIT_ORIGIN_HOST.as_bytes())
+        {
+            return Ok(Some(candidate_root));
+        }
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+fn inspect_legacy_webkit_origin(app: tauri::AppHandle) -> Result<LegacyWebkitOriginInfo, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let quarantine_root = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|error| error.to_string())?
+            .join("legacy-origin-quarantine");
+        let quarantined_entries = std::fs::read_dir(&quarantine_root)
+            .map(|entries| entries.filter_map(Result::ok).count() as u64)
+            .unwrap_or(0);
+        let Some(origin_root) = find_legacy_webkit_origin()? else {
+            return Ok(LegacyWebkitOriginInfo {
+                supported: true,
+                exists: false,
+                total_size: 0,
+                file_count: 0,
+                latest_modified_ms: None,
+                quarantined_entries,
+            });
+        };
+        let (total_size, file_count, latest_modified_ms) = directory_stats(&origin_root);
+        return Ok(LegacyWebkitOriginInfo {
+            supported: true,
+            exists: true,
+            total_size,
+            file_count,
+            latest_modified_ms,
+            quarantined_entries,
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(LegacyWebkitOriginInfo {
+            supported: false,
+            exists: false,
+            total_size: 0,
+            file_count: 0,
+            latest_modified_ms: None,
+            quarantined_entries: 0,
+        })
+    }
+}
+
+#[tauri::command]
+fn quarantine_legacy_webkit_origin(
+    app: tauri::AppHandle,
+) -> Result<LegacyWebkitOriginInfo, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(origin_root) = find_legacy_webkit_origin()? else {
+            return inspect_legacy_webkit_origin(app);
+        };
+        let quarantine_root = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|error| error.to_string())?
+            .join("legacy-origin-quarantine");
+        std::fs::create_dir_all(&quarantine_root).map_err(|error| error.to_string())?;
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_secs();
+        let target = quarantine_root.join(format!("{timestamp}-notes-binapp-top"));
+        std::fs::rename(&origin_root, &target).map_err(|error| error.to_string())?;
+        return inspect_legacy_webkit_origin(app);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        inspect_legacy_webkit_origin(app)
+    }
+}
 
 #[derive(Default)]
 struct ExitCoordinator {
@@ -168,7 +310,9 @@ pub fn run() {
             check_frontend_bundle_update,
             set_app_exit_handler_ready,
             complete_app_exit,
-            cancel_app_exit
+            cancel_app_exit,
+            inspect_legacy_webkit_origin,
+            quarantine_legacy_webkit_origin
         ])
         .setup(|app| {
             #[cfg(desktop)]

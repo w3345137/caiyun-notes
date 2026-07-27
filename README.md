@@ -1,14 +1,14 @@
 # 彩云笔记桌面客户端壳
 
-这个公开仓库只包含彩云笔记 p16 桌面 App 的 Tauri 壳、经过生产构建的内置前端资源和发布工作流，不包含 TypeScript 源码、后端、数据库脚本、江苏公司专属逻辑、HCM 集成或任何生产凭据。
+这个公开仓库只包含彩云笔记 p17 桌面 App 的 Tauri 壳、经过生产构建的内置前端资源和发布工作流，不包含 TypeScript 源码、后端、数据库脚本、江苏公司专属逻辑、HCM 集成或任何生产凭据。
 
 ## 版本边界
 
 - Web / 服务版本：`v2.8`
-- 桌面发布标签：`p16`
-- Tauri SemVer：`10.2.4`
+- 桌面发布标签：`p17`
+- Tauri SemVer：`10.2.5`
 
-p16 使用内置前端入口。App 启动时先从本机加载 UI 和缓存，再通过 HTTPS / WSS 连接 `https://notes.binapp.top`。macOS 红色关闭按钮与 Windows ×/Alt+F4 会隐藏主窗口；macOS 可从 Dock 恢复并通过 Cmd+Q 退出，Windows 可从系统托盘恢复或退出。真正退出前，桌面壳会等待页面、CRDT 日志和本地队列刷入本地库；Windows 再次启动时会恢复已有窗口而不是创建第二个进程。远程网页不获得通用 Tauri 文件、Store、剪贴板、窗口关闭或进程退出权限。
+p17 使用内置前端入口。App 启动时先从本机加载 UI 和缓存，再通过 HTTPS / WSS 连接 `https://notes.binapp.top`。macOS 红色关闭按钮与 Windows ×/Alt+F4 会隐藏主窗口；macOS 可从 Dock 恢复并通过 Cmd+Q 退出，Windows 可从系统托盘恢复或退出。真正退出前，桌面壳会等待页面、CRDT 日志和本地队列刷入本地库；Windows 再次启动时会恢复已有窗口而不是创建第二个进程。远程网页不获得通用 Tauri 文件、Store、剪贴板、窗口关闭或进程退出权限。
 
 ## 发布流程
 
