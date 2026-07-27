@@ -12,6 +12,7 @@ use tauri::{
 };
 
 const APP_EXIT_REQUESTED_EVENT: &str = "app-exit-requested";
+#[cfg(target_os = "macos")]
 const LEGACY_WEBKIT_ORIGIN_HOST: &str = "notes.binapp.top";
 
 #[derive(Serialize)]
