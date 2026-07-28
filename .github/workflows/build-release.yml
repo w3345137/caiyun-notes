@@ -59,6 +59,11 @@ jobs:
 
       - run: npm ci
 
+      - name: Validate visible app release identity
+        env:
+          NOTES_EXPECT_RELEASE_LABEL: ${{ inputs.tag }}
+        run: node .github/scripts/validate-app-release-identity.cjs
+
       - name: Validate native shell
         shell: bash
         run: |
