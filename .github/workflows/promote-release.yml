@@ -55,24 +55,25 @@ jobs:
       - name: Stage versioned update payload and manifests
         env:
           TAG: ${{ inputs.tag }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view "$TAG" --json assets --jq '.assets | map({key:.name,value:.apiUrl}) | from_entries' > candidate/asset-urls.json
           python3 - <<'PY'
           import datetime, hashlib, json, os, pathlib, shutil
           candidate = pathlib.Path('candidate')
           report = json.load(open(candidate / 'candidate-report.json'))
-          asset_urls = json.load(open(candidate / 'asset-urls.json'))
           version = report['version']
           downloads = {}
           def add_download(source, destination, sha256=None):
-              if source not in asset_urls: raise SystemExit(f'missing release asset URL: {source}')
+              source_path = candidate / source
+              if not source_path.is_file(): raise SystemExit(f'missing release asset: {source}')
               if sha256 is None:
-                  sha256 = hashlib.sha256((candidate / source).read_bytes()).hexdigest()
-              item = {'apiUrl': asset_urls[source], 'destination': destination, 'sha256': sha256}
+                  sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+              item = {'destination': destination, 'sha256': sha256}
               if destination in downloads and downloads[destination] != item:
                   raise SystemExit(f'conflicting server destination: {destination}')
               downloads[destination] = item
+              target = pathlib.Path('server-stage') / destination
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(source_path, target)
           for platform, item in report['updater'].items():
               base = f"{version}/{platform}"
               add_download(item['package'], f"{base}/{item['publishName']}", report['expected_sha256'][item['package']])
@@ -88,7 +89,7 @@ jobs:
           pathlib.Path('latest-server.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
           pathlib.Path('latest-github.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
           server_stage = pathlib.Path('server-stage')
-          server_stage.mkdir()
+          server_stage.mkdir(exist_ok=True)
           shutil.copy2(candidate / 'candidate-report.json', server_stage / 'candidate-report.json')
           (server_stage / 'server-download-plan.json').write_text(json.dumps({'downloads': list(downloads.values())}, indent=2) + '\n')
           PY
@@ -102,7 +103,7 @@ jobs:
             mkdir -p /cloudnotes/updates-staging
             find /cloudnotes/updates-staging -type f -name '*.part' -delete
             rm -f /cloudnotes/updates-staging/candidate-report.json /cloudnotes/updates-staging/server-download-plan.json
-      - name: Upload server download plan
+      - name: Upload verified version files and server plan
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -111,46 +112,25 @@ jobs:
           source: server-stage/*
           target: /cloudnotes/updates-staging
           strip_components: 1
-      - name: Download and verify version files on server
+      - name: Verify uploaded version files on server
         uses: appleboy/ssh-action@v1.0.3
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: GH_TOKEN
-          command_timeout: 45m
+          command_timeout: 10m
           script: |
             python3 - <<'PY'
-            import hashlib, json, os, pathlib, subprocess
+            import hashlib, json, pathlib
             root = pathlib.Path('/cloudnotes/updates-staging').resolve()
             plan = json.load(open(root / 'server-download-plan.json'))
-            token = os.environ.get('GH_TOKEN')
-            if not token: raise SystemExit('Missing short-lived GitHub token')
             for item in plan['downloads']:
                 target = (root / item['destination']).resolve()
                 if root not in target.parents: raise SystemExit(f'unsafe destination: {target}')
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if target.exists():
-                    existing = hashlib.sha256(target.read_bytes()).hexdigest()
-                    if existing == item['sha256']:
-                        print(f"Reusing pre-staged {item['destination']} {existing}")
-                        continue
-                    target.unlink()
-                temp = target.with_name(target.name + '.part')
-                subprocess.run([
-                    'curl', '-L', '--fail', '--retry', '5',
-                    '--connect-timeout', '20', '--max-time', '1800', '--silent', '--show-error',
-                    '-H', f'Authorization: Bearer {token}',
-                    '-H', 'Accept: application/octet-stream',
-                    item['apiUrl'], '-o', str(temp),
-                ], check=True)
-                actual = hashlib.sha256(temp.read_bytes()).hexdigest()
+                if not target.is_file(): raise SystemExit(f'missing uploaded file: {target.name}')
+                actual = hashlib.sha256(target.read_bytes()).hexdigest()
                 if actual != item['sha256']:
-                    if temp.exists(): temp.unlink()
                     raise SystemExit(f'hash mismatch: {target.name}')
-                temp.replace(target)
                 print(f"verified {item['destination']} {actual}")
             PY
       - name: Move server version into place
