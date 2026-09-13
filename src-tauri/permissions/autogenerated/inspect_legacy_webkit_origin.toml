@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-inspect-legacy-webkit-origin"
+description = "Enables the inspect_legacy_webkit_origin command without any pre-configured scope."
+commands.allow = ["inspect_legacy_webkit_origin"]
+
+[[permission]]
+identifier = "deny-inspect-legacy-webkit-origin"
+description = "Denies the inspect_legacy_webkit_origin command without any pre-configured scope."
+commands.deny = ["inspect_legacy_webkit_origin"]

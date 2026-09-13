@@ -1028,6 +1028,41 @@ mod tests {
     }
 
     #[test]
+    fn p18_rejects_higher_shell_requirement_without_losing_active_release() {
+        let temp = TempDir::new().unwrap();
+        let key = test_signing_key().verifying_key();
+        let manager =
+            FrontendBundleManager::new_for_test(temp.path().to_path_buf(), key, "10.2.6").unwrap();
+        let archive = build_archive("compatible", None);
+        let mut payload = test_payload("20260912T120000Z-compatible", &archive);
+        payload.min_shell_version = "10.2.6".into();
+        manager
+            .install_archive(&sign_payload(&payload), &payload, &archive)
+            .unwrap();
+        let manager =
+            FrontendBundleManager::new_for_test(temp.path().to_path_buf(), key, "10.2.6").unwrap();
+        let next_archive = build_archive("requires-new-shell", None);
+        let mut next = test_payload("20260912T130000Z-new-shell", &next_archive);
+        next.min_shell_version = "10.2.7".into();
+        assert!(manager
+            .install_archive(&sign_payload(&next), &next, &next_archive)
+            .unwrap_err()
+            .contains("需要桌面壳"));
+        assert!(!temp.path().join("releases").join(&next.release_id).exists());
+        let restarted =
+            FrontendBundleManager::new_for_test(temp.path().to_path_buf(), key, "10.2.6").unwrap();
+        assert_eq!(
+            restarted.active_release_id().as_deref(),
+            Some(payload.release_id.as_str())
+        );
+        assert!(
+            String::from_utf8(restarted.read_active_file("index.html").unwrap())
+                .unwrap()
+                .contains("compatible")
+        );
+    }
+
+    #[test]
     fn activation_retains_only_current_and_previous_release() {
         let temp = TempDir::new().unwrap();
         let key = test_signing_key().verifying_key();

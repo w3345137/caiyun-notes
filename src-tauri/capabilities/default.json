@@ -2,10 +2,21 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "enables the default permissions",
-  "windows": [
+  "webviews": [
     "main"
   ],
   "permissions": [
+    "allow-check-frontend-bundle-update",
+    "allow-set-app-exit-handler-ready",
+    "allow-complete-app-exit",
+    "allow-request-app-exit",
+    "allow-map-view-request",
+    "allow-map-view-set-bounds",
+    "allow-map-view-close",
+    "allow-map-view-open",
+    "allow-cancel-app-exit",
+    "allow-inspect-legacy-webkit-origin",
+    "allow-quarantine-legacy-webkit-origin",
     "core:default",
     "fs:allow-read",
     "fs:allow-write",

@@ -59,6 +59,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Dependency vulnerability gate
+        run: npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org
+
       - name: Validate visible app release identity
         env:
           NOTES_EXPECT_RELEASE_LABEL: ${{ inputs.tag }}

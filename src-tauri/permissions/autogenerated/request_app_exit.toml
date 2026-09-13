@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-request-app-exit"
+description = "Enables the request_app_exit command without any pre-configured scope."
+commands.allow = ["request_app_exit"]
+
+[[permission]]
+identifier = "deny-request-app-exit"
+description = "Denies the request_app_exit command without any pre-configured scope."
+commands.deny = ["request_app_exit"]

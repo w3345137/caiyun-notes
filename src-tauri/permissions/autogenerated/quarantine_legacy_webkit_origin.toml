@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-quarantine-legacy-webkit-origin"
+description = "Enables the quarantine_legacy_webkit_origin command without any pre-configured scope."
+commands.allow = ["quarantine_legacy_webkit_origin"]
+
+[[permission]]
+identifier = "deny-quarantine-legacy-webkit-origin"
+description = "Denies the quarantine_legacy_webkit_origin command without any pre-configured scope."
+commands.deny = ["quarantine_legacy_webkit_origin"]

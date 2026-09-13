@@ -77,7 +77,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "app"
-version = "10.2.6"
+version = "10.2.7"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -942,6 +942,12 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
+
+[[package]]
+name = "data-url"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "der"
@@ -4736,6 +4742,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "cookie",
+ "data-url",
  "dirs",
  "dunce",
  "embed_plist",

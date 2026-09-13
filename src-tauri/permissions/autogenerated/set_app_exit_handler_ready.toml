@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-app-exit-handler-ready"
+description = "Enables the set_app_exit_handler_ready command without any pre-configured scope."
+commands.allow = ["set_app_exit_handler_ready"]
+
+[[permission]]
+identifier = "deny-set-app-exit-handler-ready"
+description = "Denies the set_app_exit_handler_ready command without any pre-configured scope."
+commands.deny = ["set_app_exit_handler_ready"]

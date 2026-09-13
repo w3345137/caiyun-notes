@@ -1,4 +1,11 @@
 mod frontend_bundle;
+mod map_bridge;
+mod map_sessions;
+use map_bridge::{
+    map_view_close, map_view_open, map_view_reply, map_view_request, map_view_set_bounds,
+};
+#[cfg(desktop)]
+mod map_navigation;
 
 use frontend_bundle::{check_frontend_bundle_update, FrontendBundleManager, FrontendBundleState};
 use serde::Serialize;
@@ -210,6 +217,11 @@ fn request_controlled_exit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 }
 
 #[tauri::command]
+fn request_app_exit(app: tauri::AppHandle) {
+    request_controlled_exit(&app);
+}
+
+#[tauri::command]
 fn set_app_exit_handler_ready(state: tauri::State<'_, ExitCoordinator>) {
     state.frontend_ready.store(true, Ordering::Release);
 }
@@ -292,6 +304,17 @@ fn install_windows_tray(app: &tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder.register_uri_scheme_protocol("caiyun-map-probe", |_ctx, request| {
+        let allowed = request.method() == tauri::http::Method::GET
+            && request.uri().path() == "/runtime.html";
+        tauri::http::Response::builder()
+            .status(if allowed { 200 } else { 404 })
+            .header("Content-Type", "text/html; charset=utf-8")
+            .header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://webapi.amap.com https://restapi.amap.com https://jsapi-service.amap.com; connect-src ipc: http://ipc.localhost https://*.amap.com https://*.autonavi.com; style-src 'unsafe-inline'; img-src https: data: blob:; worker-src blob:; base-uri 'none'; form-action 'none'")
+            .body(if allowed { include_bytes!("../map-runtime-native.html").to_vec() } else { Vec::new() })
+            .expect("static map probe response")
+    });
     #[cfg(target_os = "windows")]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         show_main_window(app);
@@ -307,10 +330,17 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ExitCoordinator::default())
+        .manage(std::sync::Mutex::new(map_sessions::MapSessions::default()))
         .invoke_handler(tauri::generate_handler![
             check_frontend_bundle_update,
             set_app_exit_handler_ready,
             complete_app_exit,
+            request_app_exit,
+            map_view_request,
+            map_view_reply,
+            map_view_set_bounds,
+            map_view_close,
+            map_view_open,
             cancel_app_exit,
             inspect_legacy_webkit_origin,
             quarantine_legacy_webkit_origin
@@ -323,7 +353,10 @@ pub fn run() {
             }
             // 本地库验收包必须运行本次编译进壳的资源；若复用生产前端热更新目录，
             // WebKit 会加载旧 release，导致验收结果与当前源码脱节。
-            let frontend_manager = if app.config().identifier == "com.caiyun.notes.e2e" {
+            let frontend_manager = if app.config().identifier == "com.caiyun.notes.e2e"
+                || app.config().identifier == "com.caiyun.notes.mindmap-e2e"
+                || app.config().identifier == "com.caiyun.notes.route-e2e"
+            {
                 None
             } else {
                 match FrontendBundleManager::from_app(app.handle()) {
