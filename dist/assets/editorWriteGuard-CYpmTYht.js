@@ -1,4 +1,4 @@
-import{c as ee,T as Vt,A as Ln,R as jn,b as De,g as Se}from"./index-BBTnP9Yf.js";import{a as c,j as k,R as B,c as Be}from"./react-core-C-3378df.js";import{ba as zn,bb as Bn}from"./syncStatusCenter-gQjlFd4m.js";import{u as Pn}from"./noteStore-mWqxYVpx.js";/**
+import{c as ee,T as Vt,B as Ln,R as jn,b as De,g as Se}from"./index-DJi79YH1.js";import{a as c,j as k,R as B,c as Be}from"./react-core-C-3378df.js";import{ba as zn,bb as Bn}from"./syncStatusCenter-ZIG4B5eQ.js";import{u as Pn}from"./noteStore-Bi-ijZpM.js";/**
  * @license lucide-react v0.364.0 - ISC
  *
  * This source code is licensed under the ISC license.

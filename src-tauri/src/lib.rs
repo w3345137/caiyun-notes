@@ -1,9 +1,13 @@
 mod frontend_bundle;
 mod map_bridge;
 mod map_sessions;
+#[cfg(desktop)]
+mod resumable_updater;
 use map_bridge::{
     map_view_close, map_view_open, map_view_reply, map_view_request, map_view_set_bounds,
 };
+#[cfg(desktop)]
+use resumable_updater::download_and_install_resumable_update;
 #[cfg(desktop)]
 mod map_navigation;
 
@@ -343,7 +347,8 @@ pub fn run() {
             map_view_open,
             cancel_app_exit,
             inspect_legacy_webkit_origin,
-            quarantine_legacy_webkit_origin
+            quarantine_legacy_webkit_origin,
+            download_and_install_resumable_update
         ])
         .setup(|app| {
             #[cfg(desktop)]

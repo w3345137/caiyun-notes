@@ -13,6 +13,7 @@ fn main() {
             "cancel_app_exit",
             "inspect_legacy_webkit_origin",
             "quarantine_legacy_webkit_origin",
+            "download_and_install_resumable_update",
         ]),
     ))
     .expect("failed to build explicit application command permissions")

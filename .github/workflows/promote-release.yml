@@ -11,6 +11,16 @@ on:
         description: Type PROMOTE
         required: true
         type: string
+      rollout_percentage:
+        description: Initial rollout percentage (0-100)
+        required: true
+        default: '10'
+        type: string
+      minimum_version:
+        description: Oldest shell that may continue without upgrading
+        required: true
+        default: '10.2.7'
+        type: string
 
 permissions:
   contents: write
@@ -88,6 +98,10 @@ jobs:
           pathlib.Path('latest-gitee.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
           pathlib.Path('latest-server.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
           pathlib.Path('latest-github.json').write_text(json.dumps(manifest('https://notes.binapp.top/updates'), ensure_ascii=False, indent=2) + '\n')
+          percentage = int('${{ inputs.rollout_percentage }}')
+          if not 0 <= percentage <= 100: raise SystemExit('rollout_percentage must be 0..100')
+          policy = {'latestVersion': version, 'minimumVersion': '${{ inputs.minimum_version }}', 'rolloutPercentage': percentage, 'rolloutSalt': os.environ['TAG']}
+          pathlib.Path('policy-server.json').write_text(json.dumps(policy, ensure_ascii=False, indent=2) + '\n')
           server_stage = pathlib.Path('server-stage')
           server_stage.mkdir(exist_ok=True)
           shutil.copy2(candidate / 'candidate-report.json', server_stage / 'candidate-report.json')
@@ -144,6 +158,19 @@ jobs:
             [ -n "$VERSION" ] || { echo "Missing candidate version"; exit 1; }
             mkdir -p "/cloudnotes/updates/${VERSION}"
             cp -R "/cloudnotes/updates-staging/${VERSION}/." "/cloudnotes/updates/${VERSION}/"
+      - name: Offload immutable update packages to domestic OSS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            VERSION=$(python3 -c "import json;print(json.load(open('/cloudnotes/updates-staging/candidate-report.json'))['version'])")
+            cd /cloudnotes/backend
+            /opt/node22/bin/node appUpdateOssOffload.js --updates-root /cloudnotes/updates --version "$VERSION"
+            nginx -t
+            systemctl reload nginx
       - name: Verify every versioned URL
         run: |
           while IFS=$'\t' read -r expected url; do
@@ -191,7 +218,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: latest-server.json
+          source: latest-server.json,policy-server.json
           target: /cloudnotes/updates
       - name: Atomically promote server latest manifest
         uses: appleboy/ssh-action@v1.0.3
@@ -199,7 +226,9 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          script: mv /cloudnotes/updates/latest-server.json /cloudnotes/updates/latest.json
+          script: |
+            mv /cloudnotes/updates/latest-server.json /cloudnotes/updates/latest.json
+            mv /cloudnotes/updates/policy-server.json /cloudnotes/updates/policy.json
       - name: Publish GitHub release last
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
