@@ -164,11 +164,11 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          command_timeout: 15m
+          command_timeout: 45m
           script: |
             VERSION=$(python3 -c "import json;print(json.load(open('/cloudnotes/updates-staging/candidate-report.json'))['version'])")
             cd /cloudnotes/backend
-            /opt/node22/bin/node appUpdateOssOffload.js --updates-root /cloudnotes/updates --version "$VERSION"
+            /opt/node-v22/bin/node appUpdateOssOffload.js --updates-root /cloudnotes/updates --version "$VERSION"
             nginx -t
             systemctl reload nginx
       - name: Verify every versioned URL
