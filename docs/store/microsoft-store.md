@@ -50,9 +50,12 @@ Artifacts 下载 `caiyun-notes-msix-<tag>`。
 
 ```powershell
 npm run build:msstore
-powershell -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
+pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
   -IdentityName "..." -Publisher "CN=..." -PublisherDisplayName "..."
 ```
+
+（脚本含中文默认值，文件带 UTF-8 BOM；用 Windows PowerShell 5.1 运行也能正确读取，
+但推荐 pwsh 7。）
 
 ## 四、Partner Center 提交清单
 

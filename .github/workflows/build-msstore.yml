@@ -73,7 +73,7 @@ jobs:
       - name: Pack MSIX (self-signed for sideload testing; Store re-signs on ingestion)
         shell: pwsh
         run: |
-          powershell -ExecutionPolicy Bypass -File scripts/pack-msix.ps1 `
+          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/pack-msix.ps1 `
             -IdentityName "$env:MSSTORE_IDENTITY_NAME" `
             -Publisher "$env:MSSTORE_PUBLISHER" `
             -PublisherDisplayName "$env:MSSTORE_PUBLISHER_DISPLAY_NAME" `
