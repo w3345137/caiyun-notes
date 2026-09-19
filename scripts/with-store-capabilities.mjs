@@ -22,13 +22,21 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const capPath = join(root, 'src-tauri', 'capabilities', 'default.json');
 const backupPath = capPath + '.store-backup';
 
-// 从透传参数中提取 --config <path>，其余参数原样传给 cargo
+// 从透传参数中提取 --config <path> 与 --no-bundle（tauri 级参数），其余参数原样传给 cargo
 const passthrough = process.argv.slice(2);
 let configPath = 'src-tauri/tauri.msstore.conf.json';
 const configIndex = passthrough.indexOf('--config');
 if (configIndex !== -1) {
   configPath = passthrough[configIndex + 1];
   passthrough.splice(configIndex, 2);
+}
+// MSIX 打包只需要 exe；WiX/NSIS 打包在云端会因缺少工具链文件失败，
+// 商店渠道默认 --no-bundle，由 pack-msix.ps1 接手。MSI 备选路线用不带此标志的脚本。
+const tauriFlags = [];
+const noBundleIndex = passthrough.indexOf('--no-bundle');
+if (noBundleIndex !== -1) {
+  passthrough.splice(noBundleIndex, 1);
+  tauriFlags.push('--no-bundle');
 }
 const tag = basename(configPath).match(/^tauri\.(\w+)\.conf\.json$/)?.[1] ?? 'store';
 
@@ -54,6 +62,7 @@ try {
     'build',
     '--config',
     configPath,
+    ...tauriFlags,
     '--',
     '--no-default-features',
     ...passthrough,
