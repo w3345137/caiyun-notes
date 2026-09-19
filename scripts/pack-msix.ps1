@@ -36,9 +36,16 @@ $Version = $parts -join "."
 Write-Host "[msix] 版本: $Version"
 
 # --- 定位主程序（Tauri 前端资源已内嵌进 exe，单文件即可） ---
-$exeCandidates = @("target\release\$DisplayName.exe", "target\release\app.exe",
-                   "src-tauri\target\release\$DisplayName.exe", "src-tauri\target\release\app.exe")
+# 注意：构建带 --target <triple> 时产物在 target\<triple>\release\ 子目录，
+# 递归回退必须覆盖这种布局。
+$exeCandidates = @("src-tauri\target\release\app.exe", "src-tauri\target\release\$DisplayName.exe",
+                   "target\release\app.exe", "target\release\$DisplayName.exe")
 $exe = $exeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $exe) {
+  $exe = Get-ChildItem "src-tauri\target" -Recurse -Filter "app.exe" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match "\\release\\" } |
+    Select-Object -First 1 -ExpandProperty FullName
+}
 if (-not $exe) { throw "未找到构建产物，请先运行 npm run build:msstore" }
 $exeName = "$DisplayName.exe"
 Write-Host "[msix] 主程序: $exe"
