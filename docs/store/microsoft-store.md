@@ -10,11 +10,12 @@
 |---|---|---|
 | 签名 | 微软商店收录时代签，**不用买证书** | 需自购 OV 证书（$100–400/年） |
 | 下载/更新 | 商店全托管 | 自己托管带版本号 URL，每次发版手动更新 |
-| 打包 | makeappx 一道转换（脚本已备好） | `npm run build:msstore` 直接出 MSI |
+| 打包 | makeappx 一道转换（脚本已备好） | `npm run build:msstore:msi` 直接出 MSI |
 | 运行环境 | 轻量容器化，程序目录只读；数据在 APPDATA，对本 app 无影响 | 无 |
 
 何时退回备选路线：MSIX 转换/审核遇到不可解问题时，走 MSI 直链 + 购买 OV 证书
-（证书顺带可用于官网直发安装包签名）。MSI 构建命令已就绪：`npm run build:msstore`。
+（证书顺带可用于官网直发安装包签名）。MSI 构建命令已就绪：`npm run build:msstore:msi`
+（`build:msstore` 默认 `--no-bundle` 只产 exe 供 MSIX 打包，云端无 WiX 也能跑通）。
 
 ## 一、账号（✅ 已完成）
 
