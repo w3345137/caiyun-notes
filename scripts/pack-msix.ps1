@@ -1,4 +1,4 @@
-# 彩云笔记 MSIX 打包脚本（在 Windows 构建机上运行）
+﻿# 彩云笔记 MSIX 打包脚本（在 Windows 构建机上运行）
 #
 # 前提：先执行 npm run build:msstore 生成 target\release\*.exe
 # 用法：
