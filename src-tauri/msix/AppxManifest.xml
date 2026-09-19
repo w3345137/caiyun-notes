@@ -51,9 +51,9 @@
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
         BackgroundColor="transparent">
-        <uap:DefaultTile
-          Square310x310Logo="Assets\Square310x310Logo.png"
-          Square71x71Logo="Assets\Square71x71Logo.png" />
+        <!-- 注意：指定 Square310x310Logo 时必须同时提供 Wide310x150Logo，
+             否则 makeappx 校验失败；当前未提供宽图，故不声明大磁贴。 -->
+        <uap:DefaultTile />
       </uap:VisualElements>
     </Application>
   </Applications>
