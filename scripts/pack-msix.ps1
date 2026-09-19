@@ -1,4 +1,4 @@
-﻿# 彩云笔记 MSIX 打包脚本（在 Windows 构建机上运行）
+# 彩云笔记 MSIX 打包脚本（在 Windows 构建机上运行）
 #
 # 前提：先执行 npm run build:msstore 生成 target\release\*.exe
 # 用法：
@@ -58,14 +58,19 @@ foreach ($a in $assets) {
   else { throw "缺少图标资产: $src" }
 }
 
-# --- 渲染 AppxManifest ---
+# --- 渲染 AppxManifest（循环替换，避免续行链式调用在某些 PowerShell 版本下的解析问题） ---
 $manifest = Get-Content "src-tauri\msix\AppxManifest.xml" -Raw
-$manifest = $manifest.Replace("{{IDENTITY_NAME}}", $IdentityName) `
-                     .Replace("{{PUBLISHER}}", $Publisher) `
-                     .Replace("{{PUBLISHER_DISPLAY_NAME}}", $PublisherDisplayName) `
-                     .Replace("{{VERSION}}", $Version) `
-                     .Replace("{{DISPLAY_NAME}}", $DisplayName) `
-                     .Replace("{{EXE_NAME}}", $exeName)
+$replacements = [ordered]@{
+  "{{IDENTITY_NAME}}" = $IdentityName
+  "{{PUBLISHER}}" = $Publisher
+  "{{PUBLISHER_DISPLAY_NAME}}" = $PublisherDisplayName
+  "{{VERSION}}" = $Version
+  "{{DISPLAY_NAME}}" = $DisplayName
+  "{{EXE_NAME}}" = $exeName
+}
+foreach ($key in $replacements.Keys) {
+  $manifest = $manifest.Replace($key, [string]$replacements[$key])
+}
 Set-Content "$layout\AppxManifest.xml" $manifest -Encoding UTF8
 
 # --- 定位 makeappx（Windows SDK 自带） ---
