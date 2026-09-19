@@ -1,6 +1,6 @@
 # 彩云笔记 · 应用商店上架总览
 
-> 维护：随上架进度更新。最近更新：2026-09-18
+> 维护：随上架进度更新。最近更新：2026-09-19
 
 ## 渠道构建矩阵
 
@@ -10,8 +10,10 @@
 |---|---|---|---|
 | 官网直发版（dmg/nsis/deb/appimage） | `npm run build` | ✅ 保留 | ✅ 开启 |
 | Microsoft Store 版 | `npm run build:msstore` | ❌ 已剥离 | ✅ 开启 |
-| 商店保守版（审核问询时备用） | `npm run build:msstore:no-hotupdate` | ❌ 已剥离 | ❌ 关闭（回退壳内置资源） |
-| Mac App Store 版（待做） | 待定（mas 配置 + entitlements） | ❌ 剥离 | 默认开启 |
+| Microsoft Store 保守版（审核问询时备用） | `npm run build:msstore:no-hotupdate` | ❌ 已剥离 | ❌ 关闭（回退壳内置资源） |
+| Mac App Store 版 | `npm run build:appstore`（出 .app，再 productbuild 打 pkg） | ❌ 已剥离 | ✅ 开启 |
+| Mac App Store 保守版（审核问询时备用） | `npm run build:appstore:no-hotupdate` | ❌ 已剥离 | ❌ 关闭（回退壳内置资源） |
+| Flathub 版（规划中，见 linux-store.md） | flatpak-builder + `flatpak/top.binapp.notes.yml`（草案） | ❌ 商店托管 | ✅ 开启（无限制） |
 
 特性开关语义：
 
@@ -20,9 +22,11 @@
   前端无需改动。
 - `frontend-hot-update`（默认开启）：允许 `FrontendBundleManager` 从 notes.binapp.top
   拉取签名前端包。关闭后始终使用壳内置资源。
-- 商店版构建时 `scripts/with-msstore-capabilities.mjs` 会在构建期间临时从
-  `capabilities/default.json` 过滤 `updater:*` 权限（Tauri 2 编译期无条件加载
-  capabilities 目录，权限来源被裁剪后必须同步移除引用），构建结束自动恢复。
+- 商店版剥离 updater 权限有两层保障：build.rs 在未启用 `self-update` 特性时自动生成
+  剔除 `updater:*` 的能力清单副本（Tauri 2 编译期无条件加载 capabilities 目录，
+  权限来源被裁剪后必须同步移除引用；裸 `cargo check/build --no-default-features` 可直接通过）；
+  `scripts/with-store-capabilities.mjs` 构建期间另会临时从 `capabilities/default.json`
+  过滤 `updater:*` 权限，构建结束自动恢复。
 
 ## 三店政策要点（已核实，2026-09）
 
@@ -37,8 +41,11 @@
 ## 上架顺序
 
 1. **Microsoft Store**（进行中，见 microsoft-store.md）——账号已注册 ✅；走 MSIX 商店代签路线，零费用。
-2. **Mac App Store**——等开发者会员生效后做：entitlements + 沙盒 + pkg + 发布证书。
-3. **Flathub**——缓办。注意其"有意义的开发历史"要求和 AI 生成内容披露政策
+2. **Mac App Store**（配置与 Runbook 已备，见 apple-app-store.md）——等开发者会员生效后执行：
+   替换 entitlements 里的 TEAM_ID → `npm run build:appstore` → 嵌入 Provisioning Profile 重签 →
+   productbuild 出 pkg → Transporter 上传。
+3. **Flathub（主）/ Snap（辅）**——分析与 manifest 草案见 linux-store.md，缓办。
+   注意其"有意义的开发历史"要求和 AI 生成内容披露政策
    （提交 PR 的文案/交互不得由 AI agent 自动生成）。
 
 ## 跨店共同纪律

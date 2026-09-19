@@ -1,0 +1,67 @@
+# 彩云笔记 Flathub manifest 草案（提交 flathub/top.binapp.notes 仓库时使用）
+#
+# 应用 ID：top.binapp.notes —— 官网 notes.binapp.top 的反向域名惯例；
+# 提审前需在 binapp.top 站点完成 Flathub 域名验证。
+#
+# 状态：草案。标注 TODO 的项（离线 vendoring、metainfo/desktop 文件、tray 依赖）
+# 完成后才能提审，背景与路线见 docs/store/linux-store.md。
+#
+# 渠道说明：商店渠道剥离整包自更新（--no-default-features），保留前端热更新
+# （--features frontend-hot-update；Flathub/Snap 对 WebView 前端热更新无限制，
+#  见 docs/store/hot-update-policy.md）。updater 权限由 build.rs 按特性自动剥离。
+# 前端资源 dist/ 随仓库提交，构建只需 cargo，无需 npm 步骤。
+
+app-id: top.binapp.notes
+runtime: org.gnome.Platform        # 自带 WebKitGTK（webkit2gtk-4.1 / soup3），Tauri v2 必需
+runtime-version: '49'              # TODO 提审时对齐 Flathub 当前稳定运行时
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: caiyun-notes
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=network                            # 云同步 + 前端热更新包下载 + 地图 API
+  - --device=dri                               # WebKitGTK 图形加速
+  - --talk-name=org.freedesktop.Notifications  # tauri-plugin-notification（D-Bus）
+  - --env=GTK_USE_PORTAL=1                     # 文件对话框走 XDG portal（tauri-plugin-dialog）
+  # 附件导入导出优先经 portal 授权；如确有场景不够再评估 --filesystem=xdg-documents。
+
+modules:
+  # TODO tray 图标依赖 libayatana-appindicator（GNOME Platform 不含，
+  # Cargo.lock 中的 libappindicator-sys 编译期需要其头文件）：
+  # 在此加 module 源码构建 libayatana-appindicator，或为 Linux 商店版裁剪 tray-icon 特性。
+  - name: caiyun-notes
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/caiyun-notes/cargo
+    build-commands:
+      - cargo build --release --locked --offline --no-default-features --features frontend-hot-update --manifest-path src-tauri/Cargo.toml
+      - install -Dm755 src-tauri/target/release/app /app/bin/caiyun-notes
+      # TODO metainfo 与 desktop 文件尚未创建（Flathub 提审硬性要求）
+      - install -Dm644 flatpak/top.binapp.notes.desktop /app/share/applications/top.binapp.notes.desktop
+      - install -Dm644 flatpak/top.binapp.notes.metainfo.xml /app/share/metainfo/top.binapp.notes.metainfo.xml
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/top.binapp.notes.png
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/top.binapp.notes.png
+      - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/top.binapp.notes.png
+    sources:
+      # TODO 提审时替换为固定 tag + commit（公开壳仓库 github.com/w3345137/caiyun-notes）
+      - type: git
+        url: https://github.com/w3345137/caiyun-notes.git
+        tag: pXX
+      # TODO 离线 vendoring（Flathub 构建全程无网络）：
+      #   python3 flatpak-cargo-generator.py src-tauri/Cargo.lock -o cargo-sources.json
+      # 生成文件体积大、不纳入本仓库，提交 Flathub 时放在 manifest 旁并在此引用：
+      # - cargo-sources.json
+      - type: inline
+        dest: cargo
+        dest-filename: config.toml
+        contents: |
+          [source.crates-io]
+          replace-with = "vendored-sources"
+          [source.vendored-sources]
+          directory = "cargo/vendor"

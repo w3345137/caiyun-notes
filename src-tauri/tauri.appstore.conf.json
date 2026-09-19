@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "targets": ["app"],
+    "macOS": {
+      "category": "public.app-category.productivity",
+      "entitlements": "./entitlements.appstore.plist",
+      "signingIdentity": "Apple Distribution"
+    }
+  }
+}
