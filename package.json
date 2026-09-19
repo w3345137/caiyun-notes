@@ -6,7 +6,10 @@
   "scripts": {
     "tauri": "tauri",
     "build": "tauri build",
-    "build:debug": "tauri build --debug --no-bundle"
+    "build:debug": "tauri build --debug --no-bundle",
+    "build:msstore": "node scripts/with-msstore-capabilities.mjs --features frontend-hot-update",
+    "build:msstore:no-hotupdate": "node scripts/with-msstore-capabilities.mjs",
+    "pack:msix": "powershell -ExecutionPolicy Bypass -File scripts/pack-msix.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "2.10.1",

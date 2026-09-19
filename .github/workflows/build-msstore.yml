@@ -1,0 +1,87 @@
+name: Build MS Store (MSIX)
+
+# 云端打包 Microsoft Store 版（MSIX，商店代签零证书路线）。
+# 手动触发；应用标识三个值优先取仓库 Variables
+# （Settings → Secrets and variables → Actions → Variables）：
+#   MSSTORE_IDENTITY_NAME / MSSTORE_PUBLISHER / MSSTORE_PUBLISHER_DISPLAY_NAME
+# 触发页手动输入可临时覆盖。
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example p16
+        required: true
+        type: string
+      identity_name:
+        description: Package/Identity/Name（留空用仓库 Variable）
+        required: false
+        type: string
+      publisher:
+        description: Package/Identity/Publisher（CN=...，留空用仓库 Variable）
+        required: false
+        type: string
+      publisher_display_name:
+        description: PublisherDisplayName（留空用仓库 Variable）
+        required: false
+        type: string
+
+jobs:
+  build-msix:
+    runs-on: windows-latest
+    env:
+      MSSTORE_IDENTITY_NAME: ${{ github.event.inputs.identity_name || vars.MSSTORE_IDENTITY_NAME }}
+      MSSTORE_PUBLISHER: ${{ github.event.inputs.publisher || vars.MSSTORE_PUBLISHER }}
+      MSSTORE_PUBLISHER_DISPLAY_NAME: ${{ github.event.inputs.publisher_display_name || vars.MSSTORE_PUBLISHER_DISPLAY_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Validate bundled frontend
+        shell: bash
+        run: |
+          test -f dist/index.html
+          test -f dist/app-dist-manifest.json
+
+      - name: Validate store identity inputs
+        shell: bash
+        run: |
+          test -n "$MSSTORE_IDENTITY_NAME" || { echo "::error::缺少 Identity Name（输入或仓库 Variable MSSTORE_IDENTITY_NAME）"; exit 1; }
+          test -n "$MSSTORE_PUBLISHER" || { echo "::error::缺少 Publisher（输入或仓库 Variable MSSTORE_PUBLISHER）"; exit 1; }
+          test -n "$MSSTORE_PUBLISHER_DISPLAY_NAME" || { echo "::error::缺少 PublisherDisplayName"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      - name: Build store variant (no self-updater)
+        shell: bash
+        run: npm run build:msstore -- --target x86_64-pc-windows-msvc
+
+      - name: Pack MSIX (self-signed for sideload testing; Store re-signs on ingestion)
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/pack-msix.ps1 `
+            -IdentityName "$env:MSSTORE_IDENTITY_NAME" `
+            -Publisher "$env:MSSTORE_PUBLISHER" `
+            -PublisherDisplayName "$env:MSSTORE_PUBLISHER_DISPLAY_NAME" `
+            -Sign
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: caiyun-notes-msix-${{ inputs.tag }}
+          path: build/msix/*.msix
+          if-no-files-found: error

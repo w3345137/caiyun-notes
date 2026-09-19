@@ -1,15 +1,23 @@
 mod frontend_bundle;
 mod map_bridge;
 mod map_sessions;
-#[cfg(desktop)]
+#[cfg(all(desktop, feature = "self-update"))]
 mod resumable_updater;
 use map_bridge::{
     map_view_close, map_view_open, map_view_reply, map_view_request, map_view_set_bounds,
 };
-#[cfg(desktop)]
+#[cfg(all(desktop, feature = "self-update"))]
 use resumable_updater::download_and_install_resumable_update;
 #[cfg(desktop)]
 mod map_navigation;
+
+/// 商店版（未启用 self-update 特性）不提供应用内整包更新：
+/// 保留同名命令避免前端调用报"命令不存在"，统一降级为提示走商店更新。
+#[cfg(not(all(desktop, feature = "self-update")))]
+#[tauri::command]
+async fn download_and_install_resumable_update() -> Result<(), String> {
+    Err("当前版本由应用商店分发，请在应用商店中检查更新。".to_string())
+}
 
 use frontend_bundle::{check_frontend_bundle_update, FrontendBundleManager, FrontendBundleState};
 use serde::Serialize;
@@ -351,14 +359,18 @@ pub fn run() {
             download_and_install_resumable_update
         ])
         .setup(|app| {
-            #[cfg(desktop)]
+            #[cfg(all(desktop, feature = "self-update"))]
             {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
             }
             // 本地库验收包必须运行本次编译进壳的资源；若复用生产前端热更新目录，
             // WebKit 会加载旧 release，导致验收结果与当前源码脱节。
-            let frontend_manager = if app.config().identifier == "com.caiyun.notes.e2e"
+            // 商店版可通过关闭 frontend-hot-update 特性整体禁用前端热更新，
+            // 此时始终使用壳内置资源。
+            let frontend_hot_update_enabled = cfg!(feature = "frontend-hot-update");
+            let frontend_manager = if !frontend_hot_update_enabled
+                || app.config().identifier == "com.caiyun.notes.e2e"
                 || app.config().identifier == "com.caiyun.notes.mindmap-e2e"
                 || app.config().identifier == "com.caiyun.notes.route-e2e"
             {
