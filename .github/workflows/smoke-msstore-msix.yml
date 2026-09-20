@@ -108,6 +108,9 @@ jobs:
             if ($webview.CommandLine -match '--user-data-dir=(?:"([^"]+)"|(\S+))') {
               $dataDir = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
               Write-Host "WebView2 user data directory: $dataDir"
+              $privateDir = Join-Path $env:LOCALAPPDATA "Packages\$($package.PackageFamilyName)\LocalCache\Local\com.caiyun.notes\EBWebView"
+              Write-Host "Host-visible WebView2 directory exists: $(Test-Path -LiteralPath $dataDir)"
+              Write-Host "MSIX-private WebView2 directory exists: $(Test-Path -LiteralPath $privateDir)"
               break
             }
           }
