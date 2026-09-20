@@ -1,8 +1,16 @@
+param(
+  [string]$UnpackagedExePath = 'src-tauri/target/x86_64-pc-windows-msvc/release/app.exe'
+)
+
 $ErrorActionPreference = 'Stop'
 
 $identityName = 'BinApp.547813EA77836'
 $publisher = 'CN=49D17C52-EB55-4439-9F79-0DFACFCB393C'
-$exe = Join-Path (Get-Location).Path 'src-tauri/target/x86_64-pc-windows-msvc/release/app.exe'
+$exe = if ([System.IO.Path]::IsPathRooted($UnpackagedExePath)) {
+  [System.IO.Path]::GetFullPath($UnpackagedExePath)
+} else {
+  [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $UnpackagedExePath))
+}
 $screenshots = Join-Path $env:RUNNER_TEMP 'caiyun-indexeddb-probe'
 New-Item -ItemType Directory -Path $screenshots -Force | Out-Null
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Diagnostic exe missing: $exe" }

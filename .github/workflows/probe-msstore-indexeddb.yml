@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -28,6 +30,27 @@ jobs:
 
       - run: npm ci
 
+      - name: Build the P19 shell with the same isolated IndexedDB fixture
+        shell: pwsh
+        run: |
+          $legacy = Join-Path $env:RUNNER_TEMP 'caiyun-p19-profile-probe'
+          git worktree add --detach $legacy p19
+          if ($LASTEXITCODE -ne 0) { throw 'P19 worktree checkout failed' }
+          Copy-Item tests/windows-profile-probe/index.html (Join-Path $legacy 'dist/index.html') -Force
+          Copy-Item tests/windows-profile-probe/probe.js (Join-Path $legacy 'dist/probe.js') -Force
+          Push-Location $legacy
+          try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'P19 npm ci failed' }
+            npm run build -- --no-bundle --target x86_64-pc-windows-msvc
+            if ($LASTEXITCODE -ne 0) { throw 'P19 shell build failed' }
+          } finally {
+            Pop-Location
+          }
+          $legacyExe = Join-Path $legacy 'src-tauri/target/x86_64-pc-windows-msvc/release/app.exe'
+          if (-not (Test-Path -LiteralPath $legacyExe -PathType Leaf)) { throw 'P19 executable missing' }
+          Copy-Item -LiteralPath $legacyExe -Destination (Join-Path $env:RUNNER_TEMP 'caiyun-p19-profile-probe.exe') -Force
+
       - name: Build an isolated IndexedDB fixture into the same Store shell
         shell: pwsh
         run: |
@@ -40,7 +63,8 @@ jobs:
         shell: pwsh
         timeout-minutes: 6
         run: |
-          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/probe-msstore-indexeddb.ps1
+          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/probe-msstore-indexeddb.ps1 `
+            -UnpackagedExePath (Join-Path $env:RUNNER_TEMP 'caiyun-p19-profile-probe.exe')
           if ($LASTEXITCODE -ne 0) { throw "IndexedDB continuity probe failed: $LASTEXITCODE" }
 
       - name: Upload two visual outcomes
