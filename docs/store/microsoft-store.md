@@ -89,5 +89,6 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 
 - Store ID `9P2VQP7JKVLN`，草稿提交 `1152921505701934449`；商品页尚未上线。
 - Partner Center 已接受 `CaiyunNotes_10.2.8.0_x64.msix` 并显示 `Validated`；中文/英文一览、属性、提交选项已保存。`runFullTrust` 仍须经微软审批。
+- 同一 MSIX 的隔离 Windows CI 验收 run `35484600599` 已完成哈希核验、临时签名安装和包内 `app.exe` 启动后 8 秒存活。该无头检查不等于真实桌面显示、WebView2 页面、登录或旧版数据迁移测试。
 - 年龄分级仅完成问卷预览，尚未同意法律条款并保存；独立审核账号未提供；定价页显示全球免费公开但概览未标记完成；尚未完成 Windows 真机安装与数据迁移验收。
 - 只有认证通过且公开页实测可访问后，才可公布最终 Store 商品链接 `https://apps.microsoft.com/detail/9P2VQP7JKVLN`。
