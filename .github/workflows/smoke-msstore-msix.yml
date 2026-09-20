@@ -23,6 +23,40 @@ jobs:
           github-token: ${{ github.token }}
           path: original
 
+      - name: Probe the unpackaged Win32 WebView2 profile
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $original = Get-ChildItem original -Filter *.msix -Recurse | Select-Object -First 1
+          if (-not $original) { throw 'MSIX artifact missing before unpackaged profile probe' }
+          $zip = Join-Path $env:RUNNER_TEMP 'caiyun-msix-probe.zip'
+          $extracted = Join-Path $env:RUNNER_TEMP 'caiyun-msix-probe'
+          Copy-Item -LiteralPath $original.FullName -Destination $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath $extracted
+          $legacyExe = Join-Path $extracted 'app\app.exe'
+          if (-not (Test-Path -LiteralPath $legacyExe -PathType Leaf)) {
+            throw 'Unpackaged executable was not present in the MSIX payload'
+          }
+          $legacyProfile = Join-Path $env:LOCALAPPDATA 'com.caiyun.notes\EBWebView'
+          $legacyProcess = Start-Process -FilePath $legacyExe -PassThru
+          try {
+            Start-Sleep -Seconds 8
+            $legacyProcess.Refresh()
+            if ($legacyProcess.HasExited) {
+              throw "Unpackaged app exited before profile probe (code $($legacyProcess.ExitCode))"
+            }
+            Write-Host "Unpackaged Win32 profile exists: $(Test-Path -LiteralPath $legacyProfile)"
+            if (-not (Test-Path -LiteralPath $legacyProfile -PathType Container)) {
+              throw 'Unpackaged app did not create its expected WebView2 profile'
+            }
+            $marker = Join-Path $legacyProfile 'caiyun-msix-profile-probe.txt'
+            Set-Content -LiteralPath $marker -Value 'isolated-ci-legacy-profile' -Encoding ascii
+            Write-Host 'Unpackaged profile marker staged for packaged-app comparison.'
+          } finally {
+            taskkill /PID $legacyProcess.Id /T /F | Out-Null
+          }
+
       - name: Verify original package and install a temporary signed copy
         timeout-minutes: 5
         shell: pwsh
@@ -157,6 +191,10 @@ jobs:
               $privateDir = Join-Path $env:LOCALAPPDATA "Packages\$($package.PackageFamilyName)\LocalCache\Local\com.caiyun.notes\EBWebView"
               Write-Host "Host-visible WebView2 directory exists: $(Test-Path -LiteralPath $dataDir)"
               Write-Host "MSIX-private WebView2 directory exists: $(Test-Path -LiteralPath $privateDir)"
+              $legacyMarker = Join-Path $env:LOCALAPPDATA 'com.caiyun.notes\EBWebView\caiyun-msix-profile-probe.txt'
+              $privateMarker = Join-Path $privateDir 'caiyun-msix-profile-probe.txt'
+              Write-Host "Legacy profile marker remains on host: $(Test-Path -LiteralPath $legacyMarker)"
+              Write-Host "Legacy profile marker copied to MSIX-private profile: $(Test-Path -LiteralPath $privateMarker)"
               break
             }
           }
