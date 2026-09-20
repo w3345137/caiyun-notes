@@ -2,7 +2,7 @@
 
 > 目标：把彩云笔记 Windows 版（Tauri / WebView2）提交到 Microsoft Store。
 > 路线：**MSIX 包 + 微软商店代签，全程零费用**（账号免费 + 无需购买代码签名证书）。
-> 依据：Microsoft Store Policies v7.19（2026-07 核）。
+> 商店条款、提交表单和安装行为会变化；每次提交前重新核验当前规则及真实包。
 
 ## 路线选择
 
@@ -43,8 +43,8 @@ Partner Center → 创建应用（先"保留名称"：彩云笔记，如被占�
 **每次构建**：Actions → "Build MS Store (MSIX)" → Run workflow → 填 tag → 几分钟后在
 Artifacts 下载 `caiyun-notes-msix-<tag>`。
 
-流水线自动完成：商店版构建（剥离自更新器）→ 渲染 AppxManifest → makeappx 打包 →
-自签名（便于侧载测试；提交商店后微软代签替换）。产物即提交文件。
+流水线自动完成：商店版构建（剥离自更新器）→ 渲染 AppxManifest → makeappx 打包。
+当前工作流上传的是**未签名** MSIX，供 Partner Center 接收并由商店签名；不能直接把它当作已验收的侧载安装包。
 
 本地有 Windows 机器时也可手动执行（等价路径）：
 
@@ -63,7 +63,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 |---|---|
 | 包上传 | 上传第三节生成的 .msix |
 | 类别 | 生产力 |
-| 年龄分级 | IARC 问卷，预期 3+ |
+| 年龄分级 | 已按笔记协同/用户内容分享如实填写问卷，当前预览为 Microsoft 12+；尚需发布者同意 IARC 条款后保存 |
 | 隐私政策 URL | **必填**（账号体系 + 云同步），公开页面说明数据收集与存储 |
 | 支持联系方式 | 官网或邮箱 |
 | 截图 | 至少 1 张 1366×768+，建议 3–5 张 |
@@ -76,10 +76,18 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 - **10.2.2（动态代码）**：商店描述里写清楚的功能，热更新不得超出，见 hot-update-policy.md。
   若被问询，用 `npm run build:msstore:no-hotupdate` 重打保守版再提交。
 - **可测试性（10.3）**：测试账号必须可用，否则按"无法测试"退回。
-- 审核周期：通常 15 分钟–3 天。
+- 审核用独立账号需先确认可登录且仅含演示数据，凭据通过 Partner Center 专用字段提供，不写公开描述。
+- 不承诺固定审核周期；以 Partner Center 实际认证状态为准。
 
 ## 六、发布后的更新节奏
 
 1. 壳/原生变更：版本号 +1 → `npm run build:msstore` → `pack-msix.ps1` → 提交。
-2. 前端小修小补：走热更新，三端同时生效，无需过审。
-3. 官网渠道（NSIS 自更新版）照常 `npm run build`，互不影响。
+2. 已描述功能范围内的前端修复：Windows 商店包可继续使用自有签名热更新，但最终接受与否以 Microsoft 审核为准；不等同于三平台同时获准。
+3. 官网直装渠道只在商店未覆盖、旧用户迁移或故障回退期间保留；商店包真机安装、升级及本地数据迁移验证后，逐步收口到商店渠道。
+
+## 本次 P20 草稿状态（2026-09-20）
+
+- Store ID `9P2VQP7JKVLN`，草稿提交 `1152921505701934449`；商品页尚未上线。
+- Partner Center 已接受 `CaiyunNotes_10.2.8.0_x64.msix` 并显示 `Validated`；中文/英文一览、属性、提交选项已保存。`runFullTrust` 仍须经微软审批。
+- 年龄分级仅完成问卷预览，尚未同意法律条款并保存；独立审核账号未提供；定价页显示全球免费公开但概览未标记完成；尚未完成 Windows 真机安装与数据迁移验收。
+- 只有认证通过且公开页实测可访问后，才可公布最终 Store 商品链接 `https://apps.microsoft.com/detail/9P2VQP7JKVLN`。
