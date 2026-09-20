@@ -101,6 +101,9 @@ jobs:
           $descendants | Select-Object ProcessId, ParentProcessId, Name | Format-Table -AutoSize | Out-String | Write-Host
           $webviewProcesses = @($descendants | Where-Object { $_.Name -ieq 'msedgewebview2.exe' })
           Write-Host "WebView2 descendant process count: $($webviewProcesses.Count)"
+          if ($webviewProcesses.Count -eq 0) {
+            throw 'Packaged app stayed alive but did not start a WebView2 process'
+          }
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'
 
