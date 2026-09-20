@@ -69,6 +69,30 @@ jobs:
           Write-Host "Installed package: $($package.PackageFullName)"
           Write-Host 'Original MSIX remains unsigned and byte-for-byte unchanged.'
 
+      - name: Check packaged application starts
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          EXPECTED_NAME: BinApp.547813EA77836
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Get-AppxPackage -Name $env:EXPECTED_NAME
+          if (-not $package) { throw 'Installed package missing before launch smoke' }
+          $exe = Join-Path $package.InstallLocation 'app\app.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "Packaged executable missing: $exe"
+          }
+          Write-Host "Launching packaged executable: $exe"
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "Packaged app exited within 8 seconds (exit code $($process.ExitCode))"
+          }
+          Write-Host "Packaged app remained running (PID $($process.Id))."
+          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'
+
       - name: Remove temporary QA install
         if: always()
         shell: pwsh
