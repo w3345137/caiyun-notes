@@ -74,7 +74,6 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_NAME: BinApp.547813EA77836
-          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: --remote-debugging-port=19382
         run: |
           $ErrorActionPreference = 'Stop'
           $package = Get-AppxPackage -Name $env:EXPECTED_NAME
@@ -83,9 +82,6 @@ jobs:
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
             throw "Packaged executable missing: $exe"
           }
-          $debugPolicy = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
-          New-Item -Path $debugPolicy -Force | Out-Null
-          New-ItemProperty -Path $debugPolicy -Name 'app.exe' -Value '--remote-debugging-port=19382' -PropertyType String -Force | Out-Null
           Write-Host "Launching packaged executable: $exe"
           $process = Start-Process -FilePath $exe -PassThru
           Start-Sleep -Seconds 8
@@ -118,13 +114,6 @@ jobs:
               break
             }
           }
-          try {
-            $targets = @(Invoke-RestMethod 'http://127.0.0.1:19382/json/list' -TimeoutSec 5)
-            Write-Host "WebView2 CDP target count: $($targets.Count)"
-            $targets | ForEach-Object { Write-Host "WebView2 target origin: $(([uri]$_.url).GetLeftPart('Authority'))" }
-          } catch {
-            Write-Host "WebView2 CDP probe unavailable: $($_.Exception.Message)"
-          }
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'
 
@@ -132,7 +121,6 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          Remove-ItemProperty -Path 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name 'app.exe' -ErrorAction SilentlyContinue
           Get-AppxPackage -Name 'BinApp.547813EA77836' | Remove-AppxPackage -ErrorAction Continue
           $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
           if (Test-Path $certPath) {
