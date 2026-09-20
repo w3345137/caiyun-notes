@@ -90,6 +90,11 @@ jobs:
             throw "Packaged app exited within 8 seconds (exit code $($process.ExitCode))"
           }
           Write-Host "Packaged app remained running (PID $($process.Id))."
+          $process.Refresh()
+          Write-Host "Packaged app main window handle: $($process.MainWindowHandle)"
+          if ($process.MainWindowHandle -eq [IntPtr]::Zero) {
+            Write-Warning 'No main window handle was visible to the isolated CI runner; this does not establish that the desktop UI rendered.'
+          }
           $allProcesses = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine)
           $descendantIds = @($process.Id)
           do {
