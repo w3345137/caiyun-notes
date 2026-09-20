@@ -94,5 +94,5 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 - 后续隔离运行 `35484963629` 显示 WebView2 逻辑数据目录为 `%LocalAppData%\com.caiyun.notes\EBWebView`，但从包外观察该实体目录不存在，MSIX 私有 `Packages/<PackageFamilyName>/LocalCache/Local/com.caiyun.notes/EBWebView` 存在。**不能据同一个逻辑路径认定官网旧版的 IndexedDB/离线 journal 已自动迁入**；必须用旧版写入未同步测试内容、安装商店包、断网打开并完成同步的真实升级场景验收后，才能向旧用户推广商店版。
 - 隔离 CI run `35489539283` 用同一 MSIX 解包 exe 先以非打包方式启动，确实创建旧版逻辑 WebView2 目录；随后写入诊断标记再安装 MSIX。商店包装启动后，宿主侧旧目录及标记仍在，MSIX 私有同名目录未出现。这说明“私有目录一定取代旧资料目录”的断言并不稳定；标记由宿主侧读取，**仍不能证明 WebView2 实际读到了旧 IndexedDB**。继续要求真机、断网和未同步笔记回归。
 - 开发者已确认 IARC 使用条款与成年声明并在 Partner Center 保存；回读显示 Microsoft 12+、IARC 12+，分级 ID 尚为“待定”。概览异步校验完成后“提交进行认证”按钮可用；定价页仍为全球免费公开。认证通过后的发布方式已设为**手动发布**，避免真机迁移未验收时自动面向公众上线。
-- 现有 `test01@notes.app` 审核账号已通过生产登录验证；账号邮箱与密码已分别填在 Partner Center 非公开“其他测试信息”凭据字段中，页面显示两条掩码凭据。生产后端商店渠道版本策略仍待发布；尚未完成 Windows 真机安装与旧版离线数据迁移验收。**已提交认证，但尚未获准或手动发布。**
+- 现有 `test01@notes.app` 审核账号已通过生产登录验证；账号邮箱与密码已分别填在 Partner Center 非公开“其他测试信息”凭据字段中，页面显示两条掩码凭据。生产后端已按部署 stamp `20260920_124435` 发布商店/官网独立最低壳版本判断：`10.2.7` 商店壳返回 426，`10.2.8` 商店壳通过该门槛。尚未完成 Windows 真机安装与旧版离线数据迁移验收。**已提交认证，但尚未获准或手动发布。**
 - 只有认证通过且公开页实测可访问后，才可公布最终 Store 商品链接 `https://apps.microsoft.com/detail/9P2VQP7JKVLN`。
