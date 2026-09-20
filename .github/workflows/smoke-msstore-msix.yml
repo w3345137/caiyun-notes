@@ -74,6 +74,7 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_NAME: BinApp.547813EA77836
+          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: --remote-debugging-port=19382
         run: |
           $ErrorActionPreference = 'Stop'
           $package = Get-AppxPackage -Name $env:EXPECTED_NAME
@@ -113,6 +114,13 @@ jobs:
               Write-Host "MSIX-private WebView2 directory exists: $(Test-Path -LiteralPath $privateDir)"
               break
             }
+          }
+          try {
+            $targets = @(Invoke-RestMethod 'http://127.0.0.1:19382/json/list' -TimeoutSec 5)
+            Write-Host "WebView2 CDP target count: $($targets.Count)"
+            $targets | ForEach-Object { Write-Host "WebView2 target origin: $(([uri]$_.url).GetLeftPart('Authority'))" }
+          } catch {
+            Write-Host "WebView2 CDP probe unavailable: $($_.Exception.Message)"
           }
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'
