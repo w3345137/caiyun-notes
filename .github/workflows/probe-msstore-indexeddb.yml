@@ -1,0 +1,65 @@
+name: Probe Windows Store IndexedDB continuity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      - name: Build an isolated IndexedDB fixture into the same Store shell
+        shell: pwsh
+        run: |
+          Copy-Item tests/windows-profile-probe/index.html dist/index.html -Force
+          Copy-Item tests/windows-profile-probe/probe.js dist/probe.js -Force
+          npm run build:msstore -- --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Diagnostic Store shell build failed: $LASTEXITCODE" }
+
+      - name: Write IndexedDB outside a package, then read it inside MSIX
+        shell: pwsh
+        timeout-minutes: 6
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/probe-msstore-indexeddb.ps1
+          if ($LASTEXITCODE -ne 0) { throw "IndexedDB continuity probe failed: $LASTEXITCODE" }
+
+      - name: Upload two visual outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: caiyun-msstore-indexeddb-probe-${{ github.run_id }}
+          path: ${{ runner.temp }}/caiyun-indexeddb-probe/*.png
+          if-no-files-found: warn
+
+      - name: Remove isolated QA install
+        if: always()
+        shell: pwsh
+        run: |
+          Get-AppxPackage -Name 'BinApp.547813EA77836' | Remove-AppxPackage -ErrorAction Continue
+          $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-profile-probe.cer'
+          if (Test-Path $certPath) {
+            $thumbprint = (Get-PfxCertificate -FilePath $certPath).Thumbprint
+            Remove-Item "Cert:\LocalMachine\Root\$thumbprint" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\LocalMachine\TrustedPeople\$thumbprint" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\CurrentUser\My\$thumbprint" -ErrorAction SilentlyContinue
+          }
