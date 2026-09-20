@@ -8,7 +8,7 @@
 | 项 | 值 |
 |---|---|
 | 类别 | 生产力（Productivity） |
-| 年龄分级 | Partner Center IARC 问卷预览为 12+；待开发者确认 IARC 条款后保存，最终以 IARC 结果为准 |
+| 年龄分级 | 开发者已确认并保存 IARC 条款；Partner Center 回读 Microsoft 12+、IARC 12+，分级 ID 暂为待定 |
 | 隐私政策 | https://notes.binapp.top/privacy |
 | 支持联系 | 767493611@qq.com 或 https://notes.binapp.top |
 | 系统要求 | Windows 10 1809+（x64）；依赖 WebView2 运行时（Win11 自带；Win10 大多已装，认证备注说明） |
