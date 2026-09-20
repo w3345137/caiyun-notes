@@ -90,6 +90,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 - Store ID `9P2VQP7JKVLN`，草稿提交 `1152921505701934449`；商品页尚未上线。
 - Partner Center 已接受 `CaiyunNotes_10.2.8.0_x64.msix` 并显示 `Validated`；中文/英文一览、属性、提交选项已保存。`runFullTrust` 仍须经微软审批。
 - 同一 MSIX 的隔离 Windows CI 验收 run `35484825450` 已完成哈希核验、临时签名安装和包内 `app.exe` 启动后 8 秒存活；进程树出现 6 个 WebView2 子孙进程，且已把至少一个 WebView2 子孙进程写为必过断言。该无头检查不等于真实桌面显示、WebView2 页面内容正确、登录或旧版数据迁移测试。
+- 后续隔离 CI run `35488555357` 对**同一上传包哈希**获取了非零主窗口句柄并截获 Windows 窗口图像，显示彩云笔记欢迎页与“登录/注册”按钮，证明包内置首屏实际渲染。截图仍不验证登录、编辑或数据迁移。
 - 后续隔离运行 `35484963629` 显示 WebView2 逻辑数据目录为 `%LocalAppData%\com.caiyun.notes\EBWebView`，但从包外观察该实体目录不存在，MSIX 私有 `Packages/<PackageFamilyName>/LocalCache/Local/com.caiyun.notes/EBWebView` 存在。**不能据同一个逻辑路径认定官网旧版的 IndexedDB/离线 journal 已自动迁入**；必须用旧版写入未同步测试内容、安装商店包、断网打开并完成同步的真实升级场景验收后，才能向旧用户推广商店版。
 - 开发者已确认 IARC 使用条款与成年声明并在 Partner Center 保存；回读显示 Microsoft 12+、IARC 12+，分级 ID 尚为“待定”。概览异步校验完成后“提交进行认证”按钮可用；定价页仍为全球免费公开。认证通过后的发布方式已设为**手动发布**，避免真机迁移未验收时自动面向公众上线。
 - 独立审核账号仍未提供；生产后端商店渠道版本策略仍待发布；尚未完成 Windows 真机安装与旧版离线数据迁移验收。当前仅是可提交的草稿，**尚未点击提交认证**。
