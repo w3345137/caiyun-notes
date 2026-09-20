@@ -104,6 +104,13 @@ jobs:
           if ($webviewProcesses.Count -eq 0) {
             throw 'Packaged app stayed alive but did not start a WebView2 process'
           }
+          foreach ($webview in $webviewProcesses) {
+            if ($webview.CommandLine -match '--user-data-dir=(?:"([^"]+)"|(\S+))') {
+              $dataDir = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+              Write-Host "WebView2 user data directory: $dataDir"
+              break
+            }
+          }
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'
 
