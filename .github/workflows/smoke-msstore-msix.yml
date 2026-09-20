@@ -43,6 +43,7 @@ jobs:
           $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
           Export-Certificate -Cert $cert -FilePath $certPath | Out-Null
           Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
+          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
           $sdkDir = 'C:\Program Files (x86)\Windows Kits\10\bin'
           $signTool = Get-ChildItem $sdkDir -Recurse -Filter signtool.exe |
             Where-Object { $_.FullName -match '\\x64\\' } |
@@ -68,3 +69,10 @@ jobs:
         shell: pwsh
         run: |
           Get-AppxPackage -Name 'BinApp.547813EA77836' | Remove-AppxPackage -ErrorAction Continue
+          $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
+          if (Test-Path $certPath) {
+            $thumbprint = (Get-PfxCertificate -FilePath $certPath).Thumbprint
+            foreach ($store in @('Root', 'TrustedPeople', 'My')) {
+              Remove-Item "Cert:\CurrentUser\$store\$thumbprint" -ErrorAction SilentlyContinue
+            }
+          }
