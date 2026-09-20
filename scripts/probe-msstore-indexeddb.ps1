@@ -74,7 +74,8 @@ try {
 }
 
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/pack-msix.ps1 `
-  -IdentityName $identityName -Publisher $publisher -PublisherDisplayName 'BinApp' -ExePath $exe
+  -IdentityName $identityName -Publisher $publisher -PublisherDisplayName 'BinApp' `
+  -ExePath 'src-tauri/target/x86_64-pc-windows-msvc/release/app.exe'
 if ($LASTEXITCODE -ne 0) { throw "Diagnostic MSIX packing failed: $LASTEXITCODE" }
 $msix = Get-ChildItem build/msix -Filter *.msix | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $msix) { throw 'Diagnostic MSIX missing' }
