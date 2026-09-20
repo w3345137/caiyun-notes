@@ -1,0 +1,70 @@
+name: Smoke test submitted MSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Build MS Store workflow run ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  install-msix:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: caiyun-notes-msix-${{ inputs.build_run_id }}
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+          path: original
+
+      - name: Verify original package and install a temporary signed copy
+        shell: pwsh
+        env:
+          EXPECTED_SHA256: f5c50a84ab94a844f40e9c559c0d7dc84a4cba253be45a25e97739c1f5910dd0
+          EXPECTED_PUBLISHER: CN=49D17C52-EB55-4439-9F79-0DFACFCB393C
+          EXPECTED_NAME: BinApp.547813EA77836
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $original = Get-ChildItem original -Filter *.msix -Recurse | Select-Object -First 1
+          if (-not $original) { throw 'MSIX artifact missing' }
+          $hash = (Get-FileHash $original.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:EXPECTED_SHA256) { throw "Submitted artifact hash mismatch: $hash" }
+
+          $qaCopy = Join-Path $env:RUNNER_TEMP 'CaiyunNotes-qa-signed.msix'
+          Copy-Item -LiteralPath $original.FullName -Destination $qaCopy
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $env:EXPECTED_PUBLISHER `
+            -CertStoreLocation Cert:\CurrentUser\My -KeyExportPolicy Exportable
+          $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
+          Export-Certificate -Cert $cert -FilePath $certPath | Out-Null
+          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
+          $sdkDir = 'C:\Program Files (x86)\Windows Kits\10\bin'
+          $signTool = Get-ChildItem $sdkDir -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match '\\x64\\' } |
+            Sort-Object FullName | Select-Object -Last 1
+          if (-not $signTool) { throw 'signtool.exe missing' }
+          & $signTool.FullName sign /fd sha256 /sha1 $cert.Thumbprint $qaCopy
+          if ($LASTEXITCODE -ne 0) { throw "SignTool failed: $LASTEXITCODE" }
+
+          Add-AppxPackage -Path $qaCopy -ErrorAction Stop
+          $package = Get-AppxPackage -Name $env:EXPECTED_NAME
+          if (-not $package) { throw 'Package was not registered after install' }
+          if ($package.Publisher -ne $env:EXPECTED_PUBLISHER) {
+            throw "Publisher mismatch: $($package.Publisher)"
+          }
+          if ($package.Version.ToString() -ne '10.2.8.0') {
+            throw "Version mismatch: $($package.Version)"
+          }
+          Write-Host "Installed package: $($package.PackageFullName)"
+          Write-Host 'Original MSIX remains unsigned and byte-for-byte unchanged.'
+
+      - name: Remove temporary QA install
+        if: always()
+        shell: pwsh
+        run: |
+          Get-AppxPackage -Name 'BinApp.547813EA77836' | Remove-AppxPackage -ErrorAction Continue
