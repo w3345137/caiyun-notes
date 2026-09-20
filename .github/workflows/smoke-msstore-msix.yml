@@ -90,6 +90,17 @@ jobs:
             throw "Packaged app exited within 8 seconds (exit code $($process.ExitCode))"
           }
           Write-Host "Packaged app remained running (PID $($process.Id))."
+          $allProcesses = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine)
+          $descendantIds = @($process.Id)
+          do {
+            $previousCount = $descendantIds.Count
+            $children = @($allProcesses | Where-Object { $descendantIds -contains $_.ParentProcessId })
+            $descendantIds = @($descendantIds + @($children | ForEach-Object { $_.ProcessId }) | Select-Object -Unique)
+          } while ($descendantIds.Count -gt $previousCount)
+          $descendants = @($allProcesses | Where-Object { $descendantIds -contains $_.ProcessId })
+          $descendants | Select-Object ProcessId, ParentProcessId, Name | Format-Table -AutoSize | Out-String | Write-Host
+          $webviewProcesses = @($descendants | Where-Object { $_.Name -ieq 'msedgewebview2.exe' })
+          Write-Host "WebView2 descendant process count: $($webviewProcesses.Count)"
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'
 
