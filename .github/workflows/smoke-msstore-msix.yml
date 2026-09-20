@@ -83,6 +83,9 @@ jobs:
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
             throw "Packaged executable missing: $exe"
           }
+          $debugPolicy = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          New-Item -Path $debugPolicy -Force | Out-Null
+          New-ItemProperty -Path $debugPolicy -Name 'app.exe' -Value '--remote-debugging-port=19382' -PropertyType String -Force | Out-Null
           Write-Host "Launching packaged executable: $exe"
           $process = Start-Process -FilePath $exe -PassThru
           Start-Sleep -Seconds 8
@@ -129,6 +132,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
+          Remove-ItemProperty -Path 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name 'app.exe' -ErrorAction SilentlyContinue
           Get-AppxPackage -Name 'BinApp.547813EA77836' | Remove-AppxPackage -ErrorAction Continue
           $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
           if (Test-Path $certPath) {
