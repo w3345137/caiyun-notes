@@ -24,6 +24,7 @@ jobs:
           path: original
 
       - name: Verify original package and install a temporary signed copy
+        timeout-minutes: 5
         shell: pwsh
         env:
           EXPECTED_SHA256: f5c50a84ab94a844f40e9c559c0d7dc84a4cba253be45a25e97739c1f5910dd0
@@ -35,6 +36,7 @@ jobs:
           if (-not $original) { throw 'MSIX artifact missing' }
           $hash = (Get-FileHash $original.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hash -ne $env:EXPECTED_SHA256) { throw "Submitted artifact hash mismatch: $hash" }
+          Write-Host 'Original MSIX hash verified.'
 
           $qaCopy = Join-Path $env:RUNNER_TEMP 'CaiyunNotes-qa-signed.msix'
           Copy-Item -LiteralPath $original.FullName -Destination $qaCopy
@@ -42,8 +44,9 @@ jobs:
             -CertStoreLocation Cert:\CurrentUser\My -KeyExportPolicy Exportable
           $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
           Export-Certificate -Cert $cert -FilePath $certPath | Out-Null
-          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
-          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          Write-Host 'Temporary QA certificate trusted on isolated runner.'
           $sdkDir = 'C:\Program Files (x86)\Windows Kits\10\bin'
           $signTool = Get-ChildItem $sdkDir -Recurse -Filter signtool.exe |
             Where-Object { $_.FullName -match '\\x64\\' } |
@@ -51,7 +54,9 @@ jobs:
           if (-not $signTool) { throw 'signtool.exe missing' }
           & $signTool.FullName sign /fd sha256 /sha1 $cert.Thumbprint $qaCopy
           if ($LASTEXITCODE -ne 0) { throw "SignTool failed: $LASTEXITCODE" }
+          Write-Host 'Temporary QA copy signed.'
 
+          Write-Host 'Installing temporary QA MSIX...'
           Add-AppxPackage -Path $qaCopy -ErrorAction Stop
           $package = Get-AppxPackage -Name $env:EXPECTED_NAME
           if (-not $package) { throw 'Package was not registered after install' }
@@ -72,7 +77,7 @@ jobs:
           $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
           if (Test-Path $certPath) {
             $thumbprint = (Get-PfxCertificate -FilePath $certPath).Thumbprint
-            foreach ($store in @('Root', 'TrustedPeople', 'My')) {
-              Remove-Item "Cert:\CurrentUser\$store\$thumbprint" -ErrorAction SilentlyContinue
-            }
+            Remove-Item "Cert:\LocalMachine\Root\$thumbprint" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\LocalMachine\TrustedPeople\$thumbprint" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\CurrentUser\My\$thumbprint" -ErrorAction SilentlyContinue
           }
