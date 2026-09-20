@@ -7,11 +7,9 @@
     "tauri": "tauri",
     "build": "tauri build",
     "build:debug": "tauri build --debug --no-bundle",
-    "build:msstore": "node scripts/with-store-capabilities.mjs --no-bundle --features frontend-hot-update",
-    "build:msstore:no-hotupdate": "node scripts/with-store-capabilities.mjs --no-bundle",
-    "build:msstore:msi": "node scripts/with-store-capabilities.mjs --features frontend-hot-update",
-    "build:appstore": "node scripts/with-store-capabilities.mjs --config src-tauri/tauri.appstore.conf.json --features frontend-hot-update",
-    "build:appstore:no-hotupdate": "node scripts/with-store-capabilities.mjs --config src-tauri/tauri.appstore.conf.json",
+    "build:msstore": "node scripts/build-store.mjs --channel msstore --no-bundle",
+    "build:msstore:msi": "node scripts/build-store.mjs --channel msstore",
+    "build:appstore": "node scripts/build-store.mjs --channel appstore",
     "pack:msix": "powershell -ExecutionPolicy Bypass -File scripts/pack-msix.ps1"
   },
   "dependencies": {

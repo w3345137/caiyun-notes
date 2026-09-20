@@ -1,10 +1,8 @@
 name: Build MS Store (MSIX)
 
 # 云端打包 Microsoft Store 版（MSIX，商店代签零证书路线）。
-# 手动触发；应用标识三个值优先取仓库 Variables
-# （Settings → Secrets and variables → Actions → Variables）：
-#   MSSTORE_IDENTITY_NAME / MSSTORE_PUBLISHER / MSSTORE_PUBLISHER_DISPLAY_NAME
-# 触发页手动输入可临时覆盖。
+# 商店身份必须与 Partner Center 中彩云笔记（Store ID 9P2VQP7JKVLN）一致。
+# 手动输入可用于排障；正常发布使用此处已核对的正式身份。
 
 on:
   workflow_dispatch:
@@ -14,15 +12,15 @@ on:
         required: true
         type: string
       identity_name:
-        description: Package/Identity/Name（留空用仓库 Variable）
+        description: Package/Identity/Name（留空用正式身份）
         required: false
         type: string
       publisher:
-        description: Package/Identity/Publisher（CN=...，留空用仓库 Variable）
+        description: Package/Identity/Publisher（CN=...，留空用正式身份）
         required: false
         type: string
       publisher_display_name:
-        description: PublisherDisplayName（留空用仓库 Variable）
+        description: PublisherDisplayName（留空用正式身份）
         required: false
         type: string
 
@@ -30,9 +28,9 @@ jobs:
   build-msix:
     runs-on: windows-latest
     env:
-      MSSTORE_IDENTITY_NAME: ${{ github.event.inputs.identity_name || vars.MSSTORE_IDENTITY_NAME }}
-      MSSTORE_PUBLISHER: ${{ github.event.inputs.publisher || vars.MSSTORE_PUBLISHER }}
-      MSSTORE_PUBLISHER_DISPLAY_NAME: ${{ github.event.inputs.publisher_display_name || vars.MSSTORE_PUBLISHER_DISPLAY_NAME }}
+      MSSTORE_IDENTITY_NAME: ${{ github.event.inputs.identity_name || 'BinApp.547813EA77836' }}
+      MSSTORE_PUBLISHER: ${{ github.event.inputs.publisher || 'CN=49D17C52-EB55-4439-9F79-0DFACFCB393C' }}
+      MSSTORE_PUBLISHER_DISPLAY_NAME: ${{ github.event.inputs.publisher_display_name || 'BinApp' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,14 +68,14 @@ jobs:
         shell: bash
         run: npm run build:msstore -- --target x86_64-pc-windows-msvc
 
-      - name: Pack MSIX (self-signed for sideload testing; Store re-signs on ingestion)
+      - name: Pack exact x64 MSIX artifact
         shell: pwsh
         run: |
           pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/pack-msix.ps1 `
             -IdentityName "$env:MSSTORE_IDENTITY_NAME" `
             -Publisher "$env:MSSTORE_PUBLISHER" `
             -PublisherDisplayName "$env:MSSTORE_PUBLISHER_DISPLAY_NAME" `
-            -Sign
+            -ExePath "src-tauri/target/x86_64-pc-windows-msvc/release/app.exe"
 
       - name: Upload MSIX artifact
         uses: actions/upload-artifact@v4

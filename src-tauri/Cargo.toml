@@ -52,10 +52,8 @@ tauri-plugin-single-instance = "2"
 tempfile = "3.20"
 
 [features]
-# 默认 = 官网直发版：保留整包自更新 + 前端热更新。
-# 商店版构建使用 --no-default-features --features frontend-hot-update
-# （上架应用商店必须移除整包自更新；热更新按各商店政策保留，可用开关单独关闭）。
 default = ["self-update", "frontend-hot-update"]
 self-update = ["dep:tauri-plugin-updater"]
 frontend-hot-update = []
+msstore-distribution = []
 map-isolation-test = []

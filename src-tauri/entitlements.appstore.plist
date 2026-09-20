@@ -1,33 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  彩云笔记 Mac App Store 沙盒授权模板。
-  构建前把 {{TEAM_ID}} 替换为 Apple Developer 团队 ID
-  （developer.apple.com/account → Membership details → Team ID，
-   或 App ID 页面的 App ID Prefix）：
-    sed -i '' 's/{{TEAM_ID}}/你的TeamID/g' src-tauri/entitlements.appstore.plist
-  权限保持最小集；新增任何 entitlement 前先对照 docs/store/hot-update-policy.md
-  的发布边界（新原生能力/新权限必须走商店发版，不得走热更新）。
--->
-<plist version="1.0">
-<dict>
-	<!-- 强制：App Store 上架必须开启 App Sandbox -->
-	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<!-- 强制：与 provisioning profile 对应的代码签名身份 -->
-	<key>com.apple.application-identifier</key>
-	<string>{{TEAM_ID}}.com.caiyun.notes</string>
-	<key>com.apple.developer.team-identifier</key>
-	<string>{{TEAM_ID}}</string>
-	<!-- 云端同步 + 前端热更新签名包下载 + 地图 API（WKWebView 远程请求） -->
-	<key>com.apple.security.network.client</key>
-	<true/>
-	<!-- 附件导入/导出：tauri-plugin-dialog 打开/保存面板选中的文件；
-	     应用自身数据目录（Application Support 等）在沙盒容器内，无需授权 -->
-	<key>com.apple.security.files.user-selected.read-write</key>
-	<true/>
-	<!-- 录音与语音转文字（Info.plist 已声明 NSMicrophoneUsageDescription） -->
-	<key>com.apple.security.device.audio-input</key>
-	<true/>
-</dict>
-</plist>
+<plist version="1.0"><dict>
+  <key>com.apple.security.app-sandbox</key><true/>
+  <key>com.apple.application-identifier</key><string>{{TEAM_ID}}.com.caiyun.notes</string>
+  <key>com.apple.developer.team-identifier</key><string>{{TEAM_ID}}</string>
+  <key>com.apple.security.network.client</key><true/>
+  <key>com.apple.security.files.user-selected.read-write</key><true/>
+  <key>com.apple.security.device.audio-input</key><true/>
+</dict></plist>

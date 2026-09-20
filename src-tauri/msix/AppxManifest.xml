@@ -1,60 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  彩云笔记 Microsoft Store (MSIX) 清单模板。
-  占位符由 scripts/pack-msix.ps1 替换：
-    {{IDENTITY_NAME}}           Partner Center → 产品管理 → 应用标识 → Package/Identity/Name
-    {{PUBLISHER}}               同上 → Package/Identity/Publisher（形如 CN=XXXXXXXX-XXXX-...）
-    {{PUBLISHER_DISPLAY_NAME}}  同上 → Package/Identity/PublisherDisplayName
-    {{VERSION}}                 四段版本号（如 10.2.8.0，MSIX 强制四段）
-    {{DISPLAY_NAME}}            商店显示名
-    {{EXE_NAME}}                主程序文件名
--->
-<Package
-  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
-
-  <Identity
-    Name="{{IDENTITY_NAME}}"
-    Version="{{VERSION}}"
-    Publisher="{{PUBLISHER}}"
-    ProcessorArchitecture="x64" />
-
+  <Identity Name="{{IDENTITY_NAME}}" Version="{{VERSION}}" Publisher="{{PUBLISHER}}" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>{{DISPLAY_NAME}}</DisplayName>
     <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
-    <Description>彩云笔记 —— 本地优先、云端同步的 AI 笔记与写作助手</Description>
+    <Description>彩云笔记 —— 本地优先、云端同步的笔记与协作空间</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
-
-  <Resources>
-    <Resource Language="zh-CN" />
-    <Resource Language="en-US" />
-  </Resources>
-
-  <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
-  </Dependencies>
-
-  <Capabilities>
-    <!-- 桌面桥（Desktop Bridge）全信任进程，Tauri/Win32 必需 -->
-    <rescap:Capability Name="runFullTrust" />
-  </Capabilities>
-
-  <Applications>
-    <Application Id="CaiyunNotes"
-      Executable="app\{{EXE_NAME}}"
-      EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements
-        DisplayName="{{DISPLAY_NAME}}"
-        Description="彩云笔记 —— 本地优先、云端同步的 AI 笔记与写作助手"
-        Square150x150Logo="Assets\Square150x150Logo.png"
-        Square44x44Logo="Assets\Square44x44Logo.png"
-        BackgroundColor="transparent">
-        <!-- 注意：指定 Square310x310Logo 时必须同时提供 Wide310x150Logo，
-             否则 makeappx 校验失败；当前未提供宽图，故不声明大磁贴。 -->
-        <uap:DefaultTile />
-      </uap:VisualElements>
-    </Application>
-  </Applications>
+  <Resources><Resource Language="zh-CN" /><Resource Language="en-US" /></Resources>
+  <Dependencies><TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" /></Dependencies>
+  <Capabilities><rescap:Capability Name="runFullTrust" /></Capabilities>
+  <Applications><Application Id="CaiyunNotes" Executable="app\{{EXE_NAME}}" EntryPoint="Windows.FullTrustApplication">
+    <uap:VisualElements DisplayName="{{DISPLAY_NAME}}" Description="彩云笔记" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent">
+      <uap:DefaultTile />
+    </uap:VisualElements>
+  </Application></Applications>
 </Package>

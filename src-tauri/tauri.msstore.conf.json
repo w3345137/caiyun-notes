@@ -4,9 +4,7 @@
     "createUpdaterArtifacts": false,
     "targets": ["msi"],
     "windows": {
-      "wix": {
-        "language": ["zh-CN", "en-US"]
-      }
+      "wix": { "language": ["zh-CN", "en-US"] }
     }
   }
 }

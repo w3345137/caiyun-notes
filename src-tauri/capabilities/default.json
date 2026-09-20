@@ -18,6 +18,7 @@
     "allow-inspect-legacy-webkit-origin",
     "allow-quarantine-legacy-webkit-origin",
     "allow-download-and-install-resumable-update",
+    "allow-get-app-distribution-channel",
     "core:default",
     "fs:allow-read",
     "fs:allow-write",
