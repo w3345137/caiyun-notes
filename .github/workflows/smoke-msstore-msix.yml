@@ -94,6 +94,47 @@ jobs:
           Write-Host "Packaged app main window handle: $($process.MainWindowHandle)"
           if ($process.MainWindowHandle -eq [IntPtr]::Zero) {
             Write-Warning 'No main window handle was visible to the isolated CI runner; this does not establish that the desktop UI rendered.'
+          } else {
+            Add-Type -AssemblyName System.Drawing
+            Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class CaiyunWindowCapture {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct Rect { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")]
+            public static extern bool GetWindowRect(IntPtr handle, out Rect rect);
+            [DllImport("user32.dll")]
+            public static extern bool PrintWindow(IntPtr handle, IntPtr hdc, uint flags);
+          }
+          '@
+            $windowRect = New-Object CaiyunWindowCapture+Rect
+            if ([CaiyunWindowCapture]::GetWindowRect($process.MainWindowHandle, [ref]$windowRect)) {
+              $width = $windowRect.Right - $windowRect.Left
+              $height = $windowRect.Bottom - $windowRect.Top
+              if ($width -gt 0 -and $height -gt 0 -and $width -le 4096 -and $height -le 4096) {
+                $bitmap = New-Object System.Drawing.Bitmap($width, $height)
+                $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+                try {
+                  $deviceContext = $graphics.GetHdc()
+                  try {
+                    $captured = [CaiyunWindowCapture]::PrintWindow($process.MainWindowHandle, $deviceContext, 2)
+                  } finally {
+                    $graphics.ReleaseHdc($deviceContext)
+                  }
+                  if ($captured) {
+                    $screenshot = Join-Path $env:RUNNER_TEMP 'caiyun-msix-window.png'
+                    $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+                    Write-Host "Captured isolated MSIX window: $screenshot"
+                  } else {
+                    Write-Warning 'PrintWindow did not capture the MSIX window.'
+                  }
+                } finally {
+                  $graphics.Dispose()
+                  $bitmap.Dispose()
+                }
+              }
+            }
           }
           $allProcesses = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine)
           $descendantIds = @($process.Id)
@@ -121,6 +162,14 @@ jobs:
           }
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'
+
+      - name: Upload isolated window capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: caiyun-msix-window-${{ github.run_id }}
+          path: ${{ runner.temp }}/caiyun-msix-window.png
+          if-no-files-found: ignore
 
       - name: Remove temporary QA install
         if: always()
