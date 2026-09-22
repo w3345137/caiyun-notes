@@ -7,6 +7,10 @@ on:
         description: Successful Build MS Store workflow run ID
         required: true
         type: string
+      expected_sha256:
+        description: Exact SHA-256 of the unsigned MSIX to install
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -61,7 +65,7 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         env:
-          EXPECTED_SHA256: f5c50a84ab94a844f40e9c559c0d7dc84a4cba253be45a25e97739c1f5910dd0
+          EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
           EXPECTED_PUBLISHER: CN=49D17C52-EB55-4439-9F79-0DFACFCB393C
           EXPECTED_NAME: BinApp.547813EA77836
         run: |
