@@ -1,6 +1,6 @@
 # 彩云笔记 · 应用商店上架总览
 
-> 维护：随上架进度更新。最近更新：2026-09-19
+> 维护：随上架进度更新。最近更新：2026-09-22
 
 ## 渠道构建矩阵
 
@@ -9,10 +9,9 @@
 | 渠道 | 构建命令 | 整包自更新 | 前端热更新 |
 |---|---|---|---|
 | 官网直发版（dmg/nsis/deb/appimage） | `npm run build` | ✅ 保留 | ✅ 开启 |
-| Microsoft Store 版 | `npm run build:msstore` | ❌ 已剥离 | ✅ 开启 |
-| Microsoft Store 保守版（审核问询时备用） | `npm run build:msstore:no-hotupdate` | ❌ 已剥离 | ❌ 关闭（回退壳内置资源） |
-| Mac App Store 版 | `npm run build:appstore`（出 .app，再 productbuild 打 pkg） | ❌ 已剥离 | ✅ 开启 |
-| Mac App Store 保守版（审核问询时备用） | `npm run build:appstore:no-hotupdate` | ❌ 已剥离 | ❌ 关闭（回退壳内置资源） |
+| Microsoft Store 版 | `npm run build:msstore` | ❌ 已编译剥离 | ❌ 已编译剥离（只用壳内置资源） |
+| Microsoft Store 兼容别名 | `npm run build:msstore:no-hotupdate` | ❌ 已编译剥离 | ❌ 已编译剥离 |
+| Mac App Store 版 | `npm run build:appstore`（出 .app，再 productbuild 打 pkg） | ❌ 已剥离 | ❌ 关闭（回退壳内置资源） |
 | Flathub 版（规划中，见 linux-store.md） | flatpak-builder + `flatpak/top.binapp.notes.yml`（草案） | ❌ 商店托管 | ✅ 开启（无限制） |
 
 特性开关语义：
@@ -35,7 +34,7 @@
 | 入驻费用 | $99/年（已购，**待生效**，状态见 developer.apple.com/account） | 个人开发者免费（2025-06 起） | 免费 |
 | 包格式 | .pkg（强制沙盒） | **MSIX（商店代签，零证书）**；MSI/EXE 直链备选 | Flatpak / snapcraft |
 | 整包自更新 | 禁止 | 禁止 | 禁止（商店托管更新） |
-| 前端热更新 | 允许（WebKit 解释型代码豁免，见 hot-update-policy.md） | 允许（10.2.2，不得根本改变已描述功能） | 无限制 |
+| 前端代码热更新 | 首发关闭 | **禁用**（审核已明确不允许下载可执行代码） | 待真包审核 |
 | 审核 | 1–3 天，最严 | 15 分钟–3 天 | 人工审核 |
 
 ## 上架顺序
@@ -50,7 +49,7 @@
 
 ## 跨店共同纪律
 
-- 商店版的应用更新全部由商店托管；不得在商店版中提示用户去官网下载更新。
+- 商店版的应用与本地前端代码更新全部由商店托管；不得显示官网安装包下载入口。
 - 热更新边界纪律见 [hot-update-policy.md](./hot-update-policy.md)。
 - 老用户数据：彩云笔记是 local-first 架构，已同步内容在云端；
   切换渠道前引导用户确认所有页面显示"已同步"、附件"无待上传"即可，无需迁移工具。

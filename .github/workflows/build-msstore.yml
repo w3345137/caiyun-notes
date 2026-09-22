@@ -64,9 +64,16 @@ jobs:
 
       - run: npm ci
 
+      - name: Validate Microsoft Store compliance boundaries
+        run: npm run test:msstore-compliance
+
       - name: Build store variant (no self-updater)
         shell: bash
         run: npm run build:msstore -- --target x86_64-pc-windows-msvc
+
+      - name: Scan store binary for forbidden code download paths
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/verify-msstore-binary.ps1
 
       - name: Pack exact x64 MSIX artifact
         shell: pwsh

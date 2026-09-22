@@ -43,7 +43,7 @@ Partner Center → 创建应用（先"保留名称"：彩云笔记，如被占�
 **每次构建**：Actions → "Build MS Store (MSIX)" → Run workflow → 填 tag → 几分钟后在
 Artifacts 下载 `caiyun-notes-msix-<tag>`。
 
-流水线自动完成：商店版构建（剥离自更新器）→ 渲染 AppxManifest → makeappx 打包。
+流水线自动完成：商店版构建（编译剥离整包自更新器与前端 ZIP 代码更新器）→ 二进制合规扫描 → 渲染 AppxManifest → makeappx 打包。
 当前工作流上传的是**未签名** MSIX，供 Partner Center 接收并由商店签名；不能直接把它当作已验收的侧载安装包。
 
 本地有 Windows 机器时也可手动执行（等价路径）：
@@ -73,8 +73,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 
 ## 五、审核注意点
 
-- **10.2.2（动态代码）**：商店描述里写清楚的功能，热更新不得超出，见 hot-update-policy.md。
-  若被问询，用 `npm run build:msstore:no-hotupdate` 重打保守版再提交。
+- **10.2.10.1（安全）**：商店包不得显示官网的 macOS/Windows/Linux 安装包下载，不得下载并替换本地 JavaScript 前端包。`build:msstore` 已将两者关闭。
 - **可测试性（10.3）**：测试账号必须可用，否则按"无法测试"退回。
 - 审核用独立账号需先确认可登录且仅含演示数据，凭据通过 Partner Center 专用字段提供，不写公开描述。
 - 不承诺固定审核周期；以 Partner Center 实际认证状态为准。
@@ -82,12 +81,15 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 ## 六、发布后的更新节奏
 
 1. 壳/原生变更：版本号 +1 → `npm run build:msstore` → `pack-msix.ps1` → 提交。
-2. 已描述功能范围内的前端修复：Windows 商店包可继续使用自有签名热更新，但最终接受与否以 Microsoft 审核为准；不等同于三平台同时获准。
+2. 任何本地前端代码变更都随新 MSIX 提交 Microsoft Store；服务端数据、配置和 API 可独立发布，但不得下发可执行前端代码。
 3. 官网直装渠道只在商店未覆盖、旧用户迁移或故障回退期间保留；商店包真机安装、升级及本地数据迁移验证后，逐步收口到商店渠道。
 
-## 本次 P20 认证状态（2026-09-20）
+## P20 认证结果与 P21 整改（2026-09-22）
 
-- Store ID `9P2VQP7JKVLN`，提交 `1152921505701934449`；Partner Center 已显示“正在认证”，预处理进行中。商品页尚未上线。
+- P20 审核按 10.2.10.1 Security 退回，审核附件明确截图标注应用内“下载 App”弹窗，其中可直接下载 macOS、Windows 和 Linux 安装包。
+- P21 / `10.2.9.0` 整改版将 Microsoft Store 识别改为编译期渠道：前端不渲染安装包下载控件，Rust 不编译 `frontend_bundle.rs`，CI 同时检查构建特性与二进制禁止路径。
+
+- Store ID `9P2VQP7JKVLN`，P20 提交 `1152921505701934449` 已于 2026-09-22 被退回；商品页尚未上线。P21 整改包须完成 Windows CI、MSIX 检查和测试账号复核后再上传。
 - Partner Center 已接受 `CaiyunNotes_10.2.8.0_x64.msix` 并显示 `Validated`；中文/英文一览、属性、提交选项已保存。`runFullTrust` 仍须经微软审批。
 - 同一 MSIX 的隔离 Windows CI 验收 run `35484825450` 已完成哈希核验、临时签名安装和包内 `app.exe` 启动后 8 秒存活；进程树出现 6 个 WebView2 子孙进程，且已把至少一个 WebView2 子孙进程写为必过断言。该无头检查不等于真实桌面显示、WebView2 页面内容正确、登录或旧版数据迁移测试。
 - 后续隔离 CI run `35488555357` 对**同一上传包哈希**获取了非零主窗口句柄并截获 Windows 窗口图像，显示彩云笔记欢迎页与“登录/注册”按钮，证明包内置首屏实际渲染。截图仍不验证登录、编辑或数据迁移。
@@ -96,5 +98,5 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 - 隔离 Windows CI run `35491234860` 进一步用相同 Tauri 壳源码构建专用页面：包外运行时实际在 `http://tauri.localhost` 的 IndexedDB 写入标记，窗口显示 `NEW_INDEXEDDB_MARKER_CREATED`；随后以相同 Identity 包装、临时签名安装 MSIX 并启动，窗口显示 `EXISTING_INDEXEDDB_READ_OK`，两次窗口截图保存在该 run 的 `caiyun-msstore-indexeddb-probe-35491234860` artifact。这证明该隔离环境、同源同标识下，WebView2 实际接续了包外 IndexedDB，而不只是宿主目录仍在。该包是测试页面重新构建的壳，**并非提交审核的原始包**；仍需真实旧版笔记、离线 journal、用户机器及联网补传的升级验收，不能据此撤掉旧安装渠道。
 - 隔离 Windows CI run `35492047992` 把包外写入端换成 `p19` 标签构建的 10.2.7 壳，把读取端换成当前 10.2.8 Store 配置的 MSIX 壳；两端均使用相同的无账号 IndexedDB 测试页及 `http://tauri.localhost` origin。截图分别显示 `NEW_INDEXEDDB_MARKER_CREATED` 与 `EXISTING_INDEXEDDB_READ_OK`，MSIX 安装后旧宿主资料目录仍存在、包私有同名目录未生成。这是 **P19→P20 跨版本壳的 IndexedDB 接续实测**，但并非官方 P19 安装器里原封不动的 EXE，也不是已经提交审核的原始 P20 MSIX；真实离线笔记、journal 和联网同步迁移仍未验收。
 - 开发者已确认 IARC 使用条款与成年声明并在 Partner Center 保存；回读显示 Microsoft 12+、IARC 12+，分级 ID 尚为“待定”。概览异步校验完成后“提交进行认证”按钮可用；定价页仍为全球免费公开。认证通过后的发布方式已设为**手动发布**，避免真机迁移未验收时自动面向公众上线。
-- 现有 `test01@notes.app` 审核账号已通过生产登录验证；账号邮箱与密码已分别填在 Partner Center 非公开“其他测试信息”凭据字段中，页面显示两条掩码凭据。生产后端已按部署 stamp `20260920_124435` 发布商店/官网独立最低壳版本判断：`10.2.7` 商店壳返回 426，`10.2.8` 商店壳通过该门槛。尚未完成 Windows 真机安装与旧版离线数据迁移验收。**已提交认证，但尚未获准或手动发布。**
+- 现有 `test01@notes.app` 审核账号已通过生产登录验证，且只用于演示数据；账号邮箱与密码应继续只填在 Partner Center 非公开“其他测试信息”字段。生产后端当前最低壳策略及 P21 `10.2.9` 放行状态须在重提前重新实测。尚未完成 Windows 真机安装与旧版离线数据迁移验收。**P20 已退回，P21 尚未重新提交。**
 - 只有认证通过且公开页实测可访问后，才可公布最终 Store 商品链接 `https://apps.microsoft.com/detail/9P2VQP7JKVLN`。

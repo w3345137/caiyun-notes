@@ -3,6 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    // 手机横屏适配：视口锁定为"桌面最小窗口"（900×600）等比缩放，布局与桌面一致。
+    // 必须在首帧渲染前同步执行，因此内联于此；逻辑须与 src/lib/mobileViewport.ts 保持一致。
+    (function () {
+      var ua = navigator.userAgent;
+      var isPhone = /iPhone|iPod/i.test(ua) || (/Android/i.test(ua) && /Mobile/i.test(ua));
+      if (!isPhone) return;
+      var w = Math.max(screen.width, screen.height);
+      var h = Math.min(screen.width, screen.height);
+      var width = Math.max(900, Math.ceil((600 * w) / h));
+      // WKWebView 不会因固定 width 自动缩放，必须显式给出 initial-scale
+      var scale = Math.min(1, w / width);
+      document.querySelector('meta[name="viewport"]').content =
+        'width=' + width + ', initial-scale=' + scale.toFixed(4);
+    })();
+  </script>
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
@@ -26,10 +42,10 @@
     }
   </style>
   <title>彩云笔记 v2.8</title>
-  <script type="module" crossorigin src="/assets/index-DRklo3UO.js"></script>
+  <script type="module" crossorigin src="/assets/index-C9fyzsUm.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/react-core-DVpKBE0L.js">
   <link rel="modulepreload" crossorigin href="/assets/tauri-nUP_xia6.js">
-  <link rel="stylesheet" crossorigin href="/assets/style-CvVw4nYb.css">
+  <link rel="stylesheet" crossorigin href="/assets/style-BK_Nt3lu.css">
 </head>
 <body>
   <div id="root"></div>

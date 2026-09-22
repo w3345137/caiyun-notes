@@ -9,7 +9,10 @@ const channel = args[channelFlag + 1];
 args.splice(channelFlag, 2);
 const noBundle = args.indexOf('--no-bundle');
 if (noBundle >= 0) args.splice(noBundle, 1);
-const features = channel === 'msstore' ? 'frontend-hot-update,msstore-distribution' : '';
+// Store packages may only execute code reviewed and delivered by the Store.
+// Keep the Microsoft distribution identity, but never compile the frontend ZIP
+// updater or the native self-updater into this build.
+const features = channel === 'msstore' ? 'msstore-distribution' : '';
 const command = [
   'tauri', 'build', '--config', `src-tauri/tauri.${channel}.conf.json`,
   ...(noBundle >= 0 ? ['--no-bundle'] : []),

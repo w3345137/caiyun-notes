@@ -97,7 +97,7 @@ jobs:
           if ($package.Publisher -ne $env:EXPECTED_PUBLISHER) {
             throw "Publisher mismatch: $($package.Publisher)"
           }
-          if ($package.Version.ToString() -ne '10.2.8.0') {
+          if ($package.Version.ToString() -ne '10.2.9.0') {
             throw "Version mismatch: $($package.Version)"
           }
           Write-Host "Installed package: $($package.PackageFullName)"

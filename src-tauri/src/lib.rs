@@ -1,3 +1,7 @@
+#[cfg(feature = "frontend-hot-update")]
+mod frontend_bundle;
+#[cfg(not(feature = "frontend-hot-update"))]
+#[path = "frontend_bundle_disabled.rs"]
 mod frontend_bundle;
 mod map_bridge;
 mod map_sessions;
@@ -26,7 +30,9 @@ fn get_app_distribution_channel() -> &'static str {
     }
 }
 
-use frontend_bundle::{check_frontend_bundle_update, FrontendBundleManager, FrontendBundleState};
+use frontend_bundle::{check_frontend_bundle_update, FrontendBundleState};
+#[cfg(feature = "frontend-hot-update")]
+use frontend_bundle::FrontendBundleManager;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Manager};
@@ -372,27 +378,6 @@ pub fn run() {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
             }
-            // 本地库验收包必须运行本次编译进壳的资源；若复用生产前端热更新目录，
-            // WebKit 会加载旧 release，导致验收结果与当前源码脱节。
-            let frontend_hot_update_enabled = cfg!(feature = "frontend-hot-update");
-            let frontend_manager = if !frontend_hot_update_enabled
-                || app.config().identifier == "com.caiyun.notes.e2e"
-                || app.config().identifier == "com.caiyun.notes.mindmap-e2e"
-                || app.config().identifier == "com.caiyun.notes.route-e2e"
-            {
-                None
-            } else {
-                match FrontendBundleManager::from_app(app.handle()) {
-                    Ok(manager) => Some(manager),
-                    Err(error) => {
-                        eprintln!(
-                            "[FrontendBundle] 本地前端更新不可用，继续使用壳内置资源：{error}"
-                        );
-                        None
-                    }
-                }
-            };
-            app.manage(FrontendBundleState::new(frontend_manager.clone()));
             let window_config = app
                 .config()
                 .app
@@ -402,14 +387,41 @@ pub fn run() {
                     std::io::Error::new(std::io::ErrorKind::NotFound, "missing main window config")
                 })?
                 .clone();
-            let main_window =
+            #[cfg(feature = "frontend-hot-update")]
+            let main_window = {
+                // 本地库验收包必须运行本次编译进壳的资源；若复用生产前端热更新目录，
+                // WebKit 会加载旧 release，导致验收结果与当前源码脱节。
+                let frontend_manager = if app.config().identifier == "com.caiyun.notes.e2e"
+                    || app.config().identifier == "com.caiyun.notes.mindmap-e2e"
+                    || app.config().identifier == "com.caiyun.notes.route-e2e"
+                {
+                    None
+                } else {
+                    match FrontendBundleManager::from_app(app.handle()) {
+                        Ok(manager) => Some(manager),
+                        Err(error) => {
+                            eprintln!(
+                                "[FrontendBundle] 本地前端更新不可用，继续使用壳内置资源：{error}"
+                            );
+                            None
+                        }
+                    }
+                };
+                app.manage(FrontendBundleState::new(frontend_manager.clone()));
                 tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
                     .on_web_resource_request(move |request, response| {
                         if let Some(manager) = frontend_manager.as_ref() {
                             manager.override_response(&request, response);
                         }
                     })
-                    .build()?;
+                    .build()?
+            };
+            #[cfg(not(feature = "frontend-hot-update"))]
+            let main_window = {
+                // Store 版只使用审核包内的前端资源，不包含任何运行时代码替换器。
+                app.manage(FrontendBundleState::new());
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?.build()?
+            };
             install_window_close_behavior(&main_window);
             #[cfg(target_os = "windows")]
             install_windows_tray(app)?;

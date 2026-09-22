@@ -6,7 +6,7 @@
 
 | 渠道 | 原生壳 | 前端资源 | 当前发布规则 |
 |---|---|---|---|
-| Microsoft Store | 只由 Store 更新 MSIX，不运行 App 内原生自更新器 | 保留签名包热更新 | 仅发布不根本改变 Store 描述功能的修复与改进；以具体审核结果为准 |
+| Microsoft Store | 只由 Store 更新 MSIX | 只使用审核包内前端资源 | 禁用整包自更新、前端 ZIP 热更新和其他平台安装包下载入口 |
 | Mac App Store | 只由 Store 更新原生壳 | 暂不承诺下载并替换本地 JS 包 | 首次提交采用关闭 `frontend-hot-update` 的构建；任何恢复都要先取得针对实际实现的审核认可 |
 | Flathub | 由 Flathub 更新 Flatpak | 待真包及审核验证 | 不预设“无限制”；确认沙盒、网络访问、离线启动和软件源规则后再定 |
 
@@ -14,7 +14,7 @@
 
 ## 为什么不能三家一刀切
 
-- [Microsoft Store 政策 10.2.2](https://learn.microsoft.com/en-us/windows/apps/publish/store-policies) 限制通过动态代码根本改变或扩展应用描述的功能。签名和同源能降低供应链风险，但不自动取得审核豁免。
+- Microsoft Store 2026-09-22 审核按 10.2.10.1 退回：商店 App 或其元数据不得发起其他 App 或可执行代码文件的下载。审核截图明确指向应用内“下载 App”弹窗。因此不再以签名、同源或“不改变原生功能”为保留代码热更新的依据。
 - [Apple App Review Guidelines 2.5.2](https://developer.apple.com/app-store/review/guidelines/) 限制下载、安装或执行引入或改变功能的代码。当前 `FrontendBundleManager` 将完整 JS 前端 ZIP 下载到本地并替换运行资源；不能仅凭 WebKit 执行或签名就宣称符合 Mac App Store 规则。若想在 MAS 保留此机制，必须用实际二进制和实现路径向审核方确认。
 - Flathub 的打包和沙盒约束与前两者不同，也不能把“无原生二进制变化”视为唯一合规条件。
 
@@ -29,11 +29,10 @@
 
 ## 应急开关
 
-商店审核若不同意某渠道的完整前端包热更新，重新提交禁用该特性的渠道构建，不影响其他渠道：
+Microsoft Store 的默认构建就是禁用代码热更新；旧命令仅作兼容别名：
 
 ```text
 npm run build:msstore:no-hotupdate
-npm run build:appstore:no-hotupdate
 ```
 
 禁用后该商店包使用内置前端；若要保持快速迭代，可继续更新服务端数据与配置，但新的本地前端代码仍需走商店版本。

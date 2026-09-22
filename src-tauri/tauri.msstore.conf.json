@@ -6,5 +6,8 @@
     "windows": {
       "wix": { "language": ["zh-CN", "en-US"] }
     }
+  },
+  "plugins": {
+    "updater": null
   }
 }

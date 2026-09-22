@@ -1,15 +1,17 @@
 {
   "name": "caiyun-notes-tauri-shell",
   "private": true,
-  "version": "10.2.8",
+  "version": "10.2.9",
   "type": "module",
   "scripts": {
     "tauri": "tauri",
     "build": "tauri build",
     "build:debug": "tauri build --debug --no-bundle",
     "build:msstore": "node scripts/build-store.mjs --channel msstore --no-bundle",
+    "build:msstore:no-hotupdate": "node scripts/build-store.mjs --channel msstore --no-bundle",
     "build:msstore:msi": "node scripts/build-store.mjs --channel msstore",
     "build:appstore": "node scripts/build-store.mjs --channel appstore",
+    "test:msstore-compliance": "node tests/msstore-compliance-source-test.cjs",
     "pack:msix": "powershell -ExecutionPolicy Bypass -File scripts/pack-msix.ps1"
   },
   "dependencies": {
