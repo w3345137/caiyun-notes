@@ -1,5 +1,5 @@
 param(
-  [string]$ExePath = "src-tauri\target\x86_64-pc-windows-msvc\release\app.exe"
+  [string]$ExePath = "src-tauri\target\release\app.exe"
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,9 +11,7 @@ if (-not (Test-Path -LiteralPath $fullExePath -PathType Leaf)) {
 
 $bytes = [System.IO.File]::ReadAllBytes($fullExePath)
 $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
-$forbidden = @(
-  'updates/latest.json',
-)
+$forbidden = @('updates/latest.json')
 foreach ($needle in $forbidden) {
   if ($ascii.Contains($needle)) {
     throw "Microsoft Store EXE 仍包含原生安装包更新路径: $needle"
