@@ -12,14 +12,16 @@ if (-not (Test-Path -LiteralPath $fullExePath -PathType Leaf)) {
 $bytes = [System.IO.File]::ReadAllBytes($fullExePath)
 $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
 $forbidden = @(
-  'app-frontend/latest.json',
   'updates/latest.json',
-  '暂时无法下载界面更新'
 )
 foreach ($needle in $forbidden) {
   if ($ascii.Contains($needle)) {
-    throw "Microsoft Store EXE 仍包含禁止的运行时代码下载路径: $needle"
+    throw "Microsoft Store EXE 仍包含原生安装包更新路径: $needle"
   }
 }
 
-Write-Host "Microsoft Store binary compliance scan passed: $fullExePath"
+if (-not $ascii.Contains('app-frontend/latest.json')) {
+  throw "Microsoft Store EXE 缺少签名前端更新清单路径"
+}
+
+Write-Host "Microsoft Store binary channel scan passed: $fullExePath"

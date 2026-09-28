@@ -18,13 +18,20 @@ mod map_navigation;
 #[cfg(not(all(desktop, feature = "self-update")))]
 #[tauri::command]
 async fn download_and_install_resumable_update() -> Result<(), String> {
-    Err("当前版本由应用商店分发，请在 Microsoft Store 中检查更新。".to_string())
+    let store = if cfg!(feature = "appstore-distribution") {
+        "Mac App Store"
+    } else {
+        "Microsoft Store"
+    };
+    Err(format!("当前版本由应用商店分发，请在 {store} 中检查更新。"))
 }
 
 #[tauri::command]
 fn get_app_distribution_channel() -> &'static str {
     if cfg!(feature = "msstore-distribution") {
         "msstore"
+    } else if cfg!(feature = "appstore-distribution") {
+        "appstore"
     } else {
         "direct"
     }

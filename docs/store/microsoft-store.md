@@ -73,7 +73,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 
 ## 五、审核注意点
 
-- **10.2.10.1（安全）**：商店包不得显示官网的 macOS/Windows/Linux 安装包下载，不得下载并替换本地 JavaScript 前端包。`build:msstore` 已将两者关闭。
+- **安全与更新**：商店包不得显示官网的 macOS/Windows/Linux 安装包下载；原生安装包更新由 Store 承担。用户要求 P22 候选版保留签名前端 ZIP 热更新，`build:msstore` 已启用此通道；微软政策 10.2.2 仍可能对动态代码改变功能提出问题，不能把尚未被指出等同于审核认可。
 - **可测试性（10.3）**：测试账号必须可用，否则按"无法测试"退回。
 - 审核用独立账号需先确认可登录且仅含演示数据，凭据通过 Partner Center 专用字段提供，不写公开描述。
 - 不承诺固定审核周期；以 Partner Center 实际认证状态为准。
@@ -81,7 +81,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 ## 六、发布后的更新节奏
 
 1. 壳/原生变更：版本号 +1 → `npm run build:msstore` → `pack-msix.ps1` → 提交。
-2. 任何本地前端代码变更都随新 MSIX 提交 Microsoft Store；服务端数据、配置和 API 可独立发布，但不得下发可执行前端代码。
+2. 当前候选版的前端仍走签名、哈希校验、版本门槛和包内回退机制；原生能力、权限及商店描述不一致的功能变化必须走新 MSIX 和元数据更新。`--no-hotupdate` 是可构建的保守回退，不是旧包的远程开关。
 3. 官网直装渠道只在商店未覆盖、旧用户迁移或故障回退期间保留；商店包真机安装、升级及本地数据迁移验证后，逐步收口到商店渠道。
 
 ## P20 认证结果与 P21 整改（2026-09-22）
@@ -98,5 +98,5 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\pack-msix.ps1 `
 - 隔离 Windows CI run `35491234860` 进一步用相同 Tauri 壳源码构建专用页面：包外运行时实际在 `http://tauri.localhost` 的 IndexedDB 写入标记，窗口显示 `NEW_INDEXEDDB_MARKER_CREATED`；随后以相同 Identity 包装、临时签名安装 MSIX 并启动，窗口显示 `EXISTING_INDEXEDDB_READ_OK`，两次窗口截图保存在该 run 的 `caiyun-msstore-indexeddb-probe-35491234860` artifact。这证明该隔离环境、同源同标识下，WebView2 实际接续了包外 IndexedDB，而不只是宿主目录仍在。该包是测试页面重新构建的壳，**并非提交审核的原始包**；仍需真实旧版笔记、离线 journal、用户机器及联网补传的升级验收，不能据此撤掉旧安装渠道。
 - 隔离 Windows CI run `35492047992` 把包外写入端换成 `p19` 标签构建的 10.2.7 壳，把读取端换成当前 10.2.8 Store 配置的 MSIX 壳；两端均使用相同的无账号 IndexedDB 测试页及 `http://tauri.localhost` origin。截图分别显示 `NEW_INDEXEDDB_MARKER_CREATED` 与 `EXISTING_INDEXEDDB_READ_OK`，MSIX 安装后旧宿主资料目录仍存在、包私有同名目录未生成。这是 **P19→P20 跨版本壳的 IndexedDB 接续实测**，但并非官方 P19 安装器里原封不动的 EXE，也不是已经提交审核的原始 P20 MSIX；真实离线笔记、journal 和联网同步迁移仍未验收。
 - 开发者已确认 IARC 使用条款与成年声明并在 Partner Center 保存；回读显示 Microsoft 12+、IARC 12+，分级 ID 尚为“待定”。概览异步校验完成后“提交进行认证”按钮可用；定价页仍为全球免费公开。认证通过后的发布方式已设为**手动发布**，避免真机迁移未验收时自动面向公众上线。
-- 现有 `test01@notes.app` 审核账号已通过生产登录验证，且只用于演示数据；账号邮箱与密码应继续只填在 Partner Center 非公开“其他测试信息”字段。生产后端当前最低壳策略及 P21 `10.2.9` 放行状态须在重提前重新实测。尚未完成 Windows 真机安装与旧版离线数据迁移验收。**P20 已退回，P21 尚未重新提交。**
+- 现有 `test01@notes.app` 审核账号已通过生产登录验证，且只用于演示数据；账号邮箱与密码应继续只填在 Partner Center 非公开“其他测试信息”字段。2026-09-28 Partner Center 当前显示已有一个提交“正在认证”；本轮计划制作 P22 `10.2.10.0` 包，加入 Windows 关窗/二次启动恢复验收、包内客服地址与前端热更新能力。未完成新包构建、处理、认证重提之前，不得把旧提交视为包含这些变更。尚未完成 Windows 真机旧版离线数据迁移验收。
 - 只有认证通过且公开页实测可访问后，才可公布最终 Store 商品链接 `https://apps.microsoft.com/detail/9P2VQP7JKVLN`。

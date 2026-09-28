@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "10.2.9"
+version = "10.2.10"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -56,4 +56,5 @@ default = ["self-update", "frontend-hot-update"]
 self-update = ["dep:tauri-plugin-updater"]
 frontend-hot-update = []
 msstore-distribution = []
+appstore-distribution = []
 map-isolation-test = []

@@ -101,7 +101,7 @@ jobs:
           if ($package.Publisher -ne $env:EXPECTED_PUBLISHER) {
             throw "Publisher mismatch: $($package.Publisher)"
           }
-          if ($package.Version.ToString() -ne '10.2.9.0') {
+          if ($package.Version.ToString() -ne '10.2.10.0') {
             throw "Version mismatch: $($package.Version)"
           }
           Write-Host "Installed package: $($package.PackageFullName)"
@@ -144,6 +144,8 @@ jobs:
             public static extern bool GetWindowRect(IntPtr handle, out Rect rect);
             [DllImport("user32.dll")]
             public static extern bool PrintWindow(IntPtr handle, IntPtr hdc, uint flags);
+            [DllImport("user32.dll")]
+            public static extern bool IsWindowVisible(IntPtr handle);
           }
           '@
             $windowRect = New-Object CaiyunWindowCapture+Rect
@@ -201,6 +203,41 @@ jobs:
               Write-Host "Legacy profile marker copied to MSIX-private profile: $(Test-Path -LiteralPath $privateMarker)"
               break
             }
+          }
+          if ($process.MainWindowHandle -ne [IntPtr]::Zero) {
+            # Windows mirrors the Mac close-to-hide behavior. A second launch
+            # must activate the existing instance and reveal the same window.
+            $originalWindowHandle = $process.MainWindowHandle
+            if (-not $process.CloseMainWindow()) {
+              throw 'Could not request the packaged main window to close'
+            }
+            Start-Sleep -Seconds 2
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw 'Closing the main window terminated the Windows app'
+            }
+            if ([CaiyunWindowCapture]::IsWindowVisible($originalWindowHandle)) {
+              throw 'Closing the main window did not hide it'
+            }
+            $secondLaunch = Start-Process -FilePath $exe -PassThru
+            $reopened = $false
+            for ($attempt = 0; $attempt -lt 12; $attempt++) {
+              Start-Sleep -Seconds 1
+              $process.Refresh()
+              if ([CaiyunWindowCapture]::IsWindowVisible($originalWindowHandle)) {
+                $reopened = $true
+                break
+              }
+            }
+            if (-not $reopened) {
+              throw 'Second launch did not reopen the hidden main window'
+            }
+            Write-Host "Hidden main window reopened through single-instance activation (PID $($process.Id))."
+            if ($secondLaunch.Id -ne $process.Id) {
+              Stop-Process -Id $secondLaunch.Id -Force -ErrorAction SilentlyContinue
+            }
+          } else {
+            Write-Warning 'Headless runner had no window handle; close/reopen GUI path was not verified.'
           }
           Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'

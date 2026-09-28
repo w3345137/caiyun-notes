@@ -64,14 +64,16 @@ jobs:
 
       - run: npm ci
 
-      - name: Validate Microsoft Store compliance boundaries
+      - name: Validate Microsoft Store frontend channel and bundled resources
+        env:
+          MSSTORE_FRONTEND_DIST: dist
         run: npm run test:msstore-compliance
 
       - name: Build store variant (no self-updater)
         shell: bash
         run: npm run build:msstore -- --target x86_64-pc-windows-msvc
 
-      - name: Scan store binary for forbidden code download paths
+      - name: Scan store binary for the signed frontend channel and native updater boundary
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/verify-msstore-binary.ps1
 
