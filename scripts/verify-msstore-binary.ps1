@@ -1,5 +1,5 @@
 param(
-  [string]$ExePath = "src-tauri\target\release\app.exe"
+  [string]$ExePath = "src-tauri\target\x86_64-pc-windows-msvc\release\app.exe"
 )
 
 $ErrorActionPreference = "Stop"

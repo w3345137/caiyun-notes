@@ -2,7 +2,7 @@ param(
   [Parameter(Mandatory=$true)][string]$IdentityName,
   [Parameter(Mandatory=$true)][string]$Publisher,
   [Parameter(Mandatory=$true)][string]$PublisherDisplayName,
-  [string]$ExePath = "src-tauri\target\release\app.exe",
+  [string]$ExePath = "src-tauri\target\x86_64-pc-windows-msvc\release\app.exe",
   [string]$DisplayName = "彩云笔记",
   [switch]$Sign
 )
