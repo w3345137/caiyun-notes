@@ -1,5 +1,13 @@
 # 彩云笔记桌面客户端壳
 
+## 官方下载
+
+- Mac：[App Store](https://apps.apple.com/app/id6815136930)
+- Windows：[Microsoft Store](https://apps.microsoft.com/detail/9P2VQP7JKVLN)
+- Linux / Android：[彩云笔记官网](https://notes.binapp.top/)
+
+商店负责原生安装包更新。旧官网版切换前，请确认已同步；有未同步或待恢复内容时保留本地数据，不要先卸载或清缓存。
+
 这个公开仓库只包含彩云笔记 p21 桌面 App 的 Tauri 壳、经过生产构建的内置前端资源和发布工作流，不包含 TypeScript 源码、后端、数据库脚本、江苏公司专属逻辑、HCM 集成或任何生产凭据。
 
 ## 版本边界
