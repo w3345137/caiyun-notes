@@ -31,7 +31,7 @@ p24 使用内置前端入口，并为行程规划提供受限的内嵌地图子 
 - 放行 `macappstore://` 与 `ms-windows-store://`，商店版的“检查更新”可以正常跳到对应商店页面。
 - 开放旧版本地数据的只读文本读取，迁移和恢复旧备份时不再被权限拦下。
 - 商店版前端热更新后的重启改走 NSWorkspace / LaunchServices，绕开 App Sandbox 里直接拉起可执行文件导致的崩溃。
-- Android 10.2.12（versionCode `10021200`）同步发布；Windows / macOS / Linux 直装由 p24 候选发布。
+- Android 10.2.12（versionCode `10021200`）同步发布；Linux 直装单独发布 10.2.12，macOS / Windows 不再提供直装包。
 
 ## 发布流程
 
