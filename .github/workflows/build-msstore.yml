@@ -71,7 +71,7 @@ jobs:
         shell: bash
         run: npm run build:msstore -- --target x86_64-pc-windows-msvc
 
-      - name: Scan store binary for forbidden code download paths
+      - name: Scan store binary for expected frontend channel and forbidden native updater
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/verify-msstore-binary.ps1
 

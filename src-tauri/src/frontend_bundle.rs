@@ -10,7 +10,7 @@ use std::io::{self, Cursor, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
 };
 use std::time::Duration;
 use tauri::http::{
@@ -21,13 +21,56 @@ use tauri::{AppHandle, Manager, State};
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
-const FRONTEND_RELEASE_ENDPOINT: &str = "https://notes.binapp.top/app-frontend/latest.json";
+const DIRECT_FRONTEND_RELEASE_ENDPOINT: &str = "https://notes.binapp.top/app-frontend/latest.json";
+const APPSTORE_FRONTEND_RELEASE_ENDPOINT: &str =
+    "https://notes.binapp.top/app-frontend/appstore/latest.json";
 const FRONTEND_RELEASE_PUBLIC_KEY_BASE64: &str = "AjIDb9Cq1Jhy/GlIo9IGl2+LASJuBT6qGjTz5OuD+q4=";
 const PRODUCT_VERSION: &str = "v2.8";
+const MOBILE_RUNTIME_VERSION: &str = "mobile-v1";
+
+fn native_mobile_channel() -> Option<&'static str> {
+    if cfg!(target_os = "android") {
+        Some("android")
+    } else if cfg!(target_os = "ios") {
+        Some("ios")
+    } else {
+        None
+    }
+}
 const MAX_MANIFEST_BYTES: usize = 128 * 1024;
 const MAX_ARCHIVE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_EXPANDED_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_ARCHIVE_FILES: usize = 4096;
+
+// reqwest 0.13's Android platform verifier requires a JVM helper and hard
+// fails certificates without OCSP endpoints. Use Mozilla roots for this one
+// client, keeping WebPKI's chain, expiry and hostname checks enabled. Root
+// updates deliberately require a signed native release.
+fn frontend_http_client_builder() -> Result<reqwest::ClientBuilder, String> {
+    let builder = reqwest::Client::builder().https_only(true);
+    #[cfg(target_os = "android")]
+    let builder = {
+        let roots = webpki_root_certs::TLS_SERVER_ROOT_CERTS
+            .iter()
+            .map(|cert| reqwest::Certificate::from_der(cert.as_ref()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("无法加载 Android TLS 根证书：{error}"))?;
+        builder.tls_certs_only(roots)
+    };
+    Ok(builder)
+}
+
+fn frontend_release_endpoint() -> &'static str {
+    if cfg!(target_os = "android") {
+        "https://notes.binapp.top/app-frontend/android/latest.json"
+    } else if cfg!(target_os = "ios") {
+        "https://notes.binapp.top/app-frontend/ios/latest.json"
+    } else if cfg!(feature = "appstore-distribution") {
+        APPSTORE_FRONTEND_RELEASE_ENDPOINT
+    } else {
+        DIRECT_FRONTEND_RELEASE_ENDPOINT
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SignedEnvelope {
@@ -46,6 +89,14 @@ pub struct FrontendReleasePayload {
     url: String,
     sha256: String,
     size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    channel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    runtime_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    update_scope: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    baseline_version: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -54,6 +105,10 @@ struct FrontendStateFile {
     active_release: Option<String>,
     previous_release: Option<String>,
     pending_release: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trial_release: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rejected_release: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +122,8 @@ pub struct FrontendBundleManager {
     root: PathBuf,
     verifying_key: VerifyingKey,
     shell_version: Version,
+    mobile_channel: Option<&'static str>,
+    state_update: Arc<Mutex<()>>,
     active: Arc<RwLock<Option<ActiveRelease>>>,
     update_in_progress: Arc<AtomicBool>,
     client: reqwest::Client,
@@ -89,6 +146,8 @@ pub struct FrontendUpdateResult {
     status: &'static str,
     release_id: Option<String>,
     min_shell_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    activation: Option<&'static str>,
 }
 
 impl FrontendUpdateResult {
@@ -97,6 +156,7 @@ impl FrontendUpdateResult {
             status: "upToDate",
             release_id,
             min_shell_version: None,
+            activation: native_mobile_channel().map(|_| "nextLaunch"),
         }
     }
 
@@ -105,6 +165,7 @@ impl FrontendUpdateResult {
             status: "installed",
             release_id: Some(release_id),
             min_shell_version: None,
+            activation: native_mobile_channel().map(|_| "nextLaunch"),
         }
     }
 
@@ -113,6 +174,7 @@ impl FrontendUpdateResult {
             status: "requiresShellUpdate",
             release_id: Some(release_id),
             min_shell_version: Some(min_shell_version),
+            activation: native_mobile_channel().map(|_| "nextLaunch"),
         }
     }
 
@@ -121,6 +183,7 @@ impl FrontendUpdateResult {
             status: "busy",
             release_id,
             min_shell_version: None,
+            activation: native_mobile_channel().map(|_| "nextLaunch"),
         }
     }
 }
@@ -135,9 +198,14 @@ impl Drop for UpdateGuard<'_> {
 
 impl FrontendBundleManager {
     pub fn from_app(app: &AppHandle) -> Result<Self, String> {
-        let root = app
-            .path()
-            .app_data_dir()
+        // Downloadable iOS code is recreatable cache, not user backup data.
+        // If iOS purges it, signed validation falls back to embedded resources.
+        let resource_dir = if cfg!(target_os = "ios") {
+            app.path().app_cache_dir()
+        } else {
+            app.path().app_data_dir()
+        };
+        let root = resource_dir
             .map_err(|error| format!("无法定位应用数据目录：{error}"))?
             .join("frontend");
         let key_bytes = BASE64
@@ -148,7 +216,7 @@ impl FrontendBundleManager {
             .map_err(|_| "前端发布公钥长度无效".to_string())?;
         let verifying_key =
             VerifyingKey::from_bytes(&key_array).map_err(|_| "前端发布公钥无效".to_string())?;
-        Self::new(root, verifying_key, env!("CARGO_PKG_VERSION"))
+        Self::new(root, verifying_key, &app.package_info().version.to_string())
     }
 
     fn new(
@@ -156,16 +224,27 @@ impl FrontendBundleManager {
         verifying_key: VerifyingKey,
         shell_version: &str,
     ) -> Result<Self, String> {
+        Self::new_with_channel(root, verifying_key, shell_version, native_mobile_channel())
+    }
+
+    fn new_with_channel(
+        root: PathBuf,
+        verifying_key: VerifyingKey,
+        shell_version: &str,
+        mobile_channel: Option<&'static str>,
+    ) -> Result<Self, String> {
         fs::create_dir_all(root.join("releases"))
             .map_err(|error| format!("无法创建前端资源目录：{error}"))?;
         let manager = Self {
             root,
             verifying_key,
+            mobile_channel,
+            state_update: Arc::new(Mutex::new(())),
             shell_version: Version::parse(shell_version)
                 .map_err(|_| "桌面壳版本无效".to_string())?,
             active: Arc::new(RwLock::new(None)),
             update_in_progress: Arc::new(AtomicBool::new(false)),
-            client: reqwest::Client::builder()
+            client: frontend_http_client_builder()?
                 .connect_timeout(Duration::from_secs(4))
                 .timeout(Duration::from_secs(20))
                 .user_agent(format!("CaiyunNotes/{shell_version}"))
@@ -257,6 +336,7 @@ impl FrontendBundleManager {
         [
             self.active_release_id(),
             self.read_state_file().pending_release,
+            self.read_state_file().rejected_release,
         ]
         .into_iter()
         .flatten()
@@ -265,6 +345,16 @@ impl FrontendBundleManager {
 
     fn recover_active_release(&self) -> Result<(), String> {
         let mut state = self.read_state_file();
+        // A mobile update must acknowledge a committed application render. An
+        // interrupted/failed trial falls back on the next cold launch, offline.
+        if self.mobile_channel.is_some() && state.trial_release.is_some() {
+            state.rejected_release = state.trial_release.take();
+            state.active_release = state.previous_release.take();
+            if state.pending_release == state.rejected_release {
+                state.pending_release = None;
+            }
+            self.write_state_file(&state)?;
+        }
         let active = state
             .active_release
             .as_deref()
@@ -283,6 +373,8 @@ impl FrontendBundleManager {
                 active_release: Some(pending.release_id.clone()),
                 previous_release,
                 pending_release: None,
+                trial_release: self.mobile_channel.map(|_| pending.release_id.clone()),
+                rejected_release: state.rejected_release,
             };
             self.write_state_file(&state)?;
             *self
@@ -313,12 +405,41 @@ impl FrontendBundleManager {
                 active_release: Some(previous.release_id.clone()),
                 previous_release: None,
                 pending_release: None,
+                trial_release: None,
+                rejected_release: state.rejected_release,
             };
             self.write_state_file(&recovered_state)?;
             *self
                 .active
                 .write()
                 .map_err(|_| "前端活动版本锁定失败".to_string())? = Some(previous);
+        }
+        Ok(())
+    }
+
+    fn validate_mobile_archive(&self, archive: &[u8]) -> Result<(), String> {
+        if self.mobile_channel.is_none() {
+            return Ok(());
+        }
+        let mut zip = ZipArchive::new(Cursor::new(archive)).map_err(|_| "移动更新不是有效 ZIP")?;
+        for index in 0..zip.len() {
+            let entry = zip.by_index(index).map_err(|_| "无法读取移动更新文件")?;
+            if entry.is_dir() {
+                continue;
+            }
+            let name = entry.name().to_ascii_lowercase();
+            let extension = Path::new(&name)
+                .extension()
+                .and_then(|x| x.to_str())
+                .unwrap_or("");
+            if ![
+                "html", "js", "css", "json", "png", "jpg", "jpeg", "gif", "webp", "svg", "ico",
+                "woff", "woff2", "ttf", "txt",
+            ]
+            .contains(&extension)
+            {
+                return Err("移动更新仅允许解释执行的前端与静态资源".into());
+            }
         }
         Ok(())
     }
@@ -339,6 +460,7 @@ impl FrontendBundleManager {
         let archive = fs::read(release_root.join("release.zip"))
             .map_err(|_| "前端发布原始包缺失".to_string())?;
         verify_archive_bytes(&payload, &archive)?;
+        self.validate_mobile_archive(&archive)?;
         let trusted_manifest = read_dist_manifest_from_archive(&archive)?;
         let www_root = release_root.join("www");
         verify_dist_directory(&www_root, &trusted_manifest)?;
@@ -348,8 +470,35 @@ impl FrontendBundleManager {
         })
     }
 
+    fn validate_channel(&self, payload: &FrontendReleasePayload) -> Result<(), String> {
+        if let Some(channel) = self.mobile_channel {
+            if payload.schema_version != 2
+                || payload.channel.as_deref() != Some(channel)
+                || payload.runtime_version.as_deref() != Some(MOBILE_RUNTIME_VERSION)
+                || payload.update_scope.as_deref() != Some("bugfix")
+            {
+                return Err("移动前端平台、运行时或修复范围不匹配".into());
+            }
+            // Each mobile feed is tied to its native baseline. In particular,
+            // an iOS baseline change must ship through Store review.
+            if payload.baseline_version.as_deref() != Some(self.shell_version.to_string().as_str())
+            {
+                return Err("移动前端与原生基线不匹配".into());
+            }
+        } else if payload.schema_version != 1
+            || payload.channel.is_some()
+            || payload.runtime_version.is_some()
+            || payload.update_scope.is_some()
+            || payload.baseline_version.is_some()
+        {
+            return Err("桌面前端平台不匹配".into());
+        }
+        Ok(())
+    }
+
     fn validate_payload(&self, payload: &FrontendReleasePayload) -> Result<(), String> {
-        if payload.schema_version != 1 {
+        self.validate_channel(payload)?;
+        if payload.schema_version != 1 && payload.schema_version != 2 {
             return Err("前端发布清单版本不受支持".to_string());
         }
         validate_release_id(&payload.release_id)?;
@@ -365,9 +514,16 @@ impl FrontendBundleManager {
             return Err("前端发布时间无效".to_string());
         }
         let url = reqwest::Url::parse(&payload.url).map_err(|_| "前端发布地址无效".to_string())?;
+        let prefix = self
+            .mobile_channel
+            .map(|channel| format!("/app-frontend/{channel}/releases/"))
+            .unwrap_or_else(|| "/app-frontend/releases/".into());
         if url.scheme() != "https"
             || url.host_str() != Some("notes.binapp.top")
-            || !url.path().starts_with("/app-frontend/releases/")
+            || !url.path().starts_with(&prefix)
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some()
         {
             return Err("前端发布地址不受信任".to_string());
         }
@@ -394,6 +550,7 @@ impl FrontendBundleManager {
         }
         self.validate_payload(payload)?;
         verify_archive_bytes(payload, archive)?;
+        self.validate_mobile_archive(archive)?;
         let trusted_manifest = read_dist_manifest_from_archive(archive)?;
 
         let releases_root = self.root.join("releases");
@@ -434,6 +591,7 @@ impl FrontendBundleManager {
                 .map_err(|error| format!("无法激活前端发布目录：{error}"))?;
         }
 
+        let _state_guard = self.state_update.lock().map_err(|_| "前端状态锁定失败")?;
         let mut state = self.read_state_file();
         state.pending_release = Some(payload.release_id.clone());
         self.write_state_file(&state)?;
@@ -507,6 +665,19 @@ impl FrontendBundleManager {
         Ok(())
     }
 
+    fn confirm_ready(&self) -> Result<(), String> {
+        if self.mobile_channel.is_none() {
+            return Ok(());
+        }
+        let _state_guard = self.state_update.lock().map_err(|_| "前端状态锁定失败")?;
+        let mut state = self.read_state_file();
+        if state.trial_release.is_some() && state.trial_release == self.active_release_id() {
+            state.trial_release = None;
+            self.write_state_file(&state)?;
+        }
+        Ok(())
+    }
+
     pub async fn check_for_update(&self) -> Result<FrontendUpdateResult, String> {
         if self
             .update_in_progress
@@ -518,7 +689,7 @@ impl FrontendBundleManager {
         let _guard = UpdateGuard(&self.update_in_progress);
         let response = self
             .client
-            .get(FRONTEND_RELEASE_ENDPOINT)
+            .get(frontend_release_endpoint())
             .send()
             .await
             .map_err(|error| format!("暂时无法检查界面更新：{error}"))?;
@@ -541,7 +712,8 @@ impl FrontendBundleManager {
         let envelope: SignedEnvelope = serde_json::from_slice(&manifest_bytes)
             .map_err(|_| "界面更新清单格式无效".to_string())?;
         let payload = decode_signed_payload(&envelope, &self.verifying_key)?;
-        if payload.schema_version != 1 || payload.product_version != PRODUCT_VERSION {
+        self.validate_channel(&payload)?;
+        if payload.product_version != PRODUCT_VERSION {
             return Err("界面更新清单与当前产品不匹配".to_string());
         }
         let minimum = Version::parse(&payload.min_shell_version)
@@ -586,6 +758,14 @@ impl FrontendBundleManager {
         }
         self.install_archive(&envelope, &payload, &archive)?;
         Ok(FrontendUpdateResult::installed(payload.release_id))
+    }
+}
+
+#[tauri::command]
+pub fn confirm_frontend_bundle_ready(state: State<'_, FrontendBundleState>) -> Result<(), String> {
+    match state.manager.as_ref() {
+        Some(manager) => manager.confirm_ready(),
+        None => Ok(()),
     }
 }
 
@@ -840,6 +1020,20 @@ mod tests {
     use tempfile::TempDir;
     use zip::{write::SimpleFileOptions, ZipWriter};
 
+    #[test]
+    fn frontend_feed_is_isolated_by_distribution_channel() {
+        let expected = if cfg!(feature = "appstore-distribution") {
+            APPSTORE_FRONTEND_RELEASE_ENDPOINT
+        } else {
+            DIRECT_FRONTEND_RELEASE_ENDPOINT
+        };
+        assert_eq!(frontend_release_endpoint(), expected);
+        assert_ne!(
+            APPSTORE_FRONTEND_RELEASE_ENDPOINT,
+            DIRECT_FRONTEND_RELEASE_ENDPOINT
+        );
+    }
+
     fn test_signing_key() -> SigningKey {
         SigningKey::from_bytes(&[7_u8; 32])
     }
@@ -854,6 +1048,10 @@ mod tests {
             url: format!("https://notes.binapp.top/app-frontend/releases/{release_id}.zip"),
             sha256: hex::encode(Sha256::digest(archive)),
             size: archive.len() as u64,
+            channel: None,
+            runtime_version: None,
+            update_scope: None,
+            baseline_version: None,
         }
     }
 
@@ -997,6 +1195,47 @@ mod tests {
     }
 
     #[test]
+    fn activated_release_serves_offline_webview_resources_after_restart() {
+        let temp = TempDir::new().unwrap();
+        let key = test_signing_key().verifying_key();
+        let manager =
+            FrontendBundleManager::new_for_test(temp.path().to_path_buf(), key, "10.2.0").unwrap();
+        let archive = build_archive("offline", None);
+        let payload = test_payload("20260712T150000Z-offline", &archive);
+        manager
+            .install_archive(&sign_payload(&payload), &payload, &archive)
+            .unwrap();
+
+        // Construction validates the signed, locally stored release without
+        // making a network request. The WebView can then load both its entry
+        // document and referenced JS from that same release while offline.
+        let restarted =
+            FrontendBundleManager::new_for_test(temp.path().to_path_buf(), key, "10.2.0").unwrap();
+        assert_eq!(restarted.active_release_id(), Some(payload.release_id));
+        for (uri, marker, content_type) in [
+            ("tauri://localhost/", "offline", "text/html"),
+            (
+                "tauri://localhost/assets/main.js",
+                "document.body.dataset.release",
+                "text/javascript",
+            ),
+        ] {
+            let request = Request::builder().uri(uri).body(Vec::new()).unwrap();
+            let mut response = Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Cow::Borrowed(&b"embedded"[..]))
+                .unwrap();
+            restarted.override_response(&request, &mut response);
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(String::from_utf8_lossy(response.body().as_ref()).contains(marker));
+            assert!(response.headers()[CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with(content_type));
+        }
+    }
+
+    #[test]
     fn installed_release_rejects_www_and_local_manifest_tampering() {
         let temp = TempDir::new().unwrap();
         let key = test_signing_key().verifying_key();
@@ -1084,5 +1323,155 @@ mod tests {
         let releases = fs::read_dir(temp.path().join("releases")).unwrap().count();
         assert_eq!(releases, 2);
         assert!(!temp.path().join("releases/20260712T120000Z-one").exists());
+    }
+    fn mobile_payload(channel: &str, id: &str, archive: &[u8]) -> FrontendReleasePayload {
+        let mut p = test_payload(id, archive);
+        p.schema_version = 2;
+        p.channel = Some(channel.into());
+        p.runtime_version = Some(MOBILE_RUNTIME_VERSION.into());
+        p.update_scope = Some("bugfix".into());
+        p.baseline_version = Some("10.2.11".into());
+        p.min_shell_version = "10.2.11".into();
+        p.url = format!("https://notes.binapp.top/app-frontend/{channel}/releases/{id}.zip");
+        p
+    }
+
+    fn mobile_manager(root: &Path, channel: &'static str) -> FrontendBundleManager {
+        FrontendBundleManager::new_with_channel(
+            root.to_path_buf(),
+            test_signing_key().verifying_key(),
+            "10.2.11",
+            Some(channel),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn mobile_rejects_cross_platform_runtime_baseline_and_scope_replays() {
+        let temp = TempDir::new().unwrap();
+        let archive = build_archive("mobile", None);
+        for channel in ["android", "ios"] {
+            let manager = mobile_manager(temp.path(), channel);
+            let good = mobile_payload(channel, "20261015T120000Z-mobile", &archive);
+            assert!(manager.validate_payload(&good).is_ok());
+            let mut bad = good.clone();
+            bad.channel = Some(if channel == "ios" { "android" } else { "ios" }.into());
+            assert!(manager
+                .install_archive(&sign_payload(&bad), &bad, &archive)
+                .is_err());
+            let mut bad = good.clone();
+            bad.runtime_version = Some("mobile-v2".into());
+            assert!(manager.validate_payload(&bad).is_err());
+            let mut bad = good.clone();
+            bad.baseline_version = Some("10.2.10".into());
+            assert!(manager.validate_payload(&bad).is_err());
+            let mut bad = good.clone();
+            bad.update_scope = Some("feature".into());
+            assert!(manager.validate_payload(&bad).is_err());
+            let mut bad = good.clone();
+            bad.url = "https://notes.binapp.top/app-frontend/releases/desktop.zip".into();
+            assert!(manager.validate_payload(&bad).is_err());
+            let desktop = test_payload("20261015T120000Z-desktop", &archive);
+            assert!(manager.validate_payload(&desktop).is_err());
+            assert!(FrontendBundleManager::new_for_test(
+                temp.path().to_path_buf(),
+                test_signing_key().verifying_key(),
+                "10.2.11"
+            )
+            .unwrap()
+            .validate_payload(&good)
+            .is_err());
+            assert!(manager.read_state_file().pending_release.is_none());
+        }
+    }
+
+    #[test]
+    fn mobile_trials_confirm_or_rollback_offline_without_touching_local_notes() {
+        for channel in ["android", "ios"] {
+            let temp = TempDir::new().unwrap();
+            let db = temp.path().join("notes-indexeddb-marker");
+            fs::write(&db, "offline-unsynced-note").unwrap();
+            let manager = mobile_manager(temp.path(), channel);
+            let a = build_archive("healthy", None);
+            let p = mobile_payload(channel, "20261015T120000Z-healthy", &a);
+            manager.install_archive(&sign_payload(&p), &p, &a).unwrap();
+            assert!(manager.active_release_id().is_none());
+            let manager = mobile_manager(temp.path(), channel);
+            assert_eq!(
+                manager.read_state_file().trial_release.as_deref(),
+                Some(p.release_id.as_str())
+            );
+            manager.confirm_ready().unwrap();
+            // A later launch keeps the acknowledged release while fully offline.
+            let manager = mobile_manager(temp.path(), channel);
+            assert_eq!(manager.active_release_id(), Some(p.release_id.clone()));
+            let a2 = build_archive("broken-js", None);
+            let p2 = mobile_payload(channel, "20261015T130000Z-broken", &a2);
+            manager
+                .install_archive(&sign_payload(&p2), &p2, &a2)
+                .unwrap();
+            let trial = mobile_manager(temp.path(), channel);
+            assert_eq!(trial.active_release_id(), Some(p2.release_id.clone()));
+            // No render acknowledgement: next normal launch rolls back.
+            let recovered = mobile_manager(temp.path(), channel);
+            assert_eq!(recovered.active_release_id(), Some(p.release_id));
+            assert_eq!(
+                recovered.read_state_file().rejected_release,
+                Some(p2.release_id.clone())
+            );
+            assert_eq!(recovered.newest_local_release_id(), Some(p2.release_id));
+            assert_eq!(fs::read_to_string(db).unwrap(), "offline-unsynced-note");
+            for uri in [
+                "http://tauri.localhost/assets/main.js",
+                "tauri://localhost/index.html",
+            ] {
+                let req = Request::builder().uri(uri).body(Vec::new()).unwrap();
+                let mut res = Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Cow::Borrowed(&b"builtin"[..]))
+                    .unwrap();
+                recovered.override_response(&req, &mut res);
+                assert_eq!(res.status(), StatusCode::OK);
+                assert!(String::from_utf8_lossy(res.body()).contains("healthy"));
+            }
+        }
+    }
+
+    #[test]
+    fn mobile_first_bad_trial_returns_to_embedded_and_incomplete_install_is_ignored() {
+        let temp = TempDir::new().unwrap();
+        let manager = mobile_manager(temp.path(), "ios");
+        let a = build_archive("bad", None);
+        let p = mobile_payload("ios", "20261015T120000Z-first", &a);
+        assert!(manager
+            .install_archive(&sign_payload(&p), &p, &a[..a.len() / 2])
+            .is_err());
+        assert!(manager.read_state_file().pending_release.is_none());
+        manager.install_archive(&sign_payload(&p), &p, &a).unwrap();
+        let trial = mobile_manager(temp.path(), "ios");
+        assert!(trial.active_release_id().is_some());
+        let embedded = mobile_manager(temp.path(), "ios");
+        assert!(embedded.active_release_id().is_none());
+        assert_eq!(
+            embedded.read_state_file().rejected_release,
+            Some(p.release_id)
+        );
+        fs::write(temp.path().join("state.next.json"), b"partial-state").unwrap();
+        assert!(mobile_manager(temp.path(), "ios")
+            .active_release_id()
+            .is_none());
+    }
+    #[test]
+    fn mobile_rejects_native_and_wasm_files_even_in_signed_archive() {
+        let temp = TempDir::new().unwrap();
+        let m = mobile_manager(temp.path(), "ios");
+        for name in ["assets/engine.wasm", "lib/plugin.dylib", "classes.dex"] {
+            let a = build_archive("bad-native", Some(name));
+            let p = mobile_payload("ios", "20261015T140000Z-native", &a);
+            assert!(m
+                .install_archive(&sign_payload(&p), &p, &a)
+                .unwrap_err()
+                .contains("静态资源"));
+        }
     }
 }

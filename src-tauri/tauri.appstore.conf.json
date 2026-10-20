@@ -1,11 +1,22 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "plugins": {
+    "updater": null
+  },
   "bundle": {
+    "icon": ["icons/macos/icon.icns"],
     "createUpdaterArtifacts": false,
     "targets": ["app"],
+    "category": "Productivity",
+    "resources": {
+      "./PrivacyInfo.xcprivacy": "PrivacyInfo.xcprivacy",
+      "./locales/zh-Hans.lproj/InfoPlist.strings": "zh-Hans.lproj/InfoPlist.strings",
+      "./locales/en.lproj/InfoPlist.strings": "en.lproj/InfoPlist.strings"
+    },
     "macOS": {
-      "category": "public.app-category.productivity",
+      "bundleVersion": "10.2.20",
       "entitlements": "./entitlements.appstore.plist",
+      "infoPlist": "./Info.appstore.plist",
       "signingIdentity": "Apple Distribution"
     }
   }

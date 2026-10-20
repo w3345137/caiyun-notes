@@ -28,3 +28,8 @@ pub async fn check_frontend_bundle_update(
         min_shell_version: None,
     })
 }
+
+#[tauri::command]
+pub fn confirm_frontend_bundle_ready() -> Result<(), String> {
+    Ok(())
+}

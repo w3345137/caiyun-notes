@@ -1,0 +1,13 @@
+{
+  "productName": "彩云附件下载验收",
+  "identifier": "com.caiyun.notes.download-e2e",
+  "build": { "frontendDist": "../tests/download-native-fixture" },
+  "app": {
+    "security": { "capabilities": [{ "identifier": "download-test-main", "webviews": ["main"], "permissions": ["allow-save-download-file"] }] },
+    "windows": [{ "create": false, "label": "main", "title": "附件下载隔离验收", "width": 900, "height": 600, "url": "index.html" }]
+  },
+  "bundle": {
+    "active": true, "createUpdaterArtifacts": false, "targets": ["app"],
+    "macOS": { "infoPlist": "./Info.download-test.plist", "entitlements": "./entitlements.download-test.plist", "signingIdentity": "-" }
+  }
+}

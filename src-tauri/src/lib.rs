@@ -1,3 +1,4 @@
+mod download_file;
 #[cfg(feature = "frontend-hot-update")]
 mod frontend_bundle;
 #[cfg(not(feature = "frontend-hot-update"))]
@@ -5,6 +6,7 @@ mod frontend_bundle;
 mod frontend_bundle;
 mod map_bridge;
 mod map_sessions;
+use download_file::save_download_file;
 #[cfg(all(desktop, feature = "self-update"))]
 mod resumable_updater;
 use map_bridge::{
@@ -18,24 +20,145 @@ mod map_navigation;
 #[cfg(not(all(desktop, feature = "self-update")))]
 #[tauri::command]
 async fn download_and_install_resumable_update() -> Result<(), String> {
-    Err("当前版本由应用商店分发，请在 Microsoft Store 中检查更新。".to_string())
+    let store = if cfg!(feature = "appstore-distribution") {
+        "Mac App Store"
+    } else {
+        "Microsoft Store"
+    };
+    Err(format!("当前版本由应用商店分发，请在 {store} 中检查更新。"))
 }
 
 #[tauri::command]
 fn get_app_distribution_channel() -> &'static str {
     if cfg!(feature = "msstore-distribution") {
         "msstore"
+    } else if cfg!(feature = "appstore-distribution") {
+        "appstore"
     } else {
         "direct"
     }
 }
 
-use frontend_bundle::{check_frontend_bundle_update, FrontendBundleState};
 #[cfg(feature = "frontend-hot-update")]
 use frontend_bundle::FrontendBundleManager;
+use frontend_bundle::{
+    check_frontend_bundle_update, confirm_frontend_bundle_ready, FrontendBundleState,
+};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Manager};
+
+#[cfg(desktop)]
+fn is_openable_external_url(url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "http" | "https" | "mailto")
+}
+
+/// WKWebView never creates a window for a `target="_blank"` navigation unless
+/// the native host answers createWebViewWith, so link clicks from the note
+/// canvas and from sandboxed email frames were dropped without feedback.
+/// Hand web addresses to the system browser and refuse every other new window.
+#[cfg(desktop)]
+fn open_new_window_in_browser<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    url: &tauri::Url,
+) -> tauri::webview::NewWindowResponse<R> {
+    if is_openable_external_url(url) {
+        // The shell plugin is already initialised for the frontend's own
+        // system-browser links; reuse the same OS hand-off here instead of
+        // adding a second opener plugin for one call.
+        #[allow(deprecated)]
+        let opened = tauri_plugin_shell::ShellExt::shell(app).open(url.to_string(), None);
+        if let Err(error) = opened {
+            eprintln!("[ExternalLink] 无法用系统浏览器打开链接: {error}");
+        }
+    }
+    tauri::webview::NewWindowResponse::Deny
+}
+
+#[cfg(target_os = "macos")]
+fn app_bundle_from_executable(executable: &std::path::Path) -> Option<std::path::PathBuf> {
+    let bundle = executable.parent()?.parent()?.parent()?;
+    (bundle.extension().and_then(|value| value.to_str()) == Some("app"))
+        .then(|| bundle.to_path_buf())
+}
+
+/// Relaunch through LaunchServices instead of spawning our own executable.
+///
+/// The App Sandbox has to start the new process from a clean launchd hand-off.
+/// Spawning `Contents/MacOS/app` directly (what the process plugin does)
+/// re-enters sandbox initialisation inside the existing sandbox and traps with
+/// SIGTRAP on the Mac App Store build.
+#[cfg(target_os = "macos")]
+fn relaunch_via_launch_services(
+    sender: std::sync::mpsc::Sender<Result<(), String>>,
+) -> Result<(), String> {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration};
+    use objc2_foundation::{NSError, NSString, NSURL};
+
+    let executable =
+        std::env::current_exe().map_err(|error| format!("missing executable: {error}"))?;
+    let bundle = app_bundle_from_executable(&executable)
+        .ok_or_else(|| "the app bundle is unavailable".to_string())?;
+    let path = NSString::from_str(&bundle.to_string_lossy());
+    let url = NSURL::fileURLWithPath(&path);
+    let configuration = NSWorkspaceOpenConfiguration::new();
+    configuration.setCreatesNewApplicationInstance(true);
+
+    let completion = RcBlock::new(
+        move |_application: *mut NSRunningApplication, error: *mut NSError| {
+            let outcome = if error.is_null() {
+                Ok(())
+            } else {
+                Err(unsafe { (*error).localizedDescription() }.to_string())
+            };
+            let _ = sender.send(outcome);
+        },
+    );
+    NSWorkspace::sharedWorkspace().openApplicationAtURL_configuration_completionHandler(
+        &url,
+        &configuration,
+        Some(&completion),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+async fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.run_on_main_thread(move || {
+            if let Err(error) = relaunch_via_launch_services(sender.clone()) {
+                let _ = sender.send(Err(error));
+            }
+        })
+        .map_err(|error| format!("cannot reach the main thread: {error}"))?;
+        let outcome = tauri::async_runtime::spawn_blocking(move || {
+            receiver.recv_timeout(std::time::Duration::from_secs(8))
+        })
+        .await
+        .map_err(|error| format!("relaunch task failed: {error}"))?;
+        match outcome {
+            Ok(Ok(())) => {
+                // Let LaunchServices finish handing the new instance to launchd
+                // before this process leaves.
+                std::thread::sleep(std::time::Duration::from_millis(600));
+                let coordinator = app.state::<ExitCoordinator>();
+                coordinator.approved.store(true, Ordering::Release);
+                app.exit(0);
+                Ok(())
+            }
+            Ok(Err(error)) => Err(format!("LaunchServices refused the relaunch: {error}")),
+            Err(_) => Err("LaunchServices did not answer".to_string()),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err("restart_app is only implemented on macOS".to_string())
+    }
+}
 
 #[cfg(target_os = "windows")]
 use tauri::{
@@ -194,6 +317,7 @@ struct ExitCoordinator {
     approved: AtomicBool,
 }
 
+#[cfg(desktop)]
 fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -201,6 +325,9 @@ fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         let _ = window.set_focus();
     }
 }
+
+#[cfg(not(desktop))]
+fn show_main_window<R: tauri::Runtime>(_app: &tauri::AppHandle<R>) {}
 
 fn approve_exit<R: tauri::Runtime>(app: &tauri::AppHandle<R>, coordinator: &ExitCoordinator) {
     coordinator.pending.store(false, Ordering::Release);
@@ -295,6 +422,40 @@ fn install_window_close_behavior<R: tauri::Runtime>(main_window: &tauri::Webview
     let _ = main_window;
 }
 
+#[cfg(target_os = "macos")]
+fn install_macos_window_menu(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, WINDOW_SUBMENU_ID};
+
+    // Extend the standard menu rather than replacing native edit/quit actions.
+    // This remains available even when closing the main window only hides it.
+    let menu = Menu::default(app.handle())?;
+    let window_item = menu.get(WINDOW_SUBMENU_ID).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "missing native Window menu")
+    })?;
+    let window_menu = window_item.as_submenu().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Window menu is not a submenu",
+        )
+    })?;
+    window_menu.set_text("窗口")?;
+    let reopen = MenuItem::with_id(
+        app,
+        "reopen-main-window",
+        "打开彩云笔记",
+        true,
+        Some("CmdOrCtrl+Shift+1"),
+    )?;
+    window_menu.insert_items(&[&reopen, &PredefinedMenuItem::separator(app)?], 0)?;
+    app.set_menu(menu)?;
+    app.on_menu_event(|app, event| {
+        if event.id().as_ref() == "reopen-main-window" {
+            show_main_window(app);
+        }
+    });
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 fn install_windows_tray(app: &tauri::App) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "显示彩云笔记", true, None::<&str>)?;
@@ -358,6 +519,7 @@ pub fn run() {
         .manage(std::sync::Mutex::new(map_sessions::MapSessions::default()))
         .invoke_handler(tauri::generate_handler![
             check_frontend_bundle_update,
+            confirm_frontend_bundle_ready,
             set_app_exit_handler_ready,
             complete_app_exit,
             request_app_exit,
@@ -370,7 +532,9 @@ pub fn run() {
             inspect_legacy_webkit_origin,
             quarantine_legacy_webkit_origin,
             download_and_install_resumable_update,
-            get_app_distribution_channel
+            get_app_distribution_channel,
+            save_download_file,
+            restart_app
         ])
         .setup(|app| {
             #[cfg(all(desktop, feature = "self-update"))]
@@ -408,21 +572,47 @@ pub fn run() {
                     }
                 };
                 app.manage(FrontendBundleState::new(frontend_manager.clone()));
-                tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
-                    .on_web_resource_request(move |request, response| {
-                        if let Some(manager) = frontend_manager.as_ref() {
-                            manager.override_response(&request, response);
-                        }
-                    })
-                    .build()?
+                let builder =
+                    tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                        .on_web_resource_request(move |request, response| {
+                            if let Some(manager) = frontend_manager.as_ref() {
+                                manager.override_response(&request, response);
+                            }
+                        });
+                #[cfg(desktop)]
+                let builder = {
+                    let link_app = app.handle().clone();
+                    // WKWebView only saves anchor/blob exports when the native
+                    // download delegate exists; wry installs it together with
+                    // this handler and writes into the OS Downloads folder.
+                    builder
+                        .on_new_window(move |url, _features| {
+                            open_new_window_in_browser(&link_app, &url)
+                        })
+                        .on_download(|_webview, _event| true)
+                };
+                builder.build()?
             };
             #[cfg(not(feature = "frontend-hot-update"))]
             let main_window = {
-                // Store 版只使用审核包内的前端资源，不包含任何运行时代码替换器。
+                // 未启用热更新的构建只使用包内前端资源。
                 app.manage(FrontendBundleState::new());
-                tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?.build()?
+                let builder =
+                    tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?;
+                #[cfg(desktop)]
+                let builder = {
+                    let link_app = app.handle().clone();
+                    builder
+                        .on_new_window(move |url, _features| {
+                            open_new_window_in_browser(&link_app, &url)
+                        })
+                        .on_download(|_webview, _event| true)
+                };
+                builder.build()?
             };
             install_window_close_behavior(&main_window);
+            #[cfg(target_os = "macos")]
+            install_macos_window_menu(app)?;
             #[cfg(target_os = "windows")]
             install_windows_tray(app)?;
             Ok(())
@@ -449,4 +639,54 @@ pub fn run() {
         #[cfg(not(desktop))]
         let _ = (app_handle, event);
     });
+}
+
+#[cfg(all(test, desktop))]
+mod external_link_tests {
+    use super::is_openable_external_url;
+    use tauri::Url;
+
+    fn parse(raw: &str) -> Url {
+        raw.parse::<Url>().expect("test url should parse")
+    }
+
+    #[test]
+    fn web_and_mail_addresses_reach_the_system_browser() {
+        for raw in [
+            "https://nnfp.jss.com.cn/8EkNyElUZq-Zhud",
+            "http://notes.binapp.top/privacy",
+            "mailto:invoice@info.nuonuo.com",
+        ] {
+            assert!(is_openable_external_url(&parse(raw)), "{raw}");
+        }
+    }
+
+    #[test]
+    fn local_and_script_addresses_are_refused() {
+        for raw in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,<p>hi</p>",
+            "about:blank",
+        ] {
+            assert!(!is_openable_external_url(&parse(raw)), "{raw}");
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod launch_services_tests {
+    use super::app_bundle_from_executable;
+    use std::path::Path;
+
+    #[test]
+    fn resolves_the_app_bundle_from_the_nested_executable() {
+        let executable = Path::new("/Applications/彩云笔记.app/Contents/MacOS/app");
+        assert_eq!(
+            app_bundle_from_executable(executable).as_deref(),
+            Some(Path::new("/Applications/彩云笔记.app")),
+        );
+        assert!(app_bundle_from_executable(Path::new("/tmp/app")).is_none());
+        assert!(app_bundle_from_executable(Path::new("/tmp/Folder/Contents/MacOS/app")).is_none());
+    }
 }
