@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { prepareNativeSpeech } from './prepare-native-speech.mjs';
 
 const args = process.argv.slice(2);
 const channelFlag = args.indexOf('--channel');
@@ -25,14 +27,19 @@ const distributionFeature = `${channel}-distribution`;
 const features = noHotUpdate >= 0
   ? distributionFeature
   : `${distributionFeature},frontend-hot-update`;
+const nativeTarget = target || `${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-${channel === 'msstore' ? 'pc-windows-msvc' : 'apple-darwin'}`;
+const speech = prepareNativeSpeech(nativeTarget);
 const command = [
   'tauri', 'build', '--config', `src-tauri/tauri.${channel}.conf.json`,
+  '--config', JSON.stringify({ bundle: speech }),
   ...(noBundle >= 0 ? ['--no-bundle'] : []),
   ...(target ? ['--target', target] : []),
   '--', '--no-default-features',
   ...(features ? ['--features', features] : []),
   ...args,
 ];
-const result = spawnSync('npx', command, { stdio: 'inherit', shell: process.platform === 'win32' });
+// Invoke the Node entry directly: cmd.exe would reinterpret JSON and paths with spaces.
+const require = createRequire(import.meta.url);
+const result = spawnSync(process.execPath, [require.resolve('@tauri-apps/cli/tauri.js'), ...command.slice(1)], { stdio: 'inherit' });
 if (result.error) throw result.error;
 process.exit(result.status ?? 1);

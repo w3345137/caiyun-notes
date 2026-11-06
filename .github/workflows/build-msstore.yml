@@ -75,6 +75,12 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/verify-msstore-binary.ps1
 
+      - name: Verify packaged offline runtime launches
+        shell: pwsh
+        run: |
+          & "src-tauri/target/x86_64-pc-windows-msvc/release/CaiyunQwenCpu.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "离线转写组件无法启动" }
+
       - name: Pack exact x64 MSIX artifact
         shell: pwsh
         run: |

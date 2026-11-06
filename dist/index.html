@@ -25,14 +25,86 @@
       position: relative;
     }
   </style>
-  <title>彩云笔记 v2.8</title>
-  <script type="module" crossorigin src="/assets/index-BuKdy8us.js"></script>
+  <style data-caiyun-first-paint>
+    /* 首屏骨架：仅用于落地页，React 接管后立即移除；不依赖任何 JS chunk。 */
+    .cy-boot { min-height: 100vh; background: #f5f7fb; color: #0b0c0e; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
+    .cy-boot * { box-sizing: border-box; }
+    .cy-boot-header { display: flex; align-items: center; gap: 10px; height: 68px; padding: 0 clamp(20px, 5vw, 64px); font-weight: 650; }
+    .cy-boot-header img { width: 30px; height: 30px; border-radius: 8px; }
+    .cy-boot-header .cy-boot-cta { margin-left: auto; padding: 9px 16px; border-radius: 999px; background: #111; color: #fff; font-size: 13px; font-weight: 600; }
+    .cy-boot-hero { display: grid; grid-template-columns: minmax(0, .86fr) minmax(0, 1.14fr); align-items: center; gap: clamp(28px, 4vw, 64px); padding: clamp(40px, 7vw, 96px) clamp(20px, 5vw, 64px) 48px; }
+    .cy-boot-eyebrow { margin: 0 0 18px; color: #646a73; font-size: 13px; font-weight: 550; }
+    .cy-boot h1 { margin: 0; max-width: 620px; font-size: clamp(34px, 4.2vw, 56px); line-height: 1.1; letter-spacing: -.045em; }
+    .cy-boot h1 span { color: #6b7280; }
+    .cy-boot-sub { margin: 22px 0 0; max-width: 540px; color: #4b5563; font-size: 17px; line-height: 1.7; }
+    .cy-boot-actions { display: flex; align-items: center; gap: 18px; margin-top: 30px; }
+    .cy-boot-primary { padding: 13px 26px; border-radius: 999px; background: #1d6bff; color: #fff; font-size: 15px; font-weight: 600; box-shadow: 0 8px 22px rgba(29, 107, 255, .22); }
+    .cy-boot-secondary { color: #374151; font-size: 14px; font-weight: 550; }
+    .cy-boot-points { display: flex; flex-wrap: wrap; gap: 9px; margin: 26px 0 0; padding: 0; list-style: none; }
+    .cy-boot-points li { padding: 7px 13px; border: 1px solid rgba(30, 41, 59, .1); border-radius: 999px; background: rgba(255, 255, 255, .72); color: #4b5563; font-size: 12.5px; font-weight: 560; }
+    .cy-boot-window { overflow: hidden; border: 1px solid rgba(30, 41, 59, .12); border-radius: 22px; background: #fff; box-shadow: 0 30px 80px rgba(28, 48, 78, .16); }
+    .cy-boot-titlebar { display: flex; align-items: center; gap: 7px; height: 42px; padding: 0 16px; border-bottom: 1px solid #eef1f6; color: #6b7280; font-size: 12px; }
+    .cy-boot-titlebar i { width: 9px; height: 9px; border-radius: 50%; background: #dfe3ea; }
+    .cy-boot-titlebar span { margin-left: 10px; }
+    .cy-boot-window-body { display: grid; grid-template-columns: 168px 1fr; min-height: 330px; }
+    .cy-boot-side { padding: 18px 14px; border-right: 1px solid #eef1f6; background: #fafbfd; }
+    .cy-boot-side b { display: block; margin-bottom: 14px; font-size: 12px; color: #374151; }
+    .cy-boot-side i { display: block; height: 10px; margin-bottom: 10px; border-radius: 5px; background: #e8ecf3; }
+    .cy-boot-side i:nth-child(2) { width: 78%; background: #dbe5ff; }
+    .cy-boot-side i:nth-child(3) { width: 62%; }
+    .cy-boot-side i:nth-child(4) { width: 70%; }
+    .cy-boot-side i:nth-child(5) { width: 55%; }
+    .cy-boot-doc { padding: 26px 30px; }
+    .cy-boot-doc h2 { margin: 0 0 18px; font-size: 20px; letter-spacing: -.02em; }
+    .cy-boot-doc p { height: 11px; margin: 0 0 12px; border-radius: 6px; background: #eef1f6; }
+    .cy-boot-doc p.short { width: 58%; }
+    @media (max-width: 900px) {
+      .cy-boot-hero { grid-template-columns: 1fr; gap: 34px; text-align: center; }
+      .cy-boot h1, .cy-boot-sub { margin-inline: auto; }
+      .cy-boot-actions, .cy-boot-points { justify-content: center; }
+      .cy-boot-window-body { grid-template-columns: 120px 1fr; }
+    }
+  </style>
+  <title>彩云笔记</title>
+  <script type="module" crossorigin src="/assets/index-CgxR7yyF.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/react-core-CvchqaeY.js">
   <link rel="modulepreload" crossorigin href="/assets/i18n-DaTLAGIu.js">
-  <link rel="modulepreload" crossorigin href="/assets/tauri-YDUH1ovZ.js">
-  <link rel="stylesheet" crossorigin href="/assets/style-BkcdG_GQ.css">
+  <link rel="modulepreload" crossorigin href="/assets/tauri-Dfpp3-C3.js">
+  <link rel="stylesheet" crossorigin href="/assets/style-DTP0DL1w.css">
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root"><div class="cy-boot" id="cy-first-paint">
+    <header class="cy-boot-header">
+      <img src="/logo.png" alt="" width="30" height="30" />
+      <span>彩云笔记</span>
+      <span class="cy-boot-cta">登录 / 注册</span>
+    </header>
+    <main class="cy-boot-hero">
+      <div>
+        <p class="cy-boot-eyebrow">本地优先 · 打开即写</p>
+        <h1>笔记、表格、导图，<span>一页完成。</span></h1>
+        <p class="cy-boot-sub">打开即编辑，断网不丢内容，联网自动合并；邮件、协作与多端同步都在同一个工作区。</p>
+        <div class="cy-boot-actions"><span class="cy-boot-primary">开始使用</span><span class="cy-boot-secondary">了解彩云笔记</span></div>
+        <ul class="cy-boot-points"><li>本地保存</li><li>实时协作</li><li>邮件笔记</li><li>多端同步</li></ul>
+      </div>
+      <div class="cy-boot-window" aria-hidden="true">
+        <div class="cy-boot-titlebar"><i></i><i></i><i></i><span>彩云笔记</span></div>
+        <div class="cy-boot-window-body">
+          <div class="cy-boot-side"><b>我的工作区</b><i></i><i></i><i></i><i></i></div>
+          <div class="cy-boot-doc"><h2>第 37 周 · 工作计划</h2><p></p><p></p><p></p><p class="short"></p></div>
+        </div>
+      </div>
+    </main>
+  </div></div>
+  <script>
+    (function () {
+      var path = location.pathname;
+      var tauri = location.protocol === 'tauri:' || location.hostname === 'tauri.localhost';
+      if (tauri || path === '/app' || path.indexOf('/app/') === 0 || path === '/privacy') {
+        var root = document.getElementById('root');
+        if (root) root.replaceChildren();
+      }
+    })();
+  </script>
 </body>
 </html>

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-qwen-verify"
+description = "Enables the qwen_verify command without any pre-configured scope."
+commands.allow = ["qwen_verify"]
+
+[[permission]]
+identifier = "deny-qwen-verify"
+description = "Denies the qwen_verify command without any pre-configured scope."
+commands.deny = ["qwen_verify"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-qwen-open-folder"
+description = "Enables the qwen_open_folder command without any pre-configured scope."
+commands.allow = ["qwen_open_folder"]
+
+[[permission]]
+identifier = "deny-qwen-open-folder"
+description = "Denies the qwen_open_folder command without any pre-configured scope."
+commands.deny = ["qwen_open_folder"]

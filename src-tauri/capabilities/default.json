@@ -6,6 +6,11 @@
     "main"
   ],
   "permissions": [
+    "allow-plugin-host-version",
+    "allow-plugin-http-request",
+    "allow-plugin-http-cancel",
+    "allow-plugin-website-open",
+    "allow-plugin-website-close",
     "allow-check-frontend-bundle-update",
     "allow-confirm-frontend-bundle-ready",
     "allow-set-app-exit-handler-ready",
@@ -22,6 +27,11 @@
     "allow-get-app-distribution-channel",
     "allow-save-download-file",
     "allow-restart-app",
+    "allow-qwen-models",
+    "allow-qwen-verify",
+    "allow-qwen-open-folder",
+    "allow-qwen-remove",
+    "allow-qwen-transcribe",
     "core:default",
     "fs:allow-read",
     "fs:allow-read-text-file",
@@ -35,9 +45,15 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$APPLOCALDATA/**" },
-        { "path": "$APPDATA/**" },
-        { "path": "$APPCONFIG/**" }
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$APPDATA/**"
+        },
+        {
+          "path": "$APPCONFIG/**"
+        }
       ]
     },
     "updater:default",

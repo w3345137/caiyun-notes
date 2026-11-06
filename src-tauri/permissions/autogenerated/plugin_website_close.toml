@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-plugin-website-close"
+description = "Enables the plugin_website_close command without any pre-configured scope."
+commands.allow = ["plugin_website_close"]
+
+[[permission]]
+identifier = "deny-plugin-website-close"
+description = "Denies the plugin_website_close command without any pre-configured scope."
+commands.deny = ["plugin_website_close"]

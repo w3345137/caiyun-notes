@@ -27,6 +27,15 @@ if (Test-Path "build\msix") { Remove-Item "build\msix" -Recurse -Force }
 New-Item -ItemType Directory -Force -Path "$layout\app", "$layout\Assets" | Out-Null
 $exeName = "app.exe"
 Copy-Item -LiteralPath $fullExePath -Destination "$layout\app\$exeName"
+$speechRuntime = Join-Path (Split-Path $fullExePath) "CaiyunQwenCpu.exe"
+if (-not (Test-Path -LiteralPath $speechRuntime -PathType Leaf)) { throw "缺少随包离线转写组件 CaiyunQwenCpu.exe" }
+Copy-Item -LiteralPath $speechRuntime -Destination "$layout\app\CaiyunQwenCpu.exe"
+$speechNotices = Join-Path (Split-Path $fullExePath) "SpeechCpuThirdPartyNotices.txt"
+if (-not (Test-Path -LiteralPath $speechNotices -PathType Leaf)) {
+  $speechNotices = "src-tauri\target\speech-cpu-stage\x86_64-pc-windows-msvc\SpeechCpuThirdPartyNotices.txt"
+}
+if (-not (Test-Path -LiteralPath $speechNotices -PathType Leaf)) { throw "缺少离线转写组件第三方声明" }
+Copy-Item -LiteralPath $speechNotices -Destination "$layout\app\SpeechCpuThirdPartyNotices.txt"
 
 foreach ($asset in @("StoreLogo.png", "Square44x44Logo.png", "Square71x71Logo.png", "Square150x150Logo.png", "Square310x310Logo.png")) {
   $source = "src-tauri\icons\$asset"

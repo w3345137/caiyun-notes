@@ -6,6 +6,11 @@ use std::path::Path;
 fn main() {
     let mut attributes =
         tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(&[
+            "plugin_host_version",
+            "plugin_http_request",
+            "plugin_http_cancel",
+            "plugin_website_open",
+            "plugin_website_close",
             "check_frontend_bundle_update",
             "confirm_frontend_bundle_ready",
             "set_app_exit_handler_ready",
@@ -23,6 +28,11 @@ fn main() {
             "get_app_distribution_channel",
             "save_download_file",
             "restart_app",
+            "qwen_models",
+            "qwen_verify",
+            "qwen_open_folder",
+            "qwen_remove",
+            "qwen_transcribe",
         ]));
     if env::var_os("CARGO_FEATURE_SELF_UPDATE").is_none() {
         let pattern = store_capabilities_pattern().expect("failed to generate store capabilities");

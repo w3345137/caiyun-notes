@@ -74,6 +74,9 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --locked
           cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
 
+      - name: Prepare bundled offline speech runtime
+        run: node scripts/prepare-native-speech.mjs --target ${{ matrix.target }} --output speech-bundle-config.json
+
       - name: Build signed draft artifacts
         uses: tauri-apps/tauri-action@v0
         env:
@@ -88,7 +91,7 @@ jobs:
           releaseBody: Signed candidate. Not promoted to updater manifests yet.
           releaseDraft: true
           prerelease: false
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config speech-bundle-config.json
 
       - name: Verify macOS app bundle signature
         if: matrix.platform == 'macos-latest'

@@ -4,9 +4,13 @@
     "updater": null
   },
   "bundle": {
-    "icon": ["icons/macos/icon.icns"],
+    "icon": [
+      "icons/macos/icon.icns"
+    ],
     "createUpdaterArtifacts": false,
-    "targets": ["app"],
+    "targets": [
+      "app"
+    ],
     "category": "Productivity",
     "resources": {
       "./PrivacyInfo.xcprivacy": "PrivacyInfo.xcprivacy",
@@ -14,7 +18,7 @@
       "./locales/en.lproj/InfoPlist.strings": "en.lproj/InfoPlist.strings"
     },
     "macOS": {
-      "bundleVersion": "10.2.20",
+      "bundleVersion": "10.2.23",
       "entitlements": "./entitlements.appstore.plist",
       "infoPlist": "./Info.appstore.plist",
       "signingIdentity": "Apple Distribution"

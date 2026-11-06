@@ -5,11 +5,11 @@
       "./PrivacyInfo.xcprivacy": "PrivacyInfo.xcprivacy"
     },
     "iOS": {
-      "bundleVersion": "10.2.21",
+      "bundleVersion": "10.2.22",
       "developmentTeam": "2VUZ8TNDWS",
       "infoPlist": "./Info.ios.plist",
       "minimumSystemVersion": "14.0"
     }
   },
-  "version": "10.2.11"
+  "version": "10.2.12"
 }

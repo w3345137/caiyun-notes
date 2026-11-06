@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-qwen-models"
+description = "Enables the qwen_models command without any pre-configured scope."
+commands.allow = ["qwen_models"]
+
+[[permission]]
+identifier = "deny-qwen-models"
+description = "Denies the qwen_models command without any pre-configured scope."
+commands.deny = ["qwen_models"]

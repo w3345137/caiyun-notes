@@ -6,6 +6,10 @@ mod frontend_bundle;
 mod frontend_bundle;
 mod map_bridge;
 mod map_sessions;
+mod plugin_host;
+mod speech;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod speech_model;
 use download_file::save_download_file;
 #[cfg(all(desktop, feature = "self-update"))]
 mod resumable_updater;
@@ -489,7 +493,10 @@ fn install_windows_tray(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default()
+        .register_uri_scheme_protocol("caiyun-plugin", |_ctx, request| {
+            plugin_host::runtime_response(request.uri().path())
+        });
     #[cfg(desktop)]
     let builder = builder.register_uri_scheme_protocol("caiyun-map-probe", |_ctx, request| {
         let allowed = request.method() == tauri::http::Method::GET
@@ -516,8 +523,19 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ExitCoordinator::default())
+        .manage(plugin_host::PluginHostState::default())
         .manage(std::sync::Mutex::new(map_sessions::MapSessions::default()))
         .invoke_handler(tauri::generate_handler![
+            plugin_host::plugin_host_version,
+            plugin_host::plugin_http_request,
+            plugin_host::plugin_http_cancel,
+            plugin_host::plugin_website_open,
+            plugin_host::plugin_website_close,
+            speech::qwen_models,
+            speech::qwen_verify,
+            speech::qwen_open_folder,
+            speech::qwen_remove,
+            speech::qwen_transcribe,
             check_frontend_bundle_update,
             confirm_frontend_bundle_ready,
             set_app_exit_handler_ready,
