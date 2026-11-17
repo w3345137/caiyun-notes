@@ -1,0 +1,26 @@
+{
+  "format": "caiyun-plugin",
+  "manifest": {
+    "id": "example.local.hello",
+    "name": "插件入门",
+    "version": "1.0.0",
+    "apiVersion": 1,
+    "description": "离线示例：保存文字，切换后保留，重启后恢复。",
+    "author": "彩云笔记示例",
+    "icon": "◈",
+    "network": [],
+    "settings": [
+      {
+        "key": "greeting",
+        "label": "欢迎语",
+        "type": "text",
+        "default": "你好，插件"
+      }
+    ]
+  },
+  "ui": {
+    "html": "<h1 id=\"title\">插件入门</h1><p>这是独立插件自己的工作区。</p><textarea id=\"draft\" aria-label=\"示例草稿\" rows=\"6\" placeholder=\"写点文字，保存后重新打开验证\"></textarea><div><button id=\"save\">保存草稿</button><span id=\"state\" role=\"status\"></span></div>\n",
+    "css": "body{max-width:900px;margin:auto;padding:32px}h1{font-size:22px}p{color:#64748b}textarea{width:100%;border:1px solid #e2e5e9;border-radius:10px;padding:12px;resize:vertical}button{margin-top:12px;background:#2563eb;color:#fff;border:0;padding:8px 18px;border-radius:8px}#state{margin-left:12px;color:#64748b}\n",
+    "js": "(() => {\n  // sdk/plugins/examples/hello/main.js\n  (async () => {\n    document.getElementById(\"title\").textContent = (await caiyun.settings()).greeting;\n    const input = document.getElementById(\"draft\");\n    input.value = await caiyun.storage.get(\"draft\") || \"\";\n    document.getElementById(\"save\").onclick = async () => {\n      try {\n        await caiyun.storage.set(\"draft\", input.value);\n        document.getElementById(\"state\").textContent = \"\\u5DF2\\u4FDD\\u5B58\";\n      } catch {\n        document.getElementById(\"state\").textContent = \"\\u4FDD\\u5B58\\u5931\\u8D25\\uFF0C\\u5185\\u5BB9\\u4ECD\\u7559\\u5728\\u8F93\\u5165\\u6846\";\n      }\n    };\n  })();\n})();\n"
+  }
+}

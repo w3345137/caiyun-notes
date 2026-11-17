@@ -77,8 +77,14 @@ jobs:
           Write-Host "Installed package: $($package.PackageFullName)"
           Write-Host 'Original MSIX remains unsigned and byte-for-byte unchanged.'
 
-      - name: Exercise actual plugin IPC in packaged Windows WebView2
-        timeout-minutes: 4
+      - name: Install isolated audit dependencies
+        shell: pwsh
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/qa-msix-deps" --no-audit --no-fund playwright-core@1.58.2 yjs@13.6.30 y-protocols@1.0.6 lib0
+          if ($LASTEXITCODE -ne 0) { throw 'Audit dependencies unavailable' }
+
+      - name: Exercise notes, recovery and plugins in packaged Windows WebView2
+        timeout-minutes: 7
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -125,6 +131,23 @@ jobs:
           try {
             node scripts/probe-msstore-plugin-ipc.mjs restarted
             if ($LASTEXITCODE -ne 0) { throw 'Restarted IPC probe failed' }
+            node scripts/audit-msix-notes.mjs edit
+            if ($LASTEXITCODE -ne 0) { throw 'MSIX notes edit audit failed' }
           } finally {
             taskkill /PID $process.Id /T /F | Out-Null
           }
+
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
+            node scripts/audit-msix-notes.mjs recover
+            if ($LASTEXITCODE -ne 0) { throw 'MSIX offline recovery audit failed' }
+          } finally {
+            taskkill /PID $process.Id /T /F | Out-Null
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: msix-fixture-failure-evidence
+          path: ${{ runner.temp }}/msix-audit-*.png
+          if-no-files-found: ignore

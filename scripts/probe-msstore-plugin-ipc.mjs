@@ -56,11 +56,35 @@ try {
   console.log(phase,'sandbox',JSON.stringify(runtime));
   if(phase==='direct'){
     if(view.distribution.value!=='direct') throw new Error('Expected the standalone executable');
-    await evalInApp("localStorage.setItem('caiyun-isolated-ci-direct-marker','p25')");
+    await evalInApp(`new Promise((resolve,reject)=>{
+      const request=indexedDB.open('caiyun-isolated-msix-qa',1);
+      request.onupgradeneeded=()=>request.result.createObjectStore('test');
+      request.onerror=()=>reject(request.error);
+      request.onsuccess=()=>{const db=request.result,tx=db.transaction('test','readwrite');
+        tx.objectStore('test').put('p25','marker');
+        tx.oncomplete=()=>{db.close();resolve(true);};
+        tx.onerror=()=>reject(tx.error);
+      };
+    })`);
   }
   if(phase==='bundled'){
-    console.log('Standalone-to-store profile continuity',await evalInApp("localStorage.getItem('caiyun-isolated-ci-direct-marker') === 'p25'"));
-    const update=await evalInApp(`window.__TAURI_INTERNALS__.invoke('check_frontend_bundle_update').then(x=>({status:x.status,releaseId:x.releaseId})).catch(e=>({error:String(e)}))`);
+    console.log('Standalone-to-store IndexedDB marker continuity',await evalInApp(`new Promise((resolve,reject)=>{
+      const request=indexedDB.open('caiyun-isolated-msix-qa',1);
+      request.onupgradeneeded=()=>request.result.createObjectStore('test');
+      request.onerror=()=>reject(request.error);
+      request.onsuccess=()=>{const db=request.result,query=db.transaction('test').objectStore('test').get('marker');
+        query.onsuccess=()=>{db.close();resolve(query.result==='p25');};
+        query.onerror=()=>reject(query.error);
+      };
+    })`));
+    const update=await evalInApp(`(async()=>{
+      for(let i=0;i<18;i++){
+        const result=await window.__TAURI_INTERNALS__.invoke('check_frontend_bundle_update').catch(e=>({error:String(e)}));
+        if(result.status!=='busy')return {status:result.status,releaseId:result.releaseId,error:result.error};
+        await new Promise(r=>setTimeout(r,800));
+      }
+      return {error:'signed update still busy'};
+    })()`);
     console.log(phase,'signed frontend',JSON.stringify(update));
   }
   if(phase==='restarted' && (!view.nativeVersion.ok || view.nativeVersion.value!==1 || !runtime.ready)){
