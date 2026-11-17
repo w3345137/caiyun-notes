@@ -30,6 +30,12 @@ try {
     if(exceptionDetails)throw new Error(exceptionDetails.exception?.description || exceptionDetails.text);
     return result.value;
   };
+  for(let attempt=0;attempt<35;attempt++){
+    const ready=await evalInApp("typeof window.__TAURI_INTERNALS__?.invoke==='function' && !!document.querySelector('script[type=module]')").catch(()=>false);
+    if(ready)break;
+    if(attempt===34)throw new Error('Main document did not finish navigation to the Tauri origin');
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
   const view = await evalInApp(`(async()=>{
     const invoke = window.__TAURI_INTERNALS__?.invoke;
     const call = async (command,args={}) => {
