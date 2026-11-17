@@ -20,6 +20,7 @@ jobs:
   install-msix:
     runs-on: windows-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: caiyun-notes-msix-${{ inputs.build_run_id }}
@@ -27,7 +28,6 @@ jobs:
           github-token: ${{ github.token }}
           path: original
 
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -71,7 +71,7 @@ jobs:
           if ($package.Publisher -ne $env:EXPECTED_PUBLISHER) {
             throw "Publisher mismatch: $($package.Publisher)"
           }
-          if ($package.Version.ToString() -ne '10.2.9.0') {
+          if ($package.Version.ToString() -ne '10.2.13.0') {
             throw "Version mismatch: $($package.Version)"
           }
           Write-Host "Installed package: $($package.PackageFullName)"
