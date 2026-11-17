@@ -27,40 +27,10 @@ jobs:
           github-token: ${{ github.token }}
           path: original
 
-      - name: Probe the unpackaged Win32 WebView2 profile
-        timeout-minutes: 2
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $original = Get-ChildItem original -Filter *.msix -Recurse | Select-Object -First 1
-          if (-not $original) { throw 'MSIX artifact missing before unpackaged profile probe' }
-          $zip = Join-Path $env:RUNNER_TEMP 'caiyun-msix-probe.zip'
-          $extracted = Join-Path $env:RUNNER_TEMP 'caiyun-msix-probe'
-          Copy-Item -LiteralPath $original.FullName -Destination $zip
-          Expand-Archive -LiteralPath $zip -DestinationPath $extracted
-          $legacyExe = Join-Path $extracted 'app\app.exe'
-          if (-not (Test-Path -LiteralPath $legacyExe -PathType Leaf)) {
-            throw 'Unpackaged executable was not present in the MSIX payload'
-          }
-          $legacyProfile = Join-Path $env:LOCALAPPDATA 'com.caiyun.notes\EBWebView'
-          $legacyProcess = Start-Process -FilePath $legacyExe -PassThru
-          try {
-            Start-Sleep -Seconds 8
-            $legacyProcess.Refresh()
-            if ($legacyProcess.HasExited) {
-              throw "Unpackaged app exited before profile probe (code $($legacyProcess.ExitCode))"
-            }
-            Write-Host "Unpackaged Win32 profile exists: $(Test-Path -LiteralPath $legacyProfile)"
-            if (-not (Test-Path -LiteralPath $legacyProfile -PathType Container)) {
-              throw 'Unpackaged app did not create its expected WebView2 profile'
-            }
-            $marker = Join-Path $legacyProfile 'caiyun-msix-profile-probe.txt'
-            Set-Content -LiteralPath $marker -Value 'isolated-ci-legacy-profile' -Encoding ascii
-            Write-Host 'Unpackaged profile marker staged for packaged-app comparison.'
-          } finally {
-            taskkill /PID $legacyProcess.Id /T /F | Out-Null
-          }
-
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Verify original package and install a temporary signed copy
         timeout-minutes: 5
         shell: pwsh
@@ -107,121 +77,25 @@ jobs:
           Write-Host "Installed package: $($package.PackageFullName)"
           Write-Host 'Original MSIX remains unsigned and byte-for-byte unchanged.'
 
-      - name: Check packaged application starts
-        timeout-minutes: 2
+      - name: Exercise actual plugin IPC in packaged Windows WebView2
+        timeout-minutes: 4
         shell: pwsh
-        env:
-          EXPECTED_NAME: BinApp.547813EA77836
         run: |
           $ErrorActionPreference = 'Stop'
-          $package = Get-AppxPackage -Name $env:EXPECTED_NAME
-          if (-not $package) { throw 'Installed package missing before launch smoke' }
+          $package = Get-AppxPackage -Name 'BinApp.547813EA77836'
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=18495 --remote-debugging-address=127.0.0.1'
           $exe = Join-Path $package.InstallLocation 'app\app.exe'
-          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
-            throw "Packaged executable missing: $exe"
-          }
-          Write-Host "Launching packaged executable: $exe"
           $process = Start-Process -FilePath $exe -PassThru
-          Start-Sleep -Seconds 8
-          $process.Refresh()
-          if ($process.HasExited) {
-            throw "Packaged app exited within 8 seconds (exit code $($process.ExitCode))"
+          try {
+            node scripts/probe-msstore-plugin-ipc.mjs bundled
+            if ($LASTEXITCODE -ne 0) { throw 'Bundled IPC probe failed' }
+          } finally {
+            taskkill /PID $process.Id /T /F | Out-Null
           }
-          Write-Host "Packaged app remained running (PID $($process.Id))."
-          $process.Refresh()
-          Write-Host "Packaged app main window handle: $($process.MainWindowHandle)"
-          if ($process.MainWindowHandle -eq [IntPtr]::Zero) {
-            Write-Warning 'No main window handle was visible to the isolated CI runner; this does not establish that the desktop UI rendered.'
-          } else {
-            Add-Type -AssemblyName System.Drawing
-            Add-Type @'
-          using System;
-          using System.Runtime.InteropServices;
-          public static class CaiyunWindowCapture {
-            [StructLayout(LayoutKind.Sequential)]
-            public struct Rect { public int Left, Top, Right, Bottom; }
-            [DllImport("user32.dll")]
-            public static extern bool GetWindowRect(IntPtr handle, out Rect rect);
-            [DllImport("user32.dll")]
-            public static extern bool PrintWindow(IntPtr handle, IntPtr hdc, uint flags);
-          }
-          '@
-            $windowRect = New-Object CaiyunWindowCapture+Rect
-            if ([CaiyunWindowCapture]::GetWindowRect($process.MainWindowHandle, [ref]$windowRect)) {
-              $width = $windowRect.Right - $windowRect.Left
-              $height = $windowRect.Bottom - $windowRect.Top
-              if ($width -gt 0 -and $height -gt 0 -and $width -le 4096 -and $height -le 4096) {
-                $bitmap = New-Object System.Drawing.Bitmap($width, $height)
-                $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-                try {
-                  $deviceContext = $graphics.GetHdc()
-                  try {
-                    $captured = [CaiyunWindowCapture]::PrintWindow($process.MainWindowHandle, $deviceContext, 2)
-                  } finally {
-                    $graphics.ReleaseHdc($deviceContext)
-                  }
-                  if ($captured) {
-                    $screenshot = Join-Path $env:RUNNER_TEMP 'caiyun-msix-window.png'
-                    $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
-                    Write-Host "Captured isolated MSIX window: $screenshot"
-                  } else {
-                    Write-Warning 'PrintWindow did not capture the MSIX window.'
-                  }
-                } finally {
-                  $graphics.Dispose()
-                  $bitmap.Dispose()
-                }
-              }
-            }
-          }
-          $allProcesses = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine)
-          $descendantIds = @($process.Id)
-          do {
-            $previousCount = $descendantIds.Count
-            $children = @($allProcesses | Where-Object { $descendantIds -contains $_.ParentProcessId })
-            $descendantIds = @($descendantIds + @($children | ForEach-Object { $_.ProcessId }) | Select-Object -Unique)
-          } while ($descendantIds.Count -gt $previousCount)
-          $descendants = @($allProcesses | Where-Object { $descendantIds -contains $_.ProcessId })
-          $descendants | Select-Object ProcessId, ParentProcessId, Name | Format-Table -AutoSize | Out-String | Write-Host
-          $webviewProcesses = @($descendants | Where-Object { $_.Name -ieq 'msedgewebview2.exe' })
-          Write-Host "WebView2 descendant process count: $($webviewProcesses.Count)"
-          if ($webviewProcesses.Count -eq 0) {
-            throw 'Packaged app stayed alive but did not start a WebView2 process'
-          }
-          foreach ($webview in $webviewProcesses) {
-            if ($webview.CommandLine -match '--user-data-dir=(?:"([^"]+)"|(\S+))') {
-              $dataDir = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
-              Write-Host "WebView2 user data directory: $dataDir"
-              $privateDir = Join-Path $env:LOCALAPPDATA "Packages\$($package.PackageFamilyName)\LocalCache\Local\com.caiyun.notes\EBWebView"
-              Write-Host "Host-visible WebView2 directory exists: $(Test-Path -LiteralPath $dataDir)"
-              Write-Host "MSIX-private WebView2 directory exists: $(Test-Path -LiteralPath $privateDir)"
-              $legacyMarker = Join-Path $env:LOCALAPPDATA 'com.caiyun.notes\EBWebView\caiyun-msix-profile-probe.txt'
-              $privateMarker = Join-Path $privateDir 'caiyun-msix-profile-probe.txt'
-              Write-Host "Legacy profile marker remains on host: $(Test-Path -LiteralPath $legacyMarker)"
-              Write-Host "Legacy profile marker copied to MSIX-private profile: $(Test-Path -LiteralPath $privateMarker)"
-              break
-            }
-          }
-          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-          Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'
-
-      - name: Upload isolated window capture
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: caiyun-msix-window-${{ github.run_id }}
-          path: ${{ runner.temp }}/caiyun-msix-window.png
-          if-no-files-found: ignore
-
-      - name: Remove temporary QA install
-        if: always()
-        shell: pwsh
-        run: |
-          Get-AppxPackage -Name 'BinApp.547813EA77836' | Remove-AppxPackage -ErrorAction Continue
-          $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
-          if (Test-Path $certPath) {
-            $thumbprint = (Get-PfxCertificate -FilePath $certPath).Thumbprint
-            Remove-Item "Cert:\LocalMachine\Root\$thumbprint" -ErrorAction SilentlyContinue
-            Remove-Item "Cert:\LocalMachine\TrustedPeople\$thumbprint" -ErrorAction SilentlyContinue
-            Remove-Item "Cert:\CurrentUser\My\$thumbprint" -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
+            node scripts/probe-msstore-plugin-ipc.mjs restarted
+            if ($LASTEXITCODE -ne 0) { throw 'Restarted IPC probe failed' }
+          } finally {
+            taskkill /PID $process.Id /T /F | Out-Null
           }
