@@ -28,6 +28,17 @@ const FRONTEND_RELEASE_PUBLIC_KEY_BASE64: &str = "AjIDb9Cq1Jhy/GlIo9IGl2+LASJuBT
 const PRODUCT_VERSION: &str = "v2.8";
 const MOBILE_RUNTIME_VERSION: &str = "mobile-v1";
 
+// MSIX 10.2.14 embeds the sync recovery fix. An older but correctly signed
+// frontend from the previous installation must not replace that bundle.
+const MSSTORE_SYNC_FIX_VERSION: Version = Version::new(10, 2, 14);
+const MSSTORE_PREVIOUS_FRONTEND: &str = "20261116_201247-prod";
+
+fn store_frontend_predates_embedded_fix(shell_version: &Version, release_id: &str) -> bool {
+    cfg!(feature = "msstore-distribution")
+        && *shell_version >= MSSTORE_SYNC_FIX_VERSION
+        && release_id <= MSSTORE_PREVIOUS_FRONTEND
+}
+
 fn native_mobile_channel() -> Option<&'static str> {
     if cfg!(target_os = "android") {
         Some("android")
@@ -502,6 +513,9 @@ impl FrontendBundleManager {
             return Err("前端发布清单版本不受支持".to_string());
         }
         validate_release_id(&payload.release_id)?;
+        if store_frontend_predates_embedded_fix(&self.shell_version, &payload.release_id) {
+            return Err("商店版继续使用较新的内置界面".into());
+        }
         if payload.product_version != PRODUCT_VERSION {
             return Err("前端发布产品版本不匹配".to_string());
         }
@@ -713,6 +727,9 @@ impl FrontendBundleManager {
             .map_err(|_| "界面更新清单格式无效".to_string())?;
         let payload = decode_signed_payload(&envelope, &self.verifying_key)?;
         self.validate_channel(&payload)?;
+        if store_frontend_predates_embedded_fix(&self.shell_version, &payload.release_id) {
+            return Ok(FrontendUpdateResult::up_to_date(self.newest_local_release_id()));
+        }
         if payload.product_version != PRODUCT_VERSION {
             return Err("界面更新清单与当前产品不匹配".to_string());
         }
