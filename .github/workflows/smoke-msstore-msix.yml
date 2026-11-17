@@ -84,6 +84,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $package = Get-AppxPackage -Name 'BinApp.547813EA77836'
           $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=18495 --remote-debugging-address=127.0.0.1'
+          $policy = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          New-Item -Path $policy -Force | Out-Null
+          New-ItemProperty -Path $policy -Name '*' -Value $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -PropertyType String -Force | Out-Null
           $exe = Join-Path $package.InstallLocation 'app\app.exe'
           Push-Location (Split-Path -Parent $exe)
           $stdout = Join-Path $env:RUNNER_TEMP 'msix-stdout.txt'
