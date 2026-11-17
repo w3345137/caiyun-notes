@@ -5,7 +5,7 @@
   "entryAssets": [
     "assets/hr-business-host-e2100b0504c1.js",
     "assets/i18n-DaTLAGIu.js",
-    "assets/index-u35rUWbE-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+    "assets/index-u35rUWbE-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
     "assets/plugin-rail-6e9828df3d67.css",
     "assets/react-core-CvchqaeY.js",
     "assets/sidebar-scroll-thumb-1ec275a3d8f7f42f.css",
@@ -15,34 +15,34 @@
   ],
   "files": [
     {
-      "path": "assets/App-CgFn1P_G-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/App-CgFn1P_G-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 184697,
-      "sha256": "47cc7527ee8b3152c0555b49065368484cfab0152a6320f78f49d27374aea0b0"
+      "sha256": "44f5299e85743fd573a255e31fa2689ad309f3321f64be672e169f3e727312d8"
     },
     {
-      "path": "assets/NoteEditor-DisUDY-w-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/NoteEditor-DisUDY-w-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 609139,
-      "sha256": "c0fd26c3666ab41d5ba4ff8471f02428aafc870cc052b0cc033f400075a48cd5"
+      "sha256": "997e672444d185067d51758d77c8bb70f29eb0fb7f65c3694a4e9a7cc4776376"
     },
     {
-      "path": "assets/RecoveryCenterModal-Cj5uen0b-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/RecoveryCenterModal-Cj5uen0b-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 14952,
-      "sha256": "49624b3c893de07b831c8547dd1bdd1f46d544cc1c4576e837fae7acd2b7e1e9"
+      "sha256": "6941c939386ff08cbccf3110614968d0a545ab25bfb6fd327c0e7581799a84a0"
     },
     {
-      "path": "assets/Sidebar-DZZ1n6oV-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/Sidebar-DZZ1n6oV-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 349062,
-      "sha256": "f361248e44cc84443bae46553ed4298479f5131c69614dce8803d31c9d2e3376"
+      "sha256": "5833ba7f2b26e02d9315696989eb4f47500bc2665c7a1b4807db3b2e937e1afd"
     },
     {
-      "path": "assets/accountPreferenceStore-hTMLDwFW-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/accountPreferenceStore-hTMLDwFW-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 9049,
-      "sha256": "962215012397126596b7e3b33d377fe5f5be7f6b9811fb449401d0b97f202187"
+      "sha256": "80a3ac5be119cc5ea766b770e95c3fa8bf0feb8c6c5a0e2178747ed653364999"
     },
     {
-      "path": "assets/cloudAttachmentUpload-_FxXlQH--rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/cloudAttachmentUpload-_FxXlQH--rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 9282,
-      "sha256": "5512dc889f0538d4359b7b1aa2f14b63ada24ef277e262dbaab4c14b44c28969"
+      "sha256": "fb206498009c1720a816f7110d10b8ac2bf41c11d598b31e32035348853ae3ed"
     },
     {
       "path": "assets/editor-BOmLXFaO.js",
@@ -50,19 +50,19 @@
       "sha256": "b9ed7c2acb0a698e01a50c31dcf16bd8882b95b9896b01c6fa1656e4f61a3295"
     },
     {
-      "path": "assets/editorImageUpload-C7vKl9z9-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/editorImageUpload-C7vKl9z9-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 1561,
-      "sha256": "2dbf812a62199200b44444a38e30519ca2f72657d0d7d4666cac1df48c56f443"
+      "sha256": "47bf2aec7555d5538c62a01197b6848fa951c3021fdbd08dff0464576a7b6bba"
     },
     {
-      "path": "assets/editorWriteGuard-BMIW1HRj-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/editorWriteGuard-BMIW1HRj-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 75248,
-      "sha256": "032ba0fc277e1f3d8ccc50cb5c88ea8683d3d816a5282610f254306baf11f09d"
+      "sha256": "6bcf344c06f975da8d03fbda8445b848c34b2212d3517799bf512a306ff27363"
     },
     {
-      "path": "assets/emailReplicaBackgroundSync-Chenj8Fn-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/emailReplicaBackgroundSync-Chenj8Fn-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 6355,
-      "sha256": "49560696ca7c15234a8f734f9ea7076dab051278d32411c7ab78c79c957be36a"
+      "sha256": "0d0f41892fb6d181202b657d5886298d24e13ef69da198c877e6895c1b5bca3b"
     },
     {
       "path": "assets/hr-business-host-e2100b0504c1.js",
@@ -75,29 +75,29 @@
       "sha256": "b788ef72407081563b5075396477b6541da7e9d5edeb23c1716659a3a70375b6"
     },
     {
-      "path": "assets/index-u35rUWbE-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
-      "size": 362601,
-      "sha256": "d519d6c2f4effd11995f4742d9929b6a4da43c39465e866e5c34f39dfa7052ef"
+      "path": "assets/index-u35rUWbE-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
+      "size": 362607,
+      "sha256": "02f6c52f67464277cf4872ac78e5d1a7c92e29d669667549bb3dea76da4bdf59"
     },
     {
-      "path": "assets/localDocumentPreparation-CPFy8izT-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
-      "size": 186151,
-      "sha256": "75403981b93b6fe002c0687cb17bf2b44e3469c2ead16fdb386cca0cb77a90b2"
+      "path": "assets/localDocumentPreparation-CPFy8izT-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
+      "size": 185747,
+      "sha256": "764f20ea585eae5e39a431801f736eb1ddae1c9efaa4ec815d1fc51345954ba3"
     },
     {
-      "path": "assets/localRecoveryRepository-C7-rzjZg-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/localRecoveryRepository-C7-rzjZg-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 4524,
-      "sha256": "1f8729be68a52473572eb6bd99d2e0160ee33fed15c76b00c684d11a3fa67d54"
+      "sha256": "3be8eddec87224d4c80e608cb3dc3956ee50adfd90e621ff6f6c99ab00865f5e"
     },
     {
-      "path": "assets/localWorkspaceDb-B5aDChnI-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/localWorkspaceDb-B5aDChnI-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 47189,
-      "sha256": "5cdf676c61b9e10fa6df78032e6bff4b7d7788e454a2880f9a8ba69bbc2422f5"
+      "sha256": "64813090c4d37bc24909b1077c6cf877ddfe795f629709f5ef6e721b8988c4ff"
     },
     {
-      "path": "assets/localWorkspaceStore-CBqCWKLt-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/localWorkspaceStore-CBqCWKLt-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 133807,
-      "sha256": "3de11a262279ce991ba16ccdedf985c9c166c2b482b1712263f1ae00f0543de5"
+      "sha256": "f768cd44d543474e46d8a3a9f51b54f8219ce2da1d451db4e1ffa01088c55c8e"
     },
     {
       "path": "assets/mindmap-BfNQhKnE.js",
@@ -110,19 +110,19 @@
       "sha256": "2d958e2e72d5f450b75953018dd760a6ba6c13a2cbe3a5ea375b4ff7e932bfcc"
     },
     {
-      "path": "assets/nativeClipboardImage-OjrQHEpZ-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/nativeClipboardImage-OjrQHEpZ-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 727,
-      "sha256": "618bfa3388839204497b703580fd7e08fced8085d8fc3095370932b0435b81cd"
+      "sha256": "742a02ec46d42c566b9adb6bcd56311fc23e7f88528ea8759f344bd06700b8a5"
     },
     {
-      "path": "assets/nativeWorkspaceTransfer-C9KUPSXd-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/nativeWorkspaceTransfer-C9KUPSXd-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 9811,
-      "sha256": "507ffc08e8bd77ee49db7758a1e5a148d21f625baf763117219c04c9346b8115"
+      "sha256": "512640d848ed2164aa3e555a30e6f6e3612075b896a94176217470ad44c79c74"
     },
     {
-      "path": "assets/noteStore-CJPuUjrq-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/noteStore-CJPuUjrq-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 51097,
-      "sha256": "9064be81295562af5ace5b7d1d490960e11abbf9d0e3a9cd4396a50c78dfc5ee"
+      "sha256": "5a7e3484148e47b0ace69ef4b97ed18f19b712ccebadecc144379e3747035d08"
     },
     {
       "path": "assets/plugin-rail-6e9828df3d67.css",
@@ -135,9 +135,9 @@
       "sha256": "4dc56cba02e935b3ab647a285018bc35632f199f6dc48a1980087f0651fc9d89"
     },
     {
-      "path": "assets/recoveryPortableBackup-DibjtrAP-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/recoveryPortableBackup-DibjtrAP-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 2708,
-      "sha256": "0ff058e0c259fa30832c91d78e3a31ee5c68304db49356db7d443811dff75b4d"
+      "sha256": "d08cd7260750323ae9f56644bb28ade69e51d48be1108e6c46e88d9ac332d47a"
     },
     {
       "path": "assets/sidebar-scroll-thumb-1ec275a3d8f7f42f.css",
@@ -155,14 +155,14 @@
       "sha256": "c4bec700c2dc2b616e2d177e50d637d66d3fdbf689a6b5e1f7c7e418da48fbfe"
     },
     {
-      "path": "assets/syncDependencies-CW79EEsJ-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/syncDependencies-CW79EEsJ-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 2419,
-      "sha256": "1805a9049cc7b1ed3d457d3197f014c60330ca8c46f8104c20c97fe73cbe225c"
+      "sha256": "5f6c6ad7f71f9488a0f078a4d61a6981d8def69a83ca1e01c8e29610af130d8b"
     },
     {
-      "path": "assets/syncDiagnostics-D7Le8F9C-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/syncDiagnostics-D7Le8F9C-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 3485,
-      "sha256": "043d611d1a2e2a12d6962332c117628a2c2dddd7c09be739248b1b4d086d0339"
+      "sha256": "5f2290e11822f98864f54d7d15ce06e2724826b9c74b384b17ab1cf808c2ca8c"
     },
     {
       "path": "assets/syncOperationPolicy-Bom4qSWl.js",
@@ -170,9 +170,9 @@
       "sha256": "31b320bfe104ad08022f91207fdce21c10189069398c31f6c1fa451d806e257e"
     },
     {
-      "path": "assets/syncStatusCenter-34AknFO6-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/syncStatusCenter-34AknFO6-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 9484,
-      "sha256": "79928e977e6ed3a2a63624bff56025f96c57de7ef4fd4b03de79ef995c81b7e0"
+      "sha256": "6639d39a09129af2e3dce807cb1484f6b9772b1e3d8ab59838a01cd285a37127"
     },
     {
       "path": "assets/tauri-D9cK8aUB.js",
@@ -180,14 +180,14 @@
       "sha256": "f9a8f78d9dd273623c905e83f1a6cab8267f50f77cd83c3888d9ad61ee45c789"
     },
     {
-      "path": "assets/treeMutationOutbox-DBXRQj9V-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/treeMutationOutbox-DBXRQj9V-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 13291,
-      "sha256": "2dba99bd091139a8b42fbaf83e7c8e6bb6972cc1e0b5573ced8b898400b5c4b6"
+      "sha256": "604b3706e4d09847579ffdce33a68f34c3aeb3b5826e54f28e37ee64f1caf55c"
     },
     {
-      "path": "assets/useEmailDraft-1qyr1t4--rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/useEmailDraft-1qyr1t4--rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 3757,
-      "sha256": "ff5d33270a5ed916a5aff2dcc572b104566818fa66ecf691963348dacaf3d08a"
+      "sha256": "4c203c22e8a25dc3767d583798ae8943a1dbe5ab15e265ccbdf370bb40517b1e"
     },
     {
       "path": "assets/workspaceBackupDocument-CmIblvWk.js",
@@ -195,14 +195,14 @@
       "sha256": "4390eb06c50615da4bd8760f19bae1060f1cfa3077433f38b8565f9253b7ec22"
     },
     {
-      "path": "assets/workspaceBackupRuntime-D0zailBL-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-b46a51948ca3.js",
+      "path": "assets/workspaceBackupRuntime-D0zailBL-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-10674f4bc87b.js",
       "size": 66937,
-      "sha256": "8247d525231ebde7cd9114d6e4dd96a9426db62b3df73dfc4b7c360ba35e8525"
+      "sha256": "27b650d6e3c7423b07f6e56b006f0298d97d6ed51b7162eb95d189f64ad6108e"
     },
     {
       "path": "index.html",
       "size": 7194,
-      "sha256": "fa2a44d7297dfa44f1d860d4a67dbb118403f5cdb41095597671365811b751c7"
+      "sha256": "41ce9584afb629d22b7da52cf98a791eb372df00f201664b7dfa0d1989c67001"
     },
     {
       "path": "logo.png",
@@ -221,7 +221,7 @@
     }
   ],
   "sourcePatch": {
-    "name": "windows-sync-recovery",
+    "name": "windows-store-session-and-plugins",
     "baselineRelease": "20261116_201247-prod"
   }
 }
