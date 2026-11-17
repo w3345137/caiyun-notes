@@ -88,6 +88,20 @@ jobs:
           New-Item -Path $policy -Force | Out-Null
           New-ItemProperty -Path $policy -Name '*' -Value $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -PropertyType String -Force | Out-Null
           $exe = Join-Path $package.InstallLocation 'app\app.exe'
+          $directSetup = Join-Path $env:RUNNER_TEMP 'CaiyunNotes-direct-10.2.13.exe'
+          curl.exe --fail --silent --show-error --location --max-time 35 'https://github.com/w3345137/caiyun-notes/releases/download/p25/_10.2.13_x64-setup.exe' -o $directSetup
+          if ($LASTEXITCODE -ne 0) { throw 'Download of official direct installer failed' }
+          $directPayload = Join-Path $env:RUNNER_TEMP 'direct-p25'
+          & 'C:\Program Files\7-Zip\7z.exe' x "-o$directPayload" $directSetup 'app.exe' | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Extracting the official direct app failed' }
+          $directExe = Join-Path $directPayload 'app.exe'
+          $direct = Start-Process -FilePath $directExe -WorkingDirectory $directPayload -PassThru
+          try {
+            node scripts/probe-msstore-plugin-ipc.mjs direct
+            if ($LASTEXITCODE -ne 0) { throw 'Direct app startup probe failed' }
+          } finally {
+            taskkill /PID $direct.Id /T /F | Out-Null
+          }
           Push-Location (Split-Path -Parent $exe)
           $stdout = Join-Path $env:RUNNER_TEMP 'msix-stdout.txt'
           $stderr = Join-Path $env:RUNNER_TEMP 'msix-stderr.txt'

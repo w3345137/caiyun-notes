@@ -54,7 +54,12 @@ try {
     }); return result;
   })()`);
   console.log(phase,'sandbox',JSON.stringify(runtime));
+  if(phase==='direct'){
+    if(view.distribution.value!=='direct') throw new Error('Expected the standalone executable');
+    await evalInApp("localStorage.setItem('caiyun-isolated-ci-direct-marker','p25')");
+  }
   if(phase==='bundled'){
+    console.log('Standalone-to-store profile continuity',await evalInApp("localStorage.getItem('caiyun-isolated-ci-direct-marker') === 'p25'"));
     const update=await evalInApp(`window.__TAURI_INTERNALS__.invoke('check_frontend_bundle_update').then(x=>({status:x.status,releaseId:x.releaseId})).catch(e=>({error:String(e)}))`);
     console.log(phase,'signed frontend',JSON.stringify(update));
   }
