@@ -134,9 +134,6 @@ jobs:
           $package = Get-AppxPackage -Name 'BinApp.547813EA77836'
           if ($package.Version.ToString() -ne '10.2.14.0') { throw "Upgrade version mismatch: $($package.Version)" }
           $exe = Join-Path $package.InstallLocation 'app\app.exe'
-          $speech = Join-Path $package.InstallLocation 'app\CaiyunQwenCpu.exe'
-          & $speech --version
-          if ($LASTEXITCODE -ne 0) { throw 'Installed speech runtime did not start' }
           Push-Location (Split-Path -Parent $exe)
           $stdout = Join-Path $env:RUNNER_TEMP 'msix-stdout.txt'
           $stderr = Join-Path $env:RUNNER_TEMP 'msix-stderr.txt'

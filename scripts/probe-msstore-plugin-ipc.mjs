@@ -44,7 +44,7 @@ try {
     };
     return {origin:location.origin,userAgent:navigator.userAgent,modules:[...document.querySelectorAll('script[type=module]')].map(s=>new URL(s.src).pathname),
       nativeVersion:await call('plugin_host_version'), distribution:await call('get_app_distribution_channel'),
-      shellVersion:await call('plugin:app|version')};
+      shellVersion:await call('plugin:app|version'), speech:await call('qwen_models').then(r=>r.ok?{ok:r.ok,available:r.value.available,engine:r.value.engine}:r)};
   })()`);
   console.log(phase,JSON.stringify(view));
   const runtime = await evalInApp(`(async()=>{
@@ -109,6 +109,7 @@ try {
     if (!view.modules.some(path=>/-sync-[a-f0-9]{12}\.js$/.test(path))) {
       throw new Error('The embedded patched frontend was replaced');
     }
+    if (!view.speech.ok || !view.speech.available || view.speech.engine !== 'cpu') throw new Error('The packaged app cannot resolve its offline speech helper');
     if (!view.nativeVersion.ok || view.nativeVersion.value !== 1 || !runtime.ready) {
       throw new Error('Packaged plugin host or sandbox probe failed');
     }
