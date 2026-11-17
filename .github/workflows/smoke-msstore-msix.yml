@@ -85,8 +85,20 @@ jobs:
           $package = Get-AppxPackage -Name 'BinApp.547813EA77836'
           $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=18495 --remote-debugging-address=127.0.0.1'
           $exe = Join-Path $package.InstallLocation 'app\app.exe'
-          $process = Start-Process -FilePath $exe -PassThru
+          Push-Location (Split-Path -Parent $exe)
+          $stdout = Join-Path $env:RUNNER_TEMP 'msix-stdout.txt'
+          $stderr = Join-Path $env:RUNNER_TEMP 'msix-stderr.txt'
+          $process = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Pop-Location
           try {
+            Start-Sleep -Seconds 5
+            $process.Refresh()
+            if ($process.HasExited) {
+              Get-Content $stdout,$stderr
+              throw "Packaged app exited with code $($process.ExitCode)"
+            }
+            Write-Host "MSIX app PID $($process.Id), main window $($process.MainWindowHandle)"
+            Get-CimInstance Win32_Process -Filter "name='msedgewebview2.exe'" | Select-Object ProcessId,ParentProcessId,CommandLine | Format-List
             node scripts/probe-msstore-plugin-ipc.mjs bundled
             if ($LASTEXITCODE -ne 0) { throw 'Bundled IPC probe failed' }
           } finally {
