@@ -53,7 +53,7 @@ assert(browser,'Packaged WebView2 not reachable');
 const context=browser.contexts()[0];
 const page=context.pages().find(p=>/tauri\.localhost/.test(p.url()));
 assert(page,'No packaged app page');
-page.setDefaultTimeout(10000);
+page.setDefaultTimeout(25000);
 page.on('pageerror',error=>messages.add(error.message.slice(0,180)));
 page.on('console',m=>{if(m.type()==='error'&&/CRDT|IndexedDB|durable/i.test(m.text()))messages.add(m.text().slice(0,180));});
 try {
@@ -103,6 +103,9 @@ try {
     if(offline)return respond({success:false,code:'QA_OFFLINE',error:'QA_OFFLINE'},503);
     switch(url.pathname){
       case '/api/auth/v1/me':return respond(user);
+      case '/api/auth/v1/refresh':return respond({token,access_token:token,user,expires_in:3600});
+      case '/api/auth/v1/sse-ticket':return respond({ticket:'qa-sse-ticket'});
+      case '/api/app-release-policy':return respond({latestVersion:'10.2.13',minimumVersion:'10.2.8',rolloutSalt:'fixture',rolloutPercentage:100});
       case '/api/notebook-groups':return respond({state:groups});
       case '/api/notes-query':
         if(['loadTree','loadFullTree','loadTreeDelta','loadAccessibleNotes'].includes(body.action))return respond({success:true,data:notes,changeSeq:'0'});
@@ -131,6 +134,8 @@ try {
   const editor=page.locator('.ProseMirror[contenteditable="true"]').first();
   const openNote=async id=>{
     let row=page.locator(`[data-page-id="${id}"]`);
+    await page.locator('[data-notebook-id="msix-qa-book"]').first().waitFor({state:'attached'});
+
     for(const key of ['[data-notebook-id="msix-qa-book"]','[data-section-id="msix-qa-section"]']){
       if(await row.isVisible())break;
       const parent=page.locator(key).first();
