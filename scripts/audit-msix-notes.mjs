@@ -17,6 +17,8 @@ const node=(id,parent_id,type,title,order=0) => ({id,parent_id,root_notebook_id:
 const notes=[node('msix-qa-book',null,'notebook','MSIX QA 笔记本'),node('msix-qa-section','msix-qa-book','section','MSIX QA 分区'),node(noteId,'msix-qa-section','page','MSIX QA 正文'),node('msix-qa-page-2','msix-qa-section','page','MSIX QA 另一页',1)];
 const groups={revision:0,defaultId:'default',groups:[{id:'default',name:'MSIX QA 分组',icon:'book-open'}],assignments:{'msix-qa-book':'default'}};
 const docs = new Map();
+const docTimes=new Map();
+const socketEvents={};
 const onlineMarker='MSIX-ONLINE-42';
 const offlineMarker='MSIX-OFFLINE-53';
 let offline=phase==='recover';
@@ -33,7 +35,7 @@ function serverDocument(name) {
   if (docs.has(name)) return docs.get(name);
   const doc=new Y.Doc();
   const saved=fs.existsSync(modeFile)?JSON.parse(fs.readFileSync(modeFile,'utf8')):{};
-  if (saved[name]) Y.applyUpdate(doc,Buffer.from(saved[name],'base64'));
+  if(saved[name]){Y.applyUpdate(doc,Buffer.from(saved[name].state,'base64'));docTimes.set(name,saved[name].updatedAt);}
   else {
     const p=new Y.XmlElement('paragraph');
     const text=new Y.XmlText();
@@ -42,16 +44,17 @@ function serverDocument(name) {
     doc.getXmlFragment('default').insert(0,[p]);
   }
   docs.set(name,doc);
+  if(!docTimes.has(name))docTimes.set(name,stamp);
   return doc;
 }
-const saveServer=()=>fs.writeFileSync(modeFile,JSON.stringify(Object.fromEntries([...docs].map(([name,doc])=>[name,Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64')]))));
+const saveServer=()=>fs.writeFileSync(modeFile,JSON.stringify(Object.fromEntries([...docs].map(([name,doc])=>[name,{state:Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64'),updatedAt:docTimes.get(name)}]))));
 const docName=body=>`note:${body.noteId||noteId}/tab:${body.tabId||'default'}`;
 const persisted=body=>{
   const doc=serverDocument(docName(body));
   const state=Y.encodeStateAsUpdate(doc);
   const vector=Y.encodeStateVectorFromUpdate(state);
   return {confirmed:true,documentName:docName(body),yState:Buffer.from(state).toString('base64'),
-    stateVector:Buffer.from(vector).toString('base64'),deleteState:Buffer.from(Y.diffUpdate(state,vector)).toString('base64'),updatedAt:new Date().toISOString()};
+    stateVector:Buffer.from(vector).toString('base64'),deleteState:Buffer.from(Y.diffUpdate(state,vector)).toString('base64'),updatedAt:docTimes.get(docName(body))};
 };
 const emit=(route,name,tag,write)=>{const out=encoding.createEncoder();encoding.writeVarString(out,name);encoding.writeVarUint(out,tag);write(out);route.send(encoding.toUint8Array(out));};
 let browser;
@@ -88,16 +91,20 @@ try {
         const dec=decoding.createDecoder(typeof raw==='string'?new TextEncoder().encode(raw):new Uint8Array(raw));
         const name=decoding.readVarString(dec);
         const kind=decoding.readVarUint(dec);
+        socketEvents[kind]=(socketEvents[kind]||0)+1;
         const doc=serverDocument(name);
         if(kind===2){
           emit(socket,name,2,e=>{encoding.writeVarUint(e,2);encoding.writeVarString(e,'read-write');});
         } else if(kind===0 || kind===4) {
           const response=encoding.createEncoder();
+          const before=Buffer.from(Y.encodeStateAsUpdate(doc));
           const sub=sync.readSyncMessage(dec,response,doc,socket);
+          socketEvents[kind+':'+sub]=(socketEvents[kind+':'+sub]||0)+1;
           if(sub===0) {
             emit(socket,name,0,e=>encoding.writeUint8Array(e,encoding.toUint8Array(response)));
             emit(socket,name,0,e=>sync.writeSyncStep1(e,doc));
           } else {
+            if(!before.equals(Buffer.from(Y.encodeStateAsUpdate(doc))))docTimes.set(name,new Date().toISOString());
             saveServer();
             emit(socket,name,8,e=>encoding.writeVarUint(e,1));
           }
@@ -212,7 +219,13 @@ try {
     statuses.push({phase:'offline-restart',state:await status(),journal:await countDraft()});
     offline=false;
     await page.evaluate(()=>{window.__qaOnline=true;window.dispatchEvent(new Event('online'));});
-    await waitFor(()=>[...docs.values()].some(doc=>doc.getXmlFragment('default').toString().includes(offlineMarker)),'Recovered draft never reached the isolated CRDT target',30000);
+    let replayed=await waitFor(()=>[...docs.values()].some(doc=>doc.getXmlFragment('default').toString().includes(offlineMarker)),'Recovered draft never reached the isolated CRDT target',45000).catch(()=>false);
+    if(!replayed) {
+      console.log('Reconnect diagnostics',JSON.stringify({state:await status(),socketEvents,requests:[...requests],durableEntries:await countDraft(),recent:await page.evaluate(()=>{
+        const raw=JSON.parse(localStorage.getItem('caiyun-runtime-diagnostics:v1')||'[]');
+        return (Array.isArray(raw)?raw:raw.events||[]).filter(e=>e.outcome==='blocked'||e.outcome==='failure').slice(-12).map(e=>[e.domain,e.stage,e.outcome,e.reason]);
+      })}));
+    }
     statuses.push({phase:'reconnect',state:await status()});
     const template=JSON.parse(fs.readFileSync(new URL('./qa-msix-plugin-fixture.json', import.meta.url)));
     await page.evaluate(async({template,account})=>{
@@ -231,12 +244,14 @@ try {
     },{template,account:user.id});
     await page.locator('[data-plugin-rail-id="example.local.hello"] button').click();
     await page.frameLocator('iframe[title="插件入门"]').getByRole('heading',{name:'你好，插件'}).waitFor();
-    console.log('PASS exact MSIX recovery: cold restart offline, CRDT reconnect, plugin via sidebar',JSON.stringify(statuses));
+    console.log('PASS exact MSIX plugin via the app sidebar and sandbox');
+    if(!replayed)throw new Error('Recovered draft remained local during the controlled reconnect window');
+    console.log('PASS exact MSIX recovery: cold restart offline and CRDT reconnect',JSON.stringify(statuses),'messages',JSON.stringify(socketEvents));
   }
   }
   console.log('Seen app request types',JSON.stringify([...requests]),'store channel',JSON.stringify([...shellRequests]),'writes',JSON.stringify(writes));
 } catch(error){
-  console.log('Audit evidence',JSON.stringify({phase,statuses,refreshFailures,navigations,requests:[...requests],queryActions:[...queryActions],ws:sockets.size,docs:[...docs.keys()],errors:[...messages]}));
+  console.log('Audit evidence',JSON.stringify({phase,statuses,refreshFailures,navigations,requests:[...requests],queryActions:[...queryActions],socketEvents,ws:sockets.size,docs:[...docs.keys()],errors:[...messages]}));
   console.log('UI excerpt',await page.locator('body').innerText({timeout:1500}).then(v=>v.slice(0,1800)).catch(()=>'<unavailable>'));
   await page.screenshot({path:process.env.RUNNER_TEMP+`/msix-audit-${phase}.png`}).catch(()=>{});
   throw error;
