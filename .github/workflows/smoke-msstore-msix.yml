@@ -28,10 +28,16 @@ jobs:
           github-token: ${{ github.token }}
           path: original
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: caiyun-notes-msix-42227122742
+          run-id: 42227122742
+          github-token: ${{ github.token }}
+          path: previous
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Verify original package and install a temporary signed copy
+      - name: Verify both package hashes, sign test copies and install the previous version
         timeout-minutes: 5
         shell: pwsh
         env:
@@ -64,14 +70,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "SignTool failed: $LASTEXITCODE" }
           Write-Host 'Temporary QA copy signed.'
 
-          Write-Host 'Installing temporary QA MSIX...'
-          Add-AppxPackage -Path $qaCopy -ErrorAction Stop
+          $previous = Get-ChildItem previous -Filter *.msix -Recurse | Select-Object -First 1
+          $previousHash = (Get-FileHash $previous.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($previousHash -ne '830259d98fdccb6e54eb682c6e1ada6e7a89d1893205041d44377dcea8462556') {
+            throw "Previous package hash mismatch: $previousHash"
+          }
+          $previousCopy = Join-Path $env:RUNNER_TEMP 'CaiyunNotes-previous-qa-signed.msix'
+          Copy-Item -LiteralPath $previous.FullName -Destination $previousCopy
+          & $signTool.FullName sign /fd sha256 /sha1 $cert.Thumbprint $previousCopy
+          if ($LASTEXITCODE -ne 0) { throw "Previous SignTool failed: $LASTEXITCODE" }
+          Add-AppxPackage -Path $previousCopy -ErrorAction Stop
           $package = Get-AppxPackage -Name $env:EXPECTED_NAME
           if (-not $package) { throw 'Package was not registered after install' }
           if ($package.Publisher -ne $env:EXPECTED_PUBLISHER) {
             throw "Publisher mismatch: $($package.Publisher)"
           }
-          if ($package.Version.ToString() -ne '10.2.14.0') {
+          if ($package.Version.ToString() -ne '10.2.13.0') {
             throw "Version mismatch: $($package.Version)"
           }
           Write-Host "Installed package: $($package.PackageFullName)"
@@ -108,6 +122,21 @@ jobs:
           } finally {
             taskkill /PID $direct.Id /T /F | Out-Null
           }
+          $previousProcess = Start-Process -FilePath $exe -PassThru
+          try {
+            node scripts/probe-msstore-plugin-ipc.mjs previous
+            if ($LASTEXITCODE -ne 0) { throw 'Preparing the prior signed frontend failed' }
+          } finally {
+            taskkill /PID $previousProcess.Id /T /F | Out-Null
+          }
+          $qaCopy = Join-Path $env:RUNNER_TEMP 'CaiyunNotes-qa-signed.msix'
+          Add-AppxPackage -Path $qaCopy -ErrorAction Stop
+          $package = Get-AppxPackage -Name 'BinApp.547813EA77836'
+          if ($package.Version.ToString() -ne '10.2.14.0') { throw "Upgrade version mismatch: $($package.Version)" }
+          $exe = Join-Path $package.InstallLocation 'app\app.exe'
+          $speech = Join-Path $package.InstallLocation 'app\CaiyunQwenCpu.exe'
+          & $speech --version
+          if ($LASTEXITCODE -ne 0) { throw 'Installed speech runtime did not start' }
           Push-Location (Split-Path -Parent $exe)
           $stdout = Join-Path $env:RUNNER_TEMP 'msix-stdout.txt'
           $stderr = Join-Path $env:RUNNER_TEMP 'msix-stderr.txt'

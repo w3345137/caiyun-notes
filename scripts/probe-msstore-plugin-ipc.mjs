@@ -60,6 +60,9 @@ try {
     }); return result;
   })()`);
   console.log(phase,'sandbox',JSON.stringify(runtime));
+  if(phase==='previous'){
+    if(view.distribution.value!=='msstore'||view.shellVersion.value!=='10.2.13')throw new Error('Expected the previous Microsoft Store build');
+  }
   if(phase==='direct'){
     if(view.distribution.value!=='direct') throw new Error('Expected the standalone executable');
     await evalInApp(`new Promise((resolve,reject)=>{
@@ -74,7 +77,7 @@ try {
     })`);
   }
   if(phase==='bundled'){
-    console.log('Standalone-to-store IndexedDB marker continuity',await evalInApp(`new Promise((resolve,reject)=>{
+    const markerContinues=await evalInApp(`new Promise((resolve,reject)=>{
       const request=indexedDB.open('caiyun-isolated-msix-qa',1);
       request.onupgradeneeded=()=>request.result.createObjectStore('test');
       request.onerror=()=>reject(request.error);
@@ -82,7 +85,10 @@ try {
         query.onsuccess=()=>{db.close();resolve(query.result==='p25');};
         query.onerror=()=>reject(query.error);
       };
-    })`));
+    })`);
+    if(!markerContinues)throw new Error('IndexedDB marker was not retained through MSIX upgrade');
+  }
+  if (phase==='previous'||phase==='bundled') {
     const update=await evalInApp(`(async()=>{
       for(let i=0;i<18;i++){
         const result=await window.__TAURI_INTERNALS__.invoke('check_frontend_bundle_update').catch(e=>({error:String(e)}));
@@ -92,6 +98,9 @@ try {
       return {error:'signed update still busy'};
     })()`);
     console.log(phase,'signed frontend',JSON.stringify(update));
+    if(phase==='previous' && (update.error || !update.releaseId)){
+      throw new Error('Could not seed the previous signed frontend before upgrade');
+    }
   }
   if (phase === 'bundled' || phase === 'restarted') {
     if (view.distribution.value !== 'msstore' || view.shellVersion.value !== '10.2.14') {

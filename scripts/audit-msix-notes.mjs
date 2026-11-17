@@ -108,7 +108,7 @@ try {
     upstream.on('open',()=>{for(const data of queued)upstream.send(data);queued.length=0;});
     upstream.on('message',raw=>{
       socketEvents.received=(socketEvents.received||0)+1;
-      socket.send(new Uint8Array(raw));
+      socket.send(Buffer.from(raw));
     });
     upstream.on('error',error=>messages.add('isolated Hocuspocus connection: '+error.message));
     upstream.on('close',()=>{if(sockets.delete(socket))socket.close({code:1001});});
@@ -230,6 +230,7 @@ try {
         return (Array.isArray(raw)?raw:raw.events||[]).filter(e=>e.outcome==='blocked'||e.outcome==='failure').slice(-12).map(e=>[e.domain,e.stage,e.outcome,e.reason]);
       })}));
     }
+    if(replayed)await waitFor(async()=>await status()==='synced','Server received the draft but UI did not confirm persistence',16000);
     statuses.push({phase:'reconnect',state:await status()});
     const template=JSON.parse(fs.readFileSync(new URL('./qa-msix-plugin-fixture.json', import.meta.url)));
     await page.evaluate(async({template,account})=>{
