@@ -9,7 +9,7 @@ const Y = require('yjs'), encoding = require('lib0/encoding'), decoding = requir
 const phase = process.argv[2];
 const modeFile = process.env.RUNNER_TEMP + '/caiyun-msix-audit-yjs.json';
 const user = {id:'msix-isolated-user',email:'qa@example.invalid',display_name:'隔离验收'};
-const token = [Buffer.from('{"alg":"none"}').toString('base64url'),Buffer.from(JSON.stringify({sub:user.id,exp:Math.floor(Date.now()/1000)+3600})).toString('base64url'),'fixture'].join('.');
+const token = [Buffer.from('{"alg":"none"}').toString('base64url'),Buffer.from(JSON.stringify({sub:user.id,exp:Math.floor(Date.now()/1000)+604800})).toString('base64url'),'fixture'].join('.');
 const stamp = new Date().toISOString();
 const noteId='msix-qa-page-1';
 const node=(id,parent_id,type,title,order=0) => ({id,parent_id,root_notebook_id:'msix-qa-book',type,title,order,owner_id:user.id,access_permission:'owner',version:1,content:'',created_at:stamp,updated_at:stamp});
@@ -22,6 +22,7 @@ let offline=phase==='recover';
 const messages=new Set();
 const statuses=[];
 const writes=[];
+const queryActions=new Set();
 const sockets=new Set();
 const requests=new Set();
 const shellRequests=new Map();
@@ -96,7 +97,7 @@ try {
     if(url.origin!=='https://notes.binapp.top' || !url.pathname.startsWith('/api/'))return route.abort();
     requests.add(url.pathname);
     if(url.searchParams.has('__caiyun_channel'))shellRequests.set(url.pathname,url.searchParams.get('__caiyun_channel'));
-    const respond=(json,status=200)=>route.fulfill({json,status,headers:{'Access-Control-Allow-Origin':'http://tauri.localhost','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS,PUT,PATCH,DELETE'}});
+    const respond=(json,status=200)=>route.fulfill({json,status,headers:{'Access-Control-Allow-Origin':'http://tauri.localhost','Access-Control-Allow-Credentials':'true','Access-Control-Allow-Headers':req.headers()['access-control-request-headers']||'authorization,content-type','Access-Control-Allow-Methods':'GET,POST,OPTIONS,PUT,PATCH,DELETE'}});
     if(req.method()==='OPTIONS')return respond({});
     let body={};
     try{body=req.postDataJSON()||{}}catch{}
@@ -108,6 +109,7 @@ try {
       case '/api/app-release-policy':return respond({latestVersion:'10.2.13',minimumVersion:'10.2.8',rolloutSalt:'fixture',rolloutPercentage:100});
       case '/api/notebook-groups':return respond({state:groups});
       case '/api/notes-query':
+        queryActions.add(body.action||'none');
         if(['loadTree','loadFullTree','loadTreeDelta','loadAccessibleNotes'].includes(body.action))return respond({success:true,data:notes,changeSeq:'0'});
         if(body.action==='getNoteById')return respond({success:true,data:notes.find(n=>n.id===body.noteId)||null});
         if(body.action==='loadSidebarState')return respond({success:true,data:{selectedNoteId:noteId,expandedNodes:['msix-qa-book','msix-qa-section'],notebookOrder:['msix-qa-book']}});
@@ -208,7 +210,7 @@ try {
   }
   console.log('Seen app request types',JSON.stringify([...requests]),'store channel',JSON.stringify([...shellRequests]),'writes',JSON.stringify(writes));
 } catch(error){
-  console.log('Audit evidence',JSON.stringify({phase,statuses,requests:[...requests],ws:sockets.size,docs:[...docs.keys()],errors:[...messages]}));
+  console.log('Audit evidence',JSON.stringify({phase,statuses,requests:[...requests],queryActions:[...queryActions],ws:sockets.size,docs:[...docs.keys()],errors:[...messages]}));
   console.log('UI excerpt',await page.locator('body').innerText({timeout:1500}).then(v=>v.slice(0,1800)).catch(()=>'<unavailable>'));
   await page.screenshot({path:process.env.RUNNER_TEMP+`/msix-audit-${phase}.png`}).catch(()=>{});
   throw error;
