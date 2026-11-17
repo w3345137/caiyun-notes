@@ -60,7 +60,7 @@ const persisted=body=>{
 };
 const server=new Server({address:'127.0.0.1',port:0,quiet:true,stopOnSignals:false,debounce:80,maxDebounce:400,
   onAuthenticate: async()=>({account:'qa'}),
-  onLoadDocument:async({documentName})=>serverDocument(documentName),
+  onLoadDocument:async({documentName})=>Y.encodeStateAsUpdate(serverDocument(documentName)),
   onStoreDocument:async({documentName,document})=>{
     const before=Buffer.from(Y.encodeStateAsUpdate(serverDocument(documentName)));
     if(!before.equals(Buffer.from(Y.encodeStateAsUpdate(document))))docTimes.set(documentName,new Date().toISOString());
@@ -133,7 +133,7 @@ try {
         if(weakAuth){refreshFailures++;return respond({error:'isolated transient failure'},503);}
         return respond({token,access_token:token,user,expires_in:1209600});
       case '/api/auth/v1/sse-ticket':return respond({ticket:'qa-sse-ticket'});
-      case '/api/app-release-policy':return respond({latestVersion:'10.2.13',minimumVersion:'10.2.8',rolloutSalt:'fixture',rolloutPercentage:100});
+      case '/api/app-release-policy':return respond({latestVersion:'10.2.14',minimumVersion:'10.2.8',rolloutSalt:'fixture',rolloutPercentage:100});
       case '/api/notebook-groups':return respond({state:groups});
       case '/api/notes-query':
         queryActions.add(body.action||'none');
@@ -191,9 +191,11 @@ try {
   });
   const status=async()=>page.locator('[data-document-sync-state]').first().getAttribute('data-document-sync-state',{timeout:2000}).catch(()=>null);
   if(weakAuth){
-    await waitFor(()=>refreshFailures>0 && navigations>1,'Transient-refresh test did not see the real workspace reload',20000);
-    await page.waitForFunction(()=>!localStorage.getItem('notesapp_token'));
-    console.log('REPRO exact MSIX: refresh HTTP 503 clears still-valid local session and reloads',{refreshFailures,navigations});
+    await waitFor(()=>refreshFailures>0,'The fixture did not exercise the transient refresh failure');
+    await page.waitForTimeout(1000);
+    assert.equal(navigations,1,'A temporary 503 must not reload the workspace');
+    assert(await page.evaluate(()=>!!localStorage.getItem('notesapp_token')),'Temporary failure must retain local session');
+    console.log('PASS exact MSIX: transient 503 preserves the session and workspace',{refreshFailures,navigations});
     process.exitCode=0;
   } else {
   await openNote(noteId);

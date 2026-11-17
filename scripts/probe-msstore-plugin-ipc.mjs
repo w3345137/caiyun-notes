@@ -93,6 +93,17 @@ try {
     })()`);
     console.log(phase,'signed frontend',JSON.stringify(update));
   }
+  if (phase === 'bundled' || phase === 'restarted') {
+    if (view.distribution.value !== 'msstore' || view.shellVersion.value !== '10.2.14') {
+      throw new Error('Wrong candidate store channel or shell version');
+    }
+    if (!view.modules.some(path=>/-sync-[a-f0-9]{12}\.js$/.test(path))) {
+      throw new Error('The embedded patched frontend was replaced');
+    }
+    if (!view.nativeVersion.ok || view.nativeVersion.value !== 1 || !runtime.ready) {
+      throw new Error('Packaged plugin host or sandbox probe failed');
+    }
+  }
   if(phase==='restarted' && (!view.nativeVersion.ok || view.nativeVersion.value!==1 || !runtime.ready)){
     throw new Error('Packaged plugin host or sandbox probe failed');
   }
