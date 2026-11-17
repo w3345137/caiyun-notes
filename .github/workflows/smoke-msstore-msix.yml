@@ -80,7 +80,7 @@ jobs:
       - name: Install isolated audit dependencies
         shell: pwsh
         run: |
-          npm install --prefix "$env:RUNNER_TEMP/qa-msix-deps" --no-audit --no-fund playwright-core@1.58.2 yjs@13.6.30 y-protocols@1.0.6 lib0
+          npm install --prefix "$env:RUNNER_TEMP/qa-msix-deps" --no-audit --no-fund playwright-core@1.58.2 yjs@13.6.30 @hocuspocus/server@4.0.0 ws@8
           if ($LASTEXITCODE -ne 0) { throw 'Audit dependencies unavailable' }
 
       - name: Exercise notes, recovery and plugins in packaged Windows WebView2

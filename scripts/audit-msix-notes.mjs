@@ -4,7 +4,9 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(path.join(process.env.RUNNER_TEMP, 'qa-msix-deps', 'package.json'));
 const { chromium } = require('playwright-core');
-const Y = require('yjs'), encoding = require('lib0/encoding'), decoding = require('lib0/decoding'), sync = require('y-protocols/sync');
+const Y = require('yjs');
+const {Server}=require('@hocuspocus/server');
+const {WebSocket}=require('ws');
 
 const phase = process.argv[2];
 const weakAuth=phase==='weak-auth';
@@ -56,7 +58,19 @@ const persisted=body=>{
   return {confirmed:true,documentName:docName(body),yState:Buffer.from(state).toString('base64'),
     stateVector:Buffer.from(vector).toString('base64'),deleteState:Buffer.from(Y.diffUpdate(state,vector)).toString('base64'),updatedAt:docTimes.get(docName(body))};
 };
-const emit=(route,name,tag,write)=>{const out=encoding.createEncoder();encoding.writeVarString(out,name);encoding.writeVarUint(out,tag);write(out);route.send(encoding.toUint8Array(out));};
+const server=new Server({address:'127.0.0.1',port:0,quiet:true,stopOnSignals:false,debounce:80,maxDebounce:400,
+  onAuthenticate: async()=>({account:'qa'}),
+  onLoadDocument:async({documentName})=>serverDocument(documentName),
+  onStoreDocument:async({documentName,document})=>{
+    const before=Buffer.from(Y.encodeStateAsUpdate(serverDocument(documentName)));
+    if(!before.equals(Buffer.from(Y.encodeStateAsUpdate(document))))docTimes.set(documentName,new Date().toISOString());
+    const snapshot=new Y.Doc();
+    Y.applyUpdate(snapshot,Y.encodeStateAsUpdate(document));
+    docs.set(documentName,snapshot);
+    saveServer();
+  },
+});
+await server.listen();
 let browser;
 for(let i=0;i<35&&!browser;i++) {
   try{browser=await chromium.connectOverCDP('http://127.0.0.1:18495',{timeout:1200});}
@@ -83,34 +97,22 @@ try {
     localStorage.setItem('i18nextLng','zh-CN');
   },{user,token,offline,weakAuth});
   await context.routeWebSocket('**/*', socket=>{
-    if(offline || !socket.url().startsWith('wss://notes.binapp.top/qa-msix-collab')) return socket.close({code:1001});
+    if(offline || !socket.url().startsWith('wss://notes.binapp.top/qa-msix-collab'))return socket.close({code:1001});
+    const upstream=new WebSocket(server.webSocketURL+'/qa-msix-collab');
+    const queued=[];
     sockets.add(socket);
-    socket.onClose(()=>sockets.delete(socket));
     socket.onMessage(raw=>{
-      try {
-        const dec=decoding.createDecoder(typeof raw==='string'?new TextEncoder().encode(raw):new Uint8Array(raw));
-        const name=decoding.readVarString(dec);
-        const kind=decoding.readVarUint(dec);
-        socketEvents[kind]=(socketEvents[kind]||0)+1;
-        const doc=serverDocument(name);
-        if(kind===2){
-          emit(socket,name,2,e=>{encoding.writeVarUint(e,2);encoding.writeVarString(e,'read-write');});
-        } else if(kind===0 || kind===4) {
-          const response=encoding.createEncoder();
-          const before=Buffer.from(Y.encodeStateAsUpdate(doc));
-          const sub=sync.readSyncMessage(dec,response,doc,socket);
-          socketEvents[kind+':'+sub]=(socketEvents[kind+':'+sub]||0)+1;
-          if(sub===0) {
-            emit(socket,name,0,e=>encoding.writeUint8Array(e,encoding.toUint8Array(response)));
-            emit(socket,name,0,e=>sync.writeSyncStep1(e,doc));
-          } else {
-            if(!before.equals(Buffer.from(Y.encodeStateAsUpdate(doc))))docTimes.set(name,new Date().toISOString());
-            saveServer();
-            emit(socket,name,8,e=>encoding.writeVarUint(e,1));
-          }
-        }
-      } catch (error){messages.add('mock websocket: '+error.message);}
+      socketEvents.forwarded=(socketEvents.forwarded||0)+1;
+      if(upstream.readyState===WebSocket.OPEN)upstream.send(raw);else if(upstream.readyState===WebSocket.CONNECTING)queued.push(raw);
     });
+    upstream.on('open',()=>{for(const data of queued)upstream.send(data);queued.length=0;});
+    upstream.on('message',raw=>{
+      socketEvents.received=(socketEvents.received||0)+1;
+      socket.send(new Uint8Array(raw));
+    });
+    upstream.on('error',error=>messages.add('isolated Hocuspocus connection: '+error.message));
+    upstream.on('close',()=>{if(sockets.delete(socket))socket.close({code:1001});});
+    socket.onClose(()=>{sockets.delete(socket);upstream.close();});
   });
   await context.route('**/*', async route=>{
     const req=route.request();
@@ -257,4 +259,5 @@ try {
   throw error;
 } finally {
   await browser.close();
+  await server.destroy();
 }
