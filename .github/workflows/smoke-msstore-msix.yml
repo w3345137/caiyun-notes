@@ -139,6 +139,14 @@ jobs:
 
           $process = Start-Process -FilePath $exe -PassThru
           try {
+            node scripts/audit-msix-notes.mjs weak-auth
+            if ($LASTEXITCODE -ne 0) { throw 'Could not verify transient authentication failure' }
+          } finally {
+            taskkill /PID $process.Id /T /F | Out-Null
+          }
+
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
             node scripts/audit-msix-notes.mjs recover
             if ($LASTEXITCODE -ne 0) { throw 'MSIX offline recovery audit failed' }
           } finally {

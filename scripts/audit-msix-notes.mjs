@@ -7,9 +7,10 @@ const { chromium } = require('playwright-core');
 const Y = require('yjs'), encoding = require('lib0/encoding'), decoding = require('lib0/decoding'), sync = require('y-protocols/sync');
 
 const phase = process.argv[2];
+const weakAuth=phase==='weak-auth';
 const modeFile = process.env.RUNNER_TEMP + '/caiyun-msix-audit-yjs.json';
 const user = {id:'msix-isolated-user',email:'qa@example.invalid',display_name:'隔离验收'};
-const token = [Buffer.from('{"alg":"none"}').toString('base64url'),Buffer.from(JSON.stringify({sub:user.id,exp:Math.floor(Date.now()/1000)+604800})).toString('base64url'),'fixture'].join('.');
+const token = [Buffer.from('{"alg":"none"}').toString('base64url'),Buffer.from(JSON.stringify({sub:user.id,exp:Math.floor(Date.now()/1000)+(weakAuth?86400:1209600)})).toString('base64url'),'fixture'].join('.');
 const stamp = new Date().toISOString();
 const noteId='msix-qa-page-1';
 const node=(id,parent_id,type,title,order=0) => ({id,parent_id,root_notebook_id:'msix-qa-book',type,title,order,owner_id:user.id,access_permission:'owner',version:1,content:'',created_at:stamp,updated_at:stamp});
@@ -19,6 +20,8 @@ const docs = new Map();
 const onlineMarker='MSIX-ONLINE-42';
 const offlineMarker='MSIX-OFFLINE-53';
 let offline=phase==='recover';
+let refreshFailures=0;
+let navigations=0;
 const messages=new Set();
 const statuses=[];
 const writes=[];
@@ -43,7 +46,13 @@ function serverDocument(name) {
 }
 const saveServer=()=>fs.writeFileSync(modeFile,JSON.stringify(Object.fromEntries([...docs].map(([name,doc])=>[name,Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64')]))));
 const docName=body=>`note:${body.noteId||noteId}/tab:${body.tabId||'default'}`;
-const persisted=body=>({confirmed:true,documentName:docName(body),yState:Buffer.from(Y.encodeStateAsUpdate(serverDocument(docName(body)))).toString('base64'),updatedAt:new Date().toISOString()});
+const persisted=body=>{
+  const doc=serverDocument(docName(body));
+  const state=Y.encodeStateAsUpdate(doc);
+  const vector=Y.encodeStateVectorFromUpdate(state);
+  return {confirmed:true,documentName:docName(body),yState:Buffer.from(state).toString('base64'),
+    stateVector:Buffer.from(vector).toString('base64'),deleteState:Buffer.from(Y.diffUpdate(state,vector)).toString('base64'),updatedAt:new Date().toISOString()};
+};
 const emit=(route,name,tag,write)=>{const out=encoding.createEncoder();encoding.writeVarString(out,name);encoding.writeVarUint(out,tag);write(out);route.send(encoding.toUint8Array(out));};
 let browser;
 for(let i=0;i<35&&!browser;i++) {
@@ -55,15 +64,21 @@ const context=browser.contexts()[0];
 const page=context.pages().find(p=>/tauri\.localhost/.test(p.url()));
 assert(page,'No packaged app page');
 page.setDefaultTimeout(25000);
+page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigations++;});
 page.on('pageerror',error=>messages.add(error.message.slice(0,180)));
 page.on('console',m=>{if(m.type()==='error'&&/CRDT|IndexedDB|durable/i.test(m.text()))messages.add(m.text().slice(0,180));});
 try {
-  await context.addInitScript(({ user,token })=>{
+  await context.addInitScript(({user,token,offline,weakAuth})=>{
     if(window.top!==window)return;
-    localStorage.setItem('notesapp_user',JSON.stringify(user));
-    localStorage.setItem('notesapp_token',token);
+    window.__qaOnline=!offline;
+    Object.defineProperty(navigator,'onLine',{get:()=>window.__qaOnline});
+    if(!weakAuth || !sessionStorage.getItem('qa-weak-auth-seeded')){
+      localStorage.setItem('notesapp_user',JSON.stringify(user));
+      localStorage.setItem('notesapp_token',token);
+      if(weakAuth) sessionStorage.setItem('qa-weak-auth-seeded','1');
+    }
     localStorage.setItem('i18nextLng','zh-CN');
-  },{user,token});
+  },{user,token,offline,weakAuth});
   await context.routeWebSocket('**/*', socket=>{
     if(offline || !socket.url().startsWith('wss://notes.binapp.top/qa-msix-collab')) return socket.close({code:1001});
     sockets.add(socket);
@@ -101,10 +116,13 @@ try {
     if(req.method()==='OPTIONS')return respond({});
     let body={};
     try{body=req.postDataJSON()||{}}catch{}
-    if(offline)return respond({success:false,code:'QA_OFFLINE',error:'QA_OFFLINE'},503);
+    if(offline)return route.abort('internetdisconnected');
     switch(url.pathname){
-      case '/api/auth/v1/me':return respond(user);
-      case '/api/auth/v1/refresh':return respond({token,access_token:token,user,expires_in:3600});
+      case '/api/auth/v1/me':
+        return weakAuth && !req.headers().authorization ? respond({error:'登录已失效'},401) : respond(user);
+      case '/api/auth/v1/refresh':
+        if(weakAuth){refreshFailures++;return respond({error:'isolated transient failure'},503);}
+        return respond({token,access_token:token,user,expires_in:1209600});
       case '/api/auth/v1/sse-ticket':return respond({ticket:'qa-sse-ticket'});
       case '/api/app-release-policy':return respond({latestVersion:'10.2.13',minimumVersion:'10.2.8',rolloutSalt:'fixture',rolloutPercentage:100});
       case '/api/notebook-groups':return respond({state:groups});
@@ -163,6 +181,12 @@ try {
     }catch(error){reject(error);}
   });
   const status=async()=>page.locator('[data-document-sync-state]').first().getAttribute('data-document-sync-state',{timeout:2000}).catch(()=>null);
+  if(weakAuth){
+    await waitFor(()=>refreshFailures>0 && navigations>1,'Transient-refresh test did not see the real workspace reload',20000);
+    await page.waitForFunction(()=>!localStorage.getItem('notesapp_token'));
+    console.log('REPRO exact MSIX: refresh HTTP 503 clears still-valid local session and reloads',{refreshFailures,navigations});
+    process.exitCode=0;
+  } else {
   await openNote(noteId);
   if(phase==='edit'){
     await editor.filter({hasText:'MSIX baseline'}).waitFor();
@@ -175,7 +199,7 @@ try {
     statuses.push({phase:'online',state:await status()});
     offline=true;
     for(const socket of [...sockets])socket.close({code:1001});
-    await page.evaluate(()=>window.dispatchEvent(new Event('offline')));
+    await page.evaluate(()=>{window.__qaOnline=false;window.dispatchEvent(new Event('offline'));});
     const before=await countDraft();
     await editor.press('End');
     await editor.pressSequentially(' '+offlineMarker);
@@ -187,7 +211,7 @@ try {
     assert((await countDraft())>0,'Offline journal missing after process restart');
     statuses.push({phase:'offline-restart',state:await status(),journal:await countDraft()});
     offline=false;
-    await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+    await page.evaluate(()=>{window.__qaOnline=true;window.dispatchEvent(new Event('online'));});
     await waitFor(()=>[...docs.values()].some(doc=>doc.getXmlFragment('default').toString().includes(offlineMarker)),'Recovered draft never reached the isolated CRDT target',30000);
     statuses.push({phase:'reconnect',state:await status()});
     const template=JSON.parse(fs.readFileSync(new URL('./qa-msix-plugin-fixture.json', import.meta.url)));
@@ -209,9 +233,10 @@ try {
     await page.frameLocator('iframe[title="插件入门"]').getByRole('heading',{name:'你好，插件'}).waitFor();
     console.log('PASS exact MSIX recovery: cold restart offline, CRDT reconnect, plugin via sidebar',JSON.stringify(statuses));
   }
+  }
   console.log('Seen app request types',JSON.stringify([...requests]),'store channel',JSON.stringify([...shellRequests]),'writes',JSON.stringify(writes));
 } catch(error){
-  console.log('Audit evidence',JSON.stringify({phase,statuses,requests:[...requests],queryActions:[...queryActions],ws:sockets.size,docs:[...docs.keys()],errors:[...messages]}));
+  console.log('Audit evidence',JSON.stringify({phase,statuses,refreshFailures,navigations,requests:[...requests],queryActions:[...queryActions],ws:sockets.size,docs:[...docs.keys()],errors:[...messages]}));
   console.log('UI excerpt',await page.locator('body').innerText({timeout:1500}).then(v=>v.slice(0,1800)).catch(()=>'<unavailable>'));
   await page.screenshot({path:process.env.RUNNER_TEMP+`/msix-audit-${phase}.png`}).catch(()=>{});
   throw error;
