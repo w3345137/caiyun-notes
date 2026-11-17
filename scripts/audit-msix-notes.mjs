@@ -138,10 +138,11 @@ try {
     let row=page.locator(`[data-page-id="${id}"]`);
     await page.locator('[data-notebook-id="msix-qa-book"]').first().waitFor({state:'attached'});
 
-    for(const key of ['[data-notebook-id="msix-qa-book"]','[data-section-id="msix-qa-section"]']){
-      if(await row.isVisible())break;
-      const parent=page.locator(key).first();
-      if(await parent.isVisible())await parent.click();
+    if(!await row.isVisible()){
+      const notebook=page.locator('[data-notebook-id="msix-qa-book"]');
+      const expand=notebook.locator('button[aria-expanded="false"]');
+      if(await expand.isVisible())await expand.click();
+      await page.locator('[data-section-id="msix-qa-section"]').click();
     }
     await row.click();
     await editor.waitFor();
