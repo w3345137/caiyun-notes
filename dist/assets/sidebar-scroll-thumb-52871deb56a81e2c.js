@@ -1,1 +1,0 @@
-const i="[data-sidebar-notebook-list], [data-sidebar-page-list]",t=new WeakMap;document.addEventListener("scroll",s=>{const e=s.target;!(e instanceof Element)||!e.matches(i)||(e.classList.add("is-scrolling"),window.clearTimeout(t.get(e)),t.set(e,window.setTimeout(()=>{e.classList.remove("is-scrolling"),t.delete(e)},700)))},{capture:!0,passive:!0});

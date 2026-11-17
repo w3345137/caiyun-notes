@@ -77,10 +77,11 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "app"
-version = "10.2.14"
+version = "10.2.15"
 dependencies = [
  "base64 0.22.1",
  "block2",
+ "cc",
  "ed25519-dalek",
  "futures-util",
  "hex",
@@ -110,6 +111,7 @@ dependencies = [
  "tokio",
  "walkdir",
  "webpki-root-certs",
+ "windows",
  "zip 2.4.2",
 ]
 

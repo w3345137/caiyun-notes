@@ -1,48 +1,64 @@
 {
   "schemaVersion": 1,
-  "appVersion": "10.2.14",
-  "gitCommit": "6639f18f8c0a97a8e5d77bfedbff3fc25af2f039",
+  "appVersion": "10.2.15",
+  "gitCommit": "e784c4084b5ad4d9ec3de1bba2bcc4553e42a103",
   "entryAssets": [
-    "assets/hr-business-host-e2100b0504c1.js",
     "assets/i18n-DaTLAGIu.js",
-    "assets/index-u35rUWbE-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-    "assets/plugin-rail-6e9828df3d67.css",
+    "assets/index-D744recc.js",
     "assets/react-core-CvchqaeY.js",
-    "assets/sidebar-scroll-thumb-1ec275a3d8f7f42f.css",
-    "assets/sidebar-scroll-thumb-52871deb56a81e2c.js",
-    "assets/style-CYrIjl-v.css",
-    "assets/tauri-D9cK8aUB.js"
+    "assets/style-C-8p6g0h.css",
+    "assets/tauri-SWLbIvfd.js"
   ],
   "files": [
     {
-      "path": "assets/App-CgFn1P_G-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 184697,
-      "sha256": "8c39ce40406acf11c5c8477c1cf5fc7e0afaead55b251cfb64fe84de635ac39a"
+      "path": "assets/App-DrJ3VWJM.js",
+      "size": 198100,
+      "sha256": "ac11f18a3aee330d8cbe5e411ac979968e8f1bb592985a47dc50199992922ecc"
     },
     {
-      "path": "assets/NoteEditor-DisUDY-w-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 609139,
-      "sha256": "2ced34ac4ae14ceb336d5509b13389e303af9ad337ebaa3af7adf3f3a7756e0f"
+      "path": "assets/InlineQueryError-lkqeBLN7.js",
+      "size": 880,
+      "sha256": "308364127b76f23ae45102e1edf2ada921cf14f24988c5ef2a0303fe76513add"
     },
     {
-      "path": "assets/RecoveryCenterModal-Cj5uen0b-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 14952,
-      "sha256": "726c16c7670e2711218259adfdf561ecdea3c55d523bf35c243575ad0c8aaa3f"
+      "path": "assets/InviteManagementModal-KcTX3OFv.js",
+      "size": 10175,
+      "sha256": "8e3b28a0d663f79c49cc7d61e88d3a79cbbc12cc0929f47b443cb9bc21412f05"
     },
     {
-      "path": "assets/Sidebar-DZZ1n6oV-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 345774,
-      "sha256": "36803c677fa03e8b437cf3bf147a0ce342a26de7245e33052160363ce5d3de3a"
+      "path": "assets/MapSettings-BbF_B2K-.js",
+      "size": 10475,
+      "sha256": "e9df7d223ea9670f1a70fca1476abe376a8b3d098036a8113f0b4a92a60ac37a"
     },
     {
-      "path": "assets/accountPreferenceStore-hTMLDwFW-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 9049,
-      "sha256": "3d472742b5d4f2dad131f47023b567c4b795f5de8e02571930fc976a1e055ebd"
+      "path": "assets/NoteEditor-xmIxoveU.js",
+      "size": 607362,
+      "sha256": "9441b6d83bf2145bf2cd8b8c2ac1e9b027501049dfcc3fb98ce9863da4844c9a"
     },
     {
-      "path": "assets/cloudAttachmentUpload-_FxXlQH--rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 9282,
-      "sha256": "15c19d45d3bebb090105a5a99117861f2589b3c533aa793ebd06a6782cd3cda0"
+      "path": "assets/RecoveryCenterModal-Cu0OETjm.js",
+      "size": 13491,
+      "sha256": "1768abd1b23e91b429b852ebd68e98e6ce45fbfea491d94ec47ec46b04692cab"
+    },
+    {
+      "path": "assets/SettingsDialog-CybsN4Xu.js",
+      "size": 182698,
+      "sha256": "e472ed13313810bb7d79353a9d10976c4b55fd094072f8628fc4d951f45f0bc2"
+    },
+    {
+      "path": "assets/Sidebar-Djr0i0b_.js",
+      "size": 145743,
+      "sha256": "c1d81d04ef04f5be9ae03fcf1e034b6c62e0745201aae9fd9affb736da0f4cb4"
+    },
+    {
+      "path": "assets/accountPreferenceStore-dAsX7NMZ.js",
+      "size": 8767,
+      "sha256": "f1d2c7c28d38dbdb78a4e989957d1ff7988a3f0cecb23c5d0c10e49437f8c0e3"
+    },
+    {
+      "path": "assets/cloudAttachmentUpload-CGqb4fSr.js",
+      "size": 8906,
+      "sha256": "dd72ef646821494f40dc351ec91b10bda6c9df5d423d976e8805a172133f790e"
     },
     {
       "path": "assets/editor-BOmLXFaO.js",
@@ -50,24 +66,19 @@
       "sha256": "b9ed7c2acb0a698e01a50c31dcf16bd8882b95b9896b01c6fa1656e4f61a3295"
     },
     {
-      "path": "assets/editorImageUpload-C7vKl9z9-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 1561,
-      "sha256": "4846b8f2ffbec46f25ef8aa76e224b1f7b7af381bde11cc3737f7604fe108909"
+      "path": "assets/editorImageUpload-ByT40ckO.js",
+      "size": 1278,
+      "sha256": "c9d5ef436a7e1ddf19742c8c097f7dc04f41f7b01774d3004042afe167ac3b03"
     },
     {
-      "path": "assets/editorWriteGuard-BMIW1HRj-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 75248,
-      "sha256": "d5bdd6af9b0c1ebb509003129da5e1b84e356f71ce4c0a2c5aa00ef954ecb8d9"
+      "path": "assets/editorWriteGuard-Odf_1PWM.js",
+      "size": 63548,
+      "sha256": "55321d734577845c09abd78f8728644319bd34dd1b764fffc90ed3292653ff9e"
     },
     {
-      "path": "assets/emailReplicaBackgroundSync-Chenj8Fn-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 6355,
-      "sha256": "d62ed679479d9a7e663d03a759af8230a6e0f03f0fbc5c8fa6e1a4aeda0c6378"
-    },
-    {
-      "path": "assets/hr-business-host-e2100b0504c1.js",
-      "size": 21533,
-      "sha256": "e2100b0504c19a8d750c2043e176070d955a428d12be370a7c53ee0f4154ff3a"
+      "path": "assets/emailReplicaBackgroundSync-DrRrRy1e.js",
+      "size": 5880,
+      "sha256": "dc775488a7781dc383c7e3e44e8de8c7444cb28d9098bf8d6e54a172ffccd14d"
     },
     {
       "path": "assets/i18n-DaTLAGIu.js",
@@ -75,29 +86,34 @@
       "sha256": "b788ef72407081563b5075396477b6541da7e9d5edeb23c1716659a3a70375b6"
     },
     {
-      "path": "assets/index-u35rUWbE-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 356595,
-      "sha256": "4d8eef76b2edeca3166d2a1743f3b92863616dc95192dcb34839d4aa4867cd72"
+      "path": "assets/index-D744recc.js",
+      "size": 369674,
+      "sha256": "a39c38896aef82278ddec89411f3d2868bc235609ed947bffb187c6dd9550027"
     },
     {
-      "path": "assets/localDocumentPreparation-CPFy8izT-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 185747,
-      "sha256": "aa9c1dcce1ddf47c75d98998c3560f23eb2e8ba3a61e6df2a2627c2eec521f09"
+      "path": "assets/iosMailIntegration-Bioz1Zz9.js",
+      "size": 3708,
+      "sha256": "24fd77d8a5549931a7f1432016e60f2c1717ffe589808c94f067efa814627ead"
     },
     {
-      "path": "assets/localRecoveryRepository-C7-rzjZg-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 4524,
-      "sha256": "9ba277ee0a24ead89b057a21d5bc0e735cb9b7452070eebee448ab8b30aed4cb"
+      "path": "assets/localDocumentPreparation-D2vvkopB.js",
+      "size": 184902,
+      "sha256": "822ba0c02ee36c9c5978ac2ae9f75d8c2a7bbecc7eb58dc2a36214dd71132ba9"
     },
     {
-      "path": "assets/localWorkspaceDb-B5aDChnI-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 47189,
-      "sha256": "42d2434fb92e49cc3b0597f0d9ae931aa4b7be8b9ba795f5b479e3573a6d0c51"
+      "path": "assets/localRecoveryRepository-CH5CWWmS.js",
+      "size": 4430,
+      "sha256": "1b35a5afef9ba7a4c4fc00bf68ab949595223540ed7156596be59439d9d47fb3"
     },
     {
-      "path": "assets/localWorkspaceStore-CBqCWKLt-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 133807,
-      "sha256": "9aa9dc677c622fcad307564f0d2e9e84e325f420b11f94fed0d77eb6dfa3f036"
+      "path": "assets/localWorkspaceDb-PD6e7suL.js",
+      "size": 47095,
+      "sha256": "9fcc06c5ab8b3df991a98beaf1b43d1ea00680b2b97df90a54e0149326905452"
+    },
+    {
+      "path": "assets/localWorkspaceStore-CYzHDk14.js",
+      "size": 135422,
+      "sha256": "44d3574b8995050bf1936d190f3cc4d3c69f211b7642a1a2549e212d086b7893"
     },
     {
       "path": "assets/mindmap-BfNQhKnE.js",
@@ -110,24 +126,19 @@
       "sha256": "2d958e2e72d5f450b75953018dd760a6ba6c13a2cbe3a5ea375b4ff7e932bfcc"
     },
     {
-      "path": "assets/nativeClipboardImage-OjrQHEpZ-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 727,
-      "sha256": "6aeeae675b158b56adcc42ae27d3e99ee0b0c6f3132504065de4d136bdd3868a"
+      "path": "assets/nativeClipboardImage-BRa8lxnk.js",
+      "size": 633,
+      "sha256": "51050303613e7bc4171cfff793b5a8ac70c5dd61fdfb68214734f130cb808010"
     },
     {
-      "path": "assets/nativeWorkspaceTransfer-C9KUPSXd-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 9811,
-      "sha256": "d297a04fbcc4a6afbf382ee2336802a6f4066c59d7259fac1870b308eacb0035"
+      "path": "assets/nativeWorkspaceTransfer-BScj6e9I.js",
+      "size": 9435,
+      "sha256": "74bb06cb100000ab9ee862680dcd66279b964487ffc3a24d1b025e950e59fe78"
     },
     {
-      "path": "assets/noteStore-CJPuUjrq-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 51097,
-      "sha256": "41bc480e9473898de4a2bd0efcb22796d6f9e76986aaa3e9b76d5f314c0dc686"
-    },
-    {
-      "path": "assets/plugin-rail-6e9828df3d67.css",
-      "size": 172,
-      "sha256": "22c32e7f28b769a0ed57255293d18203796deb900b86cac05b659c0b45590586"
+      "path": "assets/noteStore-BL9usv7V.js",
+      "size": 48515,
+      "sha256": "348e359d65f0df5fe9e05a7bcadb1d01ff2d2114bcef40f0ae61a71e729780dd"
     },
     {
       "path": "assets/react-core-CvchqaeY.js",
@@ -135,34 +146,24 @@
       "sha256": "4dc56cba02e935b3ab647a285018bc35632f199f6dc48a1980087f0651fc9d89"
     },
     {
-      "path": "assets/recoveryPortableBackup-DibjtrAP-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 2708,
-      "sha256": "ce38e0faccc11956f4040fcef1f121cad146b931a19c466b5854417013078b78"
+      "path": "assets/recoveryPortableBackup-BI0K0qxe.js",
+      "size": 2520,
+      "sha256": "84b6918f90d3b20cb8a2b90fdfed2aaf0de8315b30321cede10e745ba1fa7e43"
     },
     {
-      "path": "assets/sidebar-scroll-thumb-1ec275a3d8f7f42f.css",
-      "size": 569,
-      "sha256": "1ec275a3d8f7f42fd4612422d3528996ecec96dedbcd6439466099cf933ee372"
+      "path": "assets/style-C-8p6g0h.css",
+      "size": 168574,
+      "sha256": "8414b405230378d0758896ac6ca9b46eadb8962622f7c1773f9a6b01701679e3"
     },
     {
-      "path": "assets/sidebar-scroll-thumb-52871deb56a81e2c.js",
-      "size": 351,
-      "sha256": "52871deb56a81e2c8d8dacc5ca8cc60d719576a2770ae21368ec3a4c692776db"
+      "path": "assets/syncDependencies-9KiJs9z-.js",
+      "size": 2231,
+      "sha256": "503dbc511183fc92d91fd096a4552d5e2905b925e189b67d764bc6b40abdad74"
     },
     {
-      "path": "assets/style-CYrIjl-v.css",
-      "size": 160350,
-      "sha256": "c4bec700c2dc2b616e2d177e50d637d66d3fdbf689a6b5e1f7c7e418da48fbfe"
-    },
-    {
-      "path": "assets/syncDependencies-CW79EEsJ-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 2419,
-      "sha256": "0fdb9dc51178590029cb98b7bb994a3408086192d0851911b41626db3f9f0e38"
-    },
-    {
-      "path": "assets/syncDiagnostics-D7Le8F9C-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 3485,
-      "sha256": "61cc91395b527207746e96d1586b7c725ba072cbfa8963dcde1f27b1fd700297"
+      "path": "assets/syncDiagnostics-XsAs6KzJ.js",
+      "size": 3391,
+      "sha256": "1360e37560e62be61b55bbe9503b903754bb6f0f6bcf80e3f611425a1b53d3eb"
     },
     {
       "path": "assets/syncOperationPolicy-Bom4qSWl.js",
@@ -170,39 +171,44 @@
       "sha256": "31b320bfe104ad08022f91207fdce21c10189069398c31f6c1fa451d806e257e"
     },
     {
-      "path": "assets/syncStatusCenter-34AknFO6-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 9484,
-      "sha256": "1241a8ccd7978e20eff5318782bd7dbb6abe5940c2ee71455c24cc57290d485e"
+      "path": "assets/syncStatusCenter-Dg2Nog4r.js",
+      "size": 9390,
+      "sha256": "8abe1ddd6175cfb65f1000df6ef8dc1be1e5403759cc617fb07c853d1596cb02"
     },
     {
-      "path": "assets/tauri-D9cK8aUB.js",
+      "path": "assets/tauri-SWLbIvfd.js",
       "size": 15581,
-      "sha256": "f9a8f78d9dd273623c905e83f1a6cab8267f50f77cd83c3888d9ad61ee45c789"
+      "sha256": "f583828eb6e8e5df4e9ef48c80b3c0e6068b5fa1d2a14f83b6b0b6b8ccda82cc"
     },
     {
-      "path": "assets/treeMutationOutbox-DBXRQj9V-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 13291,
-      "sha256": "52f5802b8746902c61f52935677ee7df0f1ab2502baf22b878fd40891aae9636"
+      "path": "assets/treeMutationOutbox-_sWjk7n4.js",
+      "size": 12727,
+      "sha256": "7fa4b7833519a8432eff1dd8e3df6bd1008413373dec53188c32c29504956484"
     },
     {
-      "path": "assets/useEmailDraft-1qyr1t4--rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 3757,
-      "sha256": "252ecd79070b81d4ae56a1cf6be73c3d6e64a8105afd80313dc1f78fa384a3da"
+      "path": "assets/useEmailDraft-C39g6XaC.js",
+      "size": 3569,
+      "sha256": "0b319dc5b7abc34849e7174e0f3dab7839a9f04388c801d249e169ff4fcb39a1"
     },
     {
-      "path": "assets/workspaceBackupDocument-CmIblvWk.js",
+      "path": "assets/users-BAIGFyHW.js",
+      "size": 473,
+      "sha256": "67f634eedeb5fdba3d83418c16095dd4d32481cf6c3a5840d3615751f31d2cfc"
+    },
+    {
+      "path": "assets/workspaceBackupDocument-BxRf2gW5.js",
       "size": 23855,
-      "sha256": "4390eb06c50615da4bd8760f19bae1060f1cfa3077433f38b8565f9253b7ec22"
+      "sha256": "fd9f9dc4d5935ede4ce13e34285366d14f9505d3ad01eb319208ca0d76d7ae41"
     },
     {
-      "path": "assets/workspaceBackupRuntime-D0zailBL-rail-0d051b4003b1-station-96cc43c99b90-hricon-a82fb62d5869-sdk-72a42b966cdc-sync-1452a954e405.js",
-      "size": 66937,
-      "sha256": "b249b89d11dc8c7657da03948936506b989d9a4c512b72b9b7bc9a35a11ad2d5"
+      "path": "assets/workspaceBackupRuntime-CfA9dLra.js",
+      "size": 64909,
+      "sha256": "95303eb654ecf63fedd75676e1b4ac063407420dc16620028b7770a32a7916b8"
     },
     {
       "path": "index.html",
-      "size": 7194,
-      "sha256": "d0a9ff035ff2bda8445f569a457a268416c017791d26c81703a9bb30ede71e5e"
+      "size": 6739,
+      "sha256": "1f19b99bd4d3c1484a341f13faf2fdeb1756567271beef9423577a1e5d479e92"
     },
     {
       "path": "logo.png",
@@ -219,9 +225,5 @@
       "size": 3540,
       "sha256": "038a33d7a3169d7d9ae029a88c20e9fb3c6fe4661a6c617d8fd97582f96b2ce7"
     }
-  ],
-  "sourcePatch": {
-    "name": "windows-store-session-and-plugins",
-    "baselineRelease": "20261116_201247-prod"
-  }
+  ]
 }

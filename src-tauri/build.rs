@@ -4,6 +4,23 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rerun-if-changed=src/macos_notifications.m");
+        println!("cargo:rustc-link-lib=framework=UserNotifications");
+        cc::Build::new()
+            .file("src/macos_notifications.m")
+            .flag("-fobjc-arc")
+            .flag("-fblocks")
+            .compile("caiyun_macos_notifications");
+    }
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("ios") {
+        println!("cargo:rerun-if-changed=src/ios_mail.mm");
+        println!("cargo:rerun-if-changed=src/ios_viewport.mm");
+        println!("cargo:rustc-link-lib=framework=UIKit");
+        println!("cargo:rustc-link-lib=framework=UserNotifications");
+        cc::Build::new().file("src/ios_mail.mm").flag("-fobjc-arc").flag("-fblocks").compile("caiyun_ios_mail");
+        cc::Build::new().file("src/ios_viewport.mm").flag("-fobjc-arc").compile("caiyun_ios_viewport");
+    }
     let mut attributes =
         tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(&[
             "plugin_host_version",
@@ -27,6 +44,10 @@ fn main() {
             "download_and_install_resumable_update",
             "get_app_distribution_channel",
             "save_download_file",
+            "ios_mail_register_push",
+            "ios_mail_stop_push",
+            "ios_mail_take_actions",
+            "app_notification_bridge",
             "restart_app",
             "qwen_models",
             "qwen_verify",

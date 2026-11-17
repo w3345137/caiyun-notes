@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "10.2.14"
+version = "10.2.15"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -15,6 +15,7 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+cc = "1.2"
 tauri-build = { version = "2.5.6", features = [] }
 serde_json = "1.0"
 
@@ -59,6 +60,7 @@ webpki-root-certs = "=1.0.7"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 tauri-plugin-single-instance = "2"
+windows = { version = "0.61.3", features = ["Data_Xml_Dom", "UI_Notifications", "Win32_Storage_Packaging_Appx", "Win32_System_WinRT"] }
 
 [features]
 default = ["self-update", "frontend-hot-update"]

@@ -1,4 +1,16 @@
+mod plugin_host;
+mod speech;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod speech_model;
 mod download_file;
+#[cfg(target_os = "ios")]
+mod ios_mail;
+#[cfg(target_os = "macos")]
+mod macos_notifications;
+#[cfg(target_os = "windows")]
+mod windows_notifications;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod app_notifications;
 #[cfg(feature = "frontend-hot-update")]
 mod frontend_bundle;
 #[cfg(not(feature = "frontend-hot-update"))]
@@ -6,11 +18,9 @@ mod frontend_bundle;
 mod frontend_bundle;
 mod map_bridge;
 mod map_sessions;
-mod plugin_host;
-mod speech;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-mod speech_model;
 use download_file::save_download_file;
+#[cfg(target_os = "ios")]
+use ios_mail::{ios_mail_register_push, ios_mail_stop_push, ios_mail_take_actions};
 #[cfg(all(desktop, feature = "self-update"))]
 mod resumable_updater;
 use map_bridge::{
@@ -493,10 +503,7 @@ fn install_windows_tray(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
-        .register_uri_scheme_protocol("caiyun-plugin", |_ctx, request| {
-            plugin_host::runtime_response(request.uri().path())
-        });
+    let builder = tauri::Builder::default().register_uri_scheme_protocol("caiyun-plugin", |_ctx, request| plugin_host::runtime_response(request.uri().path()));
     #[cfg(desktop)]
     let builder = builder.register_uri_scheme_protocol("caiyun-map-probe", |_ctx, request| {
         let allowed = request.method() == tauri::http::Method::GET
@@ -526,6 +533,8 @@ pub fn run() {
         .manage(plugin_host::PluginHostState::default())
         .manage(std::sync::Mutex::new(map_sessions::MapSessions::default()))
         .invoke_handler(tauri::generate_handler![
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            app_notifications::app_notification_bridge,
             plugin_host::plugin_host_version,
             plugin_host::plugin_http_request,
             plugin_host::plugin_http_cancel,
@@ -552,6 +561,12 @@ pub fn run() {
             download_and_install_resumable_update,
             get_app_distribution_channel,
             save_download_file,
+            #[cfg(target_os = "ios")]
+            ios_mail_register_push,
+            #[cfg(target_os = "ios")]
+            ios_mail_stop_push,
+            #[cfg(target_os = "ios")]
+            ios_mail_take_actions,
             restart_app
         ])
         .setup(|app| {
@@ -628,6 +643,13 @@ pub fn run() {
                 };
                 builder.build()?
             };
+            #[cfg(target_os = "ios")]
+            main_window.with_webview(|webview| {
+                unsafe extern "C" {
+                    fn caiyun_fit_iphone_webview(handle: *mut std::ffi::c_void);
+                }
+                unsafe { caiyun_fit_iphone_webview(webview.inner()); }
+            })?;
             install_window_close_behavior(&main_window);
             #[cfg(target_os = "macos")]
             install_macos_window_menu(app)?;
@@ -638,7 +660,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
+    #[cfg(target_os = "ios")]
+    ios_mail::install_push_hooks();
     app.run(|app_handle, event| {
+        #[cfg(target_os = "ios")]
+        if let tauri::RunEvent::Opened { urls } = &event {
+            for url in urls {
+                ios_mail::queue_link(url);
+            }
+        }
         #[cfg(desktop)]
         if let tauri::RunEvent::ExitRequested { api, .. } = &event {
             let coordinator = app_handle.state::<ExitCoordinator>();
