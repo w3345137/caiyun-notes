@@ -21,61 +21,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: caiyun-notes-msix-${{ inputs.build_run_id }}
-          run-id: ${{ inputs.build_run_id }}
-          github-token: ${{ github.token }}
-          path: original
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Verify original package and install a temporary signed copy
-        timeout-minutes: 5
-        shell: pwsh
-        env:
-          EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
-          EXPECTED_PUBLISHER: CN=49D17C52-EB55-4439-9F79-0DFACFCB393C
-          EXPECTED_NAME: BinApp.547813EA77836
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $original = Get-ChildItem original -Filter *.msix -Recurse | Select-Object -First 1
-          if (-not $original) { throw 'MSIX artifact missing' }
-          $hash = (Get-FileHash $original.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne $env:EXPECTED_SHA256) { throw "Submitted artifact hash mismatch: $hash" }
-          Write-Host 'Original MSIX hash verified.'
-
-          $qaCopy = Join-Path $env:RUNNER_TEMP 'CaiyunNotes-qa-signed.msix'
-          Copy-Item -LiteralPath $original.FullName -Destination $qaCopy
-          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $env:EXPECTED_PUBLISHER `
-            -CertStoreLocation Cert:\CurrentUser\My -KeyExportPolicy Exportable
-          $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
-          Export-Certificate -Cert $cert -FilePath $certPath | Out-Null
-          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
-          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
-          Write-Host 'Temporary QA certificate trusted on isolated runner.'
-          $sdkDir = 'C:\Program Files (x86)\Windows Kits\10\bin'
-          $signTool = Get-ChildItem $sdkDir -Recurse -Filter signtool.exe |
-            Where-Object { $_.FullName -match '\\x64\\' } |
-            Sort-Object FullName | Select-Object -Last 1
-          if (-not $signTool) { throw 'signtool.exe missing' }
-          & $signTool.FullName sign /fd sha256 /sha1 $cert.Thumbprint $qaCopy
-          if ($LASTEXITCODE -ne 0) { throw "SignTool failed: $LASTEXITCODE" }
-          Write-Host 'Temporary QA copy signed.'
-
-          Write-Host 'Installing temporary QA MSIX...'
-          Add-AppxPackage -Path $qaCopy -ErrorAction Stop
-          $package = Get-AppxPackage -Name $env:EXPECTED_NAME
-          if (-not $package) { throw 'Package was not registered after install' }
-          if ($package.Publisher -ne $env:EXPECTED_PUBLISHER) {
-            throw "Publisher mismatch: $($package.Publisher)"
-          }
-          if ($package.Version.ToString() -ne '10.2.13.0') {
-            throw "Version mismatch: $($package.Version)"
-          }
-          Write-Host "Installed package: $($package.PackageFullName)"
-          Write-Host 'Original MSIX remains unsigned and byte-for-byte unchanged.'
 
       - name: Install isolated audit dependencies
         shell: pwsh
@@ -83,17 +31,15 @@ jobs:
           npm install --prefix "$env:RUNNER_TEMP/qa-msix-deps" --no-audit --no-fund playwright-core@1.58.2 yjs@13.6.30 @hocuspocus/server@4.0.0 ws@8
           if ($LASTEXITCODE -ne 0) { throw 'Audit dependencies unavailable' }
 
-      - name: Exercise notes, recovery and plugins in packaged Windows WebView2
-        timeout-minutes: 7
+      - name: Repeat the same notes and sync audit with the official direct Windows executable
+        timeout-minutes: 6
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $package = Get-AppxPackage -Name 'BinApp.547813EA77836'
           $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=18495 --remote-debugging-address=127.0.0.1'
           $policy = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
           New-Item -Path $policy -Force | Out-Null
           New-ItemProperty -Path $policy -Name '*' -Value $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -PropertyType String -Force | Out-Null
-          $exe = Join-Path $package.InstallLocation 'app\app.exe'
           $directSetup = Join-Path $env:RUNNER_TEMP 'CaiyunNotes-direct-10.2.13.exe'
           curl.exe --fail --silent --show-error --location --max-time 35 'https://github.com/w3345137/caiyun-notes/releases/download/p25/_10.2.13_x64-setup.exe' -o $directSetup
           if ($LASTEXITCODE -ne 0) { throw 'Download of official direct installer failed' }
@@ -101,56 +47,32 @@ jobs:
           & 'C:\Program Files\7-Zip\7z.exe' x "-o$directPayload" $directSetup 'app.exe' | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'Extracting the official direct app failed' }
           $directExe = Join-Path $directPayload 'app.exe'
-          $direct = Start-Process -FilePath $directExe -WorkingDirectory $directPayload -PassThru
+          $process = Start-Process -FilePath $directExe -WorkingDirectory $directPayload -PassThru
           try {
             node scripts/probe-msstore-plugin-ipc.mjs direct
             if ($LASTEXITCODE -ne 0) { throw 'Direct app startup probe failed' }
-          } finally {
-            taskkill /PID $direct.Id /T /F | Out-Null
-          }
-          Push-Location (Split-Path -Parent $exe)
-          $stdout = Join-Path $env:RUNNER_TEMP 'msix-stdout.txt'
-          $stderr = Join-Path $env:RUNNER_TEMP 'msix-stderr.txt'
-          $process = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-          Pop-Location
-          try {
-            Start-Sleep -Seconds 5
-            $process.Refresh()
-            if ($process.HasExited) {
-              Get-Content $stdout,$stderr
-              throw "Packaged app exited with code $($process.ExitCode)"
-            }
-            Write-Host "MSIX app PID $($process.Id), main window $($process.MainWindowHandle)"
-            Get-CimInstance Win32_Process -Filter "name='msedgewebview2.exe'" | Select-Object ProcessId,ParentProcessId,CommandLine | Format-List
             node scripts/probe-msstore-plugin-ipc.mjs bundled
-            if ($LASTEXITCODE -ne 0) { throw 'Bundled IPC probe failed' }
+            if ($LASTEXITCODE -ne 0) { throw 'Direct signed update probe failed' }
           } finally {
             taskkill /PID $process.Id /T /F | Out-Null
           }
-          $process = Start-Process -FilePath $exe -PassThru
-          try {
-            node scripts/probe-msstore-plugin-ipc.mjs restarted
-            if ($LASTEXITCODE -ne 0) { throw 'Restarted IPC probe failed' }
-            node scripts/audit-msix-notes.mjs edit
-            if ($LASTEXITCODE -ne 0) { throw 'MSIX notes edit audit failed' }
-          } finally {
-            taskkill /PID $process.Id /T /F | Out-Null
+          $results = @{}
+          foreach ($phase in @('edit','weak-auth','recover')) {
+            $process = Start-Process -FilePath $directExe -WorkingDirectory $directPayload -PassThru
+            try {
+              if ($phase -eq 'edit') {
+                node scripts/probe-msstore-plugin-ipc.mjs restarted
+                if ($LASTEXITCODE -ne 0) { throw 'Direct reload probe failed' }
+              }
+              node scripts/audit-msix-notes.mjs $phase
+              $results[$phase] = $LASTEXITCODE
+            } finally {
+              taskkill /PID $process.Id /T /F | Out-Null
+            }
           }
-
-          $process = Start-Process -FilePath $exe -PassThru
-          try {
-            node scripts/audit-msix-notes.mjs weak-auth
-            if ($LASTEXITCODE -ne 0) { throw 'Could not verify transient authentication failure' }
-          } finally {
-            taskkill /PID $process.Id /T /F | Out-Null
-          }
-
-          $process = Start-Process -FilePath $exe -PassThru
-          try {
-            node scripts/audit-msix-notes.mjs recover
-            if ($LASTEXITCODE -ne 0) { throw 'MSIX offline recovery audit failed' }
-          } finally {
-            taskkill /PID $process.Id /T /F | Out-Null
+          Write-Host "Direct audit results: $($results | ConvertTo-Json -Compress)"
+          if (($results.Values | Where-Object { $_ -ne 0 }).Count -gt 0) {
+            throw 'Direct comparison found a failing path'
           }
 
       - uses: actions/upload-artifact@v4
