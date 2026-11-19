@@ -123,13 +123,13 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               $versionAfter = (Get-ItemProperty $legacyKey -ErrorAction SilentlyContinue).DisplayVersion
               $originalExists = Test-Path -LiteralPath $location
-              $backupExists = Test-Path -LiteralPath ($location + '.legacy-program-10.2.8')
+              $backupExists = Test-Path -LiteralPath ($location + '.legacy-program-10.2.8\program')
               Write-Host "After failed handoff: old registration=$versionAfter, original=$originalExists, backup=$backupExists"
               throw 'Packaged retirement IPC failed'
             }
             if (Test-Path $legacyKey) { throw 'Old registration still present in the Windows user registry' }
             if (Test-Path -LiteralPath $location) { throw 'Old program path still active' }
-            $backupExe = Join-Path ($location + '.legacy-program-10.2.8') 'app.exe'
+            $backupExe = Join-Path ($location + '.legacy-program-10.2.8\program') 'app.exe'
             if ((Get-FileHash $backupExe).Hash -ne $hash -or (Get-Content $marker -Raw).Trim() -ne 'isolated offline data') { throw 'Program backup or local data did not survive retirement' }
             $process.Refresh()
             if ($process.HasExited) { throw 'Store app stopped during retirement' }
