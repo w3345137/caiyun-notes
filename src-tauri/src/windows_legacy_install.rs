@@ -271,7 +271,12 @@ fn retire_registered_legacy() -> Result<bool, String> {
     let dir = local.join("彩云笔记");
     let backup = local.join(format!("彩云笔记.legacy-program-{version}"));
     let exe = dir.join("app.exe");
-    if !matches_legacy_registration(&dir, &version) || !matches!(legacy_running(&exe), Ok(false)) {
+    if !matches_legacy_registration(&dir, &version) {
+        return Ok(false);
+    }
+    let old_app_running = legacy_running(&exe)
+        .map_err(|error| format!("Legacy process check failed: {}", error.code()))?;
+    if old_app_running {
         return Ok(false);
     }
     let registration = LegacyRegistration::open_for_delete()?;
@@ -279,27 +284,35 @@ fn retire_registered_legacy() -> Result<bool, String> {
     // Retire only the verified program directory and its registration. The
     // sibling com.caiyun.notes data folders and migrated pins are independent.
     if dir.exists() {
-        if backup.exists() || !is_verified_program_dir(&dir, files) {
-            return Ok(false);
+        if backup.exists() {
+            return Err("Legacy program and backup both exist".into());
+        }
+        if !is_verified_program_dir(&dir, files) {
+            return Err("Legacy program directory could not be verified".into());
         }
         fs::rename(&dir, &backup)
             .map_err(|error| format!("Legacy program move failed: {error}"))?;
     } else if !is_verified_program_dir(&backup, files) {
-        return Ok(false);
+        return Err("Legacy program and verified backup are unavailable".into());
     }
-    let safe_to_unregister = is_verified_program_dir(&backup, files)
-        && matches!(legacy_running(&exe), Ok(false))
-        && matches_legacy_registration(&dir, &version);
-    let retired = if safe_to_unregister {
-        registration.delete().and_then(|()| {
-            if registry_string(w!("UninstallString")).is_some() {
-                return Err("Legacy registration still visible after removal".into());
-            }
-            Ok(true)
-        })
-    } else {
-        Ok(false)
-    };
+    let retired = (|| {
+        if !is_verified_program_dir(&backup, files) {
+            return Err("Legacy program backup could not be verified after the move".into());
+        }
+        if legacy_running(&exe)
+            .map_err(|error| format!("Legacy process recheck failed: {}", error.code()))?
+        {
+            return Ok(false);
+        }
+        if !matches_legacy_registration(&dir, &version) {
+            return Err("Legacy installation registration changed during retirement".into());
+        }
+        registration.delete()?;
+        if registry_string(w!("UninstallString")).is_some() {
+            return Err("Legacy registration still visible after removal".into());
+        }
+        Ok(true)
+    })();
     if !matches!(retired, Ok(true)) && !dir.exists() {
         fs::rename(&backup, &dir)
             .map_err(|error| format!("Legacy program rollback failed: {error}"))?;
