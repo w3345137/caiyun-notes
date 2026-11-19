@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
-  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:rescap3="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities/3"
+  IgnorableNamespaces="rescap3">
   <Identity Name="{{IDENTITY_NAME}}" Version="{{VERSION}}" Publisher="{{PUBLISHER}}" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>{{DISPLAY_NAME}}</DisplayName>
@@ -16,5 +18,15 @@
     <uap:VisualElements DisplayName="{{DISPLAY_NAME}}" Description="彩云笔记" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent">
       <uap:DefaultTile />
     </uap:VisualElements>
+    <Extensions>
+      <rescap3:Extension Category="windows.desktopAppMigration">
+        <rescap3:DesktopAppMigration>
+          <rescap3:DesktopApp AumId="com.caiyun.notes" />
+          <rescap3:DesktopApp ShortcutPath="%USERPROFILE%\Desktop\彩云笔记.lnk" />
+          <rescap3:DesktopApp ShortcutPath="%APPDATA%\Microsoft\Windows\Start Menu\Programs\彩云笔记.lnk" />
+          <rescap3:DesktopApp ShortcutPath="%APPDATA%\Microsoft\Windows\Start Menu\Programs\彩云笔记\彩云笔记.lnk" />
+        </rescap3:DesktopAppMigration>
+      </rescap3:Extension>
+    </Extensions>
   </Application></Applications>
 </Package>

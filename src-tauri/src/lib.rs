@@ -9,6 +9,8 @@ mod ios_mail;
 mod macos_notifications;
 #[cfg(target_os = "windows")]
 mod windows_notifications;
+#[cfg(all(target_os = "windows", feature = "msstore-distribution"))]
+mod windows_legacy_install;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod app_notifications;
 #[cfg(feature = "frontend-hot-update")]
@@ -535,6 +537,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             app_notifications::app_notification_bridge,
+            #[cfg(all(target_os = "windows", feature = "msstore-distribution"))]
+            windows_legacy_install::has_legacy_windows_install,
+            #[cfg(all(target_os = "windows", feature = "msstore-distribution"))]
+            windows_legacy_install::retire_legacy_windows_install,
             plugin_host::plugin_host_version,
             plugin_host::plugin_http_request,
             plugin_host::plugin_http_cancel,

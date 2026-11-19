@@ -32,11 +32,14 @@ const MOBILE_RUNTIME_VERSION: &str = "mobile-v1";
 // frontend from the previous installation must not replace that bundle.
 const MSSTORE_EMBEDDED_FIX_VERSION: Version = Version::new(10, 2, 14);
 const MSSTORE_PREVIOUS_FRONTEND: &str = "20261116_201247-prod";
+const MSSTORE_MIGRATION_VERSION: Version = Version::new(10, 2, 16);
+const MSSTORE_PRE_MIGRATION_FRONTEND: &str = "20261119_105257-prod";
 
 fn store_frontend_predates_embedded_fix(shell_version: &Version, release_id: &str) -> bool {
     cfg!(feature = "msstore-distribution")
-        && *shell_version >= MSSTORE_EMBEDDED_FIX_VERSION
-        && release_id <= MSSTORE_PREVIOUS_FRONTEND
+        && ((*shell_version >= MSSTORE_EMBEDDED_FIX_VERSION && release_id <= MSSTORE_PREVIOUS_FRONTEND)
+            || (*shell_version >= MSSTORE_MIGRATION_VERSION
+                && release_id <= MSSTORE_PRE_MIGRATION_FRONTEND))
 }
 
 fn native_mobile_channel() -> Option<&'static str> {
