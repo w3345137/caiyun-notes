@@ -16,24 +16,45 @@ await new Promise((resolve, reject) => {
   socket.addEventListener('open', resolve, { once: true });
   socket.addEventListener('error', reject, { once: true });
 });
-const reply = new Promise((resolve, reject) => {
-  const timer = globalThis.setTimeout(() => reject(new Error('Packaged IPC timed out')), 25000);
-  socket.addEventListener('message', event => {
-    const value = JSON.parse(event.data);
-    if (value.id !== 1) return;
-    clearTimeout(timer);
-    if (value.error || value.result?.exceptionDetails) {
-      reject(new Error(JSON.stringify(value.error || value.result.exceptionDetails)));
-    } else {
-      resolve(value.result.result.value);
+let nextId = 0;
+function evaluate(expression) {
+  const id = ++nextId;
+  return new Promise((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      socket.removeEventListener('message', message);
+      reject(new Error('Packaged WebView evaluation timed out'));
+    }, 25000);
+    function message(event) {
+      const value = JSON.parse(event.data);
+      if (value.id !== id) return;
+      clearTimeout(timer);
+      socket.removeEventListener('message', message);
+      if (value.error || value.result?.exceptionDetails) {
+        reject(new Error(JSON.stringify(value.error || value.result.exceptionDetails)));
+      } else {
+        resolve(value.result.result.value);
+      }
     }
+    socket.addEventListener('message', message);
+    socket.send(JSON.stringify({
+      id,
+      method: 'Runtime.evaluate',
+      params: { expression, awaitPromise: true, returnByValue: true },
+    }));
   });
-});
-socket.send(JSON.stringify({
-  id: 1,
-  method: 'Runtime.evaluate',
-  params: {
-    expression: `(async()=>{
+}
+
+try {
+  let ready;
+  for (let attempt = 0; attempt < 35; attempt++) {
+    ready = await evaluate(`Boolean(self.origin !== 'null' && location.hostname === 'tauri.localhost'
+      && document.readyState === 'complete' && document.getElementById('root')
+      && window.__TAURI_INTERNALS__?.invoke)`).catch(() => false);
+    if (ready) break;
+    await setTimeout(600);
+  }
+  assert.ok(ready, 'Tauri main document and IndexedDB origin did not finish loading');
+  const result = await evaluate(`(async()=>{
       const fixture = await new Promise((resolve,reject)=>{
         const request = indexedDB.open('caiyun-isolated-handoff-qa', 1);
         request.onupgradeneeded=()=>request.result.createObjectStore('test');
@@ -57,13 +78,7 @@ socket.send(JSON.stringify({
       const before = await invoke('has_legacy_windows_install');
       const retired = await invoke('retire_legacy_windows_install');
       return {channel,before,retired,fixture,after:await invoke('has_legacy_windows_install')};
-    })()`,
-    awaitPromise: true,
-    returnByValue: true,
-  },
-}));
-try {
-  const result = await reply;
+    })()`);
   console.log(result);
   assert.deepEqual(result, legacy ? { fixture: true } : { channel: 'msstore', before: true, retired: true, fixture: true, after: false });
 } finally {
