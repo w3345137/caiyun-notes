@@ -12,6 +12,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 use windows::Win32::System::Registry::{
     RegDeleteKeyW, RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ,
 };
+use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
@@ -20,6 +21,20 @@ const LEGACY_UNINSTALL_KEY: PCWSTR =
     w!("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\彩云笔记");
 const STORE_FAMILY: &str = "BinApp.547813EA77836_hex6nfb75njyr";
 static RETIRE_LOCK: Mutex<()> = Mutex::new(());
+
+#[link(name = "ntdll")]
+extern "system" {
+    fn RtlGetVersion(info: *mut OSVERSIONINFOW) -> i32;
+}
+
+fn supports_targeted_virtualization() -> bool {
+    let mut version = OSVERSIONINFOW {
+        dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as u32,
+        ..Default::default()
+    };
+    // On older systems the scoped manifest exclusions are ignored.
+    (unsafe { RtlGetVersion(&mut version) }) == 0 && version.dwBuildNumber >= 22_000
+}
 
 struct OwnedHandle(HANDLE);
 
@@ -185,14 +200,16 @@ fn legacy_running(exe: &Path) -> windows::core::Result<bool> {
 
 #[tauri::command]
 pub fn has_legacy_windows_install() -> bool {
-    is_packaged_caiyun() && registry_string(w!("UninstallString")).is_some()
+    is_packaged_caiyun()
+        && supports_targeted_virtualization()
+        && registry_string(w!("UninstallString")).is_some()
 }
 
 fn retire_registered_legacy() -> Result<bool, String> {
     let _lock = RETIRE_LOCK
         .lock()
         .map_err(|_| "Legacy migration lock failed")?;
-    if !is_packaged_caiyun() {
+    if !is_packaged_caiyun() || !supports_targeted_virtualization() {
         return Ok(false);
     }
     let Some(version) = registry_string(w!("DisplayVersion")) else {
@@ -225,7 +242,8 @@ fn retire_registered_legacy() -> Result<bool, String> {
     } else if !is_verified_program_dir(&backup, files) {
         return Ok(false);
     }
-    let retired = matches!(legacy_running(&exe), Ok(false))
+    let retired = is_verified_program_dir(&backup, files)
+        && matches!(legacy_running(&exe), Ok(false))
         && matches_legacy_registration(&dir, &version)
         && unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, LEGACY_UNINSTALL_KEY) } == ERROR_SUCCESS
         && registry_string(w!("UninstallString")).is_none();
