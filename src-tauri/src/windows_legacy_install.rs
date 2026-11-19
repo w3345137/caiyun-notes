@@ -10,7 +10,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::Registry::{
-    RegDeleteKeyW, RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ,
+    RegCloseKey, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, REG_SAM_FLAGS, RRF_RT_REG_SZ,
 };
 use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
 use windows::Win32::System::Threading::{
@@ -25,6 +25,7 @@ static RETIRE_LOCK: Mutex<()> = Mutex::new(());
 #[link(name = "ntdll")]
 extern "system" {
     fn RtlGetVersion(info: *mut OSVERSIONINFOW) -> i32;
+    fn NtDeleteKey(key: HKEY) -> i32;
 }
 
 fn supports_targeted_virtualization() -> bool {
@@ -41,6 +42,49 @@ struct OwnedHandle(HANDLE);
 impl Drop for OwnedHandle {
     fn drop(&mut self) {
         let _ = unsafe { CloseHandle(self.0) };
+    }
+}
+
+struct LegacyRegistration(HKEY);
+
+impl LegacyRegistration {
+    fn open_for_delete() -> Result<Self, String> {
+        const DELETE_ACCESS: REG_SAM_FLAGS = REG_SAM_FLAGS(0x0001_0000);
+        let mut key = HKEY::default();
+        // Open the exact excluded key. Opening its virtualized parent for the
+        // delete can hide the old registration without removing it externally.
+        let status = unsafe {
+            RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                LEGACY_UNINSTALL_KEY,
+                None,
+                DELETE_ACCESS,
+                &mut key,
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return Err(format!(
+                "Legacy registration open failed: Win32 {}",
+                status.0
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn delete(self) -> Result<(), String> {
+        let status = unsafe { NtDeleteKey(self.0) };
+        if status != 0 {
+            return Err(format!(
+                "Legacy registration removal failed: NTSTATUS {status:#010x}"
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Drop for LegacyRegistration {
+    fn drop(&mut self) {
+        let _ = unsafe { RegCloseKey(self.0) };
     }
 }
 
@@ -230,6 +274,7 @@ fn retire_registered_legacy() -> Result<bool, String> {
     if !matches_legacy_registration(&dir, &version) || !matches!(legacy_running(&exe), Ok(false)) {
         return Ok(false);
     }
+    let registration = LegacyRegistration::open_for_delete()?;
     // The old NSIS uninstaller can terminate any app.exe by process name.
     // Retire only the verified program directory and its registration. The
     // sibling com.caiyun.notes data folders and migrated pins are independent.
@@ -242,16 +287,24 @@ fn retire_registered_legacy() -> Result<bool, String> {
     } else if !is_verified_program_dir(&backup, files) {
         return Ok(false);
     }
-    let retired = is_verified_program_dir(&backup, files)
+    let safe_to_unregister = is_verified_program_dir(&backup, files)
         && matches!(legacy_running(&exe), Ok(false))
-        && matches_legacy_registration(&dir, &version)
-        && unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, LEGACY_UNINSTALL_KEY) } == ERROR_SUCCESS
-        && registry_string(w!("UninstallString")).is_none();
-    if !retired && !dir.exists() {
+        && matches_legacy_registration(&dir, &version);
+    let retired = if safe_to_unregister {
+        registration.delete().and_then(|()| {
+            if registry_string(w!("UninstallString")).is_some() {
+                return Err("Legacy registration still visible after removal".into());
+            }
+            Ok(true)
+        })
+    } else {
+        Ok(false)
+    };
+    if !matches!(retired, Ok(true)) && !dir.exists() {
         fs::rename(&backup, &dir)
             .map_err(|error| format!("Legacy program rollback failed: {error}"))?;
     }
-    Ok(retired)
+    retired
 }
 
 #[tauri::command]
