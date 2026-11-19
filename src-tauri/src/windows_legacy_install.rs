@@ -20,6 +20,7 @@ use windows::Win32::System::Threading::{
 const LEGACY_UNINSTALL_KEY: PCWSTR =
     w!("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\彩云笔记");
 const STORE_FAMILY: &str = "BinApp.547813EA77836_hex6nfb75njyr";
+const REPARSE_POINT: u32 = 0x400;
 static RETIRE_LOCK: Mutex<()> = Mutex::new(());
 
 #[link(name = "ntdll")]
@@ -165,12 +166,13 @@ fn matches_legacy_registration(dir: &Path, version: &str) -> bool {
         && matches_registered_path(w!("UninstallString"), &dir.join("uninstall.exe"))
 }
 
+fn is_plain_directory(dir: &Path) -> bool {
+    fs::symlink_metadata(dir)
+        .is_ok_and(|metadata| metadata.is_dir() && metadata.file_attributes() & REPARSE_POINT == 0)
+}
+
 fn is_verified_program_dir(dir: &Path, expected: &[(&str, &str)]) -> bool {
-    const REPARSE_POINT: u32 = 0x400;
-    let Ok(metadata) = fs::symlink_metadata(dir) else {
-        return false;
-    };
-    if !metadata.is_dir() || metadata.file_attributes() & REPARSE_POINT != 0 {
+    if !is_plain_directory(dir) {
         return false;
     }
     let Ok(entries) = fs::read_dir(dir).and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
@@ -269,7 +271,8 @@ fn retire_registered_legacy() -> Result<bool, String> {
         return Ok(false);
     }
     let dir = local.join("彩云笔记");
-    let backup = local.join(format!("彩云笔记.legacy-program-{version}"));
+    let backup_root = local.join(format!("彩云笔记.legacy-program-{version}"));
+    let backup = backup_root.join("program");
     let exe = dir.join("app.exe");
     if !matches_legacy_registration(&dir, &version) {
         return Ok(false);
@@ -280,6 +283,16 @@ fn retire_registered_legacy() -> Result<bool, String> {
         return Ok(false);
     }
     let registration = LegacyRegistration::open_for_delete()?;
+    // MSIX may create the excluded directory at install. Place the
+    // recoverable program under it so an empty directory is not a collision.
+    match fs::create_dir(&backup_root) {
+        Ok(()) => (),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
+        Err(error) => return Err(format!("Legacy backup directory creation failed: {error}")),
+    }
+    if !is_plain_directory(&backup_root) {
+        return Err("Legacy backup directory is not a plain directory".into());
+    }
     // The old NSIS uninstaller can terminate any app.exe by process name.
     // Retire only the verified program directory and its registration. The
     // sibling com.caiyun.notes data folders and migrated pins are independent.
