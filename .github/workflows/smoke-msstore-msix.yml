@@ -101,8 +101,18 @@ jobs:
           New-Item -ItemType Directory -Path $appData -Force | Out-Null
           $marker = Join-Path $appData 'ci-offline-data.txt'
           Set-Content -LiteralPath $marker -Value 'isolated offline data'
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19222'
-          $process = Start-Process -FilePath (Join-Path $package.InstallLocation 'app\app.exe') -PassThru
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19222 --remote-debugging-address=127.0.0.1'
+          $policy = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          New-Item -Path $policy -Force | Out-Null
+          New-ItemProperty -Path $policy -Name '*' -Value $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -PropertyType String -Force | Out-Null
+          $legacyProcess = Start-Process -FilePath $legacyExe -WorkingDirectory $location -PassThru
+          try {
+            node scripts/verify-legacy-handoff-runtime.mjs legacy
+            if ($LASTEXITCODE -ne 0) { throw 'Legacy profile fixture write failed' }
+          } finally {
+            taskkill /PID $legacyProcess.Id /T /F | Out-Null
+          }
+          $process = Start-Process -FilePath (Join-Path $package.InstallLocation 'app\app.exe') -WorkingDirectory (Join-Path $package.InstallLocation 'app') -PassThru
           try {
             node scripts/verify-legacy-handoff-runtime.mjs
             if ($LASTEXITCODE -ne 0) { throw 'Packaged retirement IPC failed' }
@@ -114,5 +124,6 @@ jobs:
             if ($process.HasExited) { throw 'Store app stopped during retirement' }
             Write-Host 'Legacy program retired; store app, archived program and offline data survived'
           } finally {
-            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+            if (-not $process.HasExited) { taskkill /PID $process.Id /T /F | Out-Null }
+            Remove-ItemProperty -Path $policy -Name '*' -ErrorAction SilentlyContinue
           }
