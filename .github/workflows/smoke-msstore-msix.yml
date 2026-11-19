@@ -1,14 +1,13 @@
-name: Smoke test submitted MSIX
-
+name: Verify Windows Store legacy handoff
 on:
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: Successful Build MS Store workflow run ID
+        description: Candidate Windows build run
         required: true
         type: string
       expected_sha256:
-        description: Exact SHA-256 of the unsigned MSIX to install
+        description: Exact candidate SHA-256
         required: true
         type: string
 
@@ -17,211 +16,103 @@ permissions:
   contents: read
 
 jobs:
-  install-msix:
+  install:
     runs-on: windows-latest
+    timeout-minutes: 12
+    env:
+      CANDIDATE_SHA: ${{ inputs.expected_sha256 }}
+      PACKAGE_NAME: BinApp.547813EA77836
+      PUBLISHER: CN=49D17C52-EB55-4439-9F79-0DFACFCB393C
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: caiyun-notes-msix-${{ inputs.build_run_id }}
           run-id: ${{ inputs.build_run_id }}
           github-token: ${{ github.token }}
-          path: original
-
-      - name: Probe the unpackaged Win32 WebView2 profile
-        timeout-minutes: 2
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $original = Get-ChildItem original -Filter *.msix -Recurse | Select-Object -First 1
-          if (-not $original) { throw 'MSIX artifact missing before unpackaged profile probe' }
-          $zip = Join-Path $env:RUNNER_TEMP 'caiyun-msix-probe.zip'
-          $extracted = Join-Path $env:RUNNER_TEMP 'caiyun-msix-probe'
-          Copy-Item -LiteralPath $original.FullName -Destination $zip
-          Expand-Archive -LiteralPath $zip -DestinationPath $extracted
-          $legacyExe = Join-Path $extracted 'app\app.exe'
-          if (-not (Test-Path -LiteralPath $legacyExe -PathType Leaf)) {
-            throw 'Unpackaged executable was not present in the MSIX payload'
-          }
-          $legacyProfile = Join-Path $env:LOCALAPPDATA 'com.caiyun.notes\EBWebView'
-          $legacyProcess = Start-Process -FilePath $legacyExe -PassThru
-          try {
-            Start-Sleep -Seconds 8
-            $legacyProcess.Refresh()
-            if ($legacyProcess.HasExited) {
-              throw "Unpackaged app exited before profile probe (code $($legacyProcess.ExitCode))"
-            }
-            Write-Host "Unpackaged Win32 profile exists: $(Test-Path -LiteralPath $legacyProfile)"
-            if (-not (Test-Path -LiteralPath $legacyProfile -PathType Container)) {
-              throw 'Unpackaged app did not create its expected WebView2 profile'
-            }
-            $marker = Join-Path $legacyProfile 'caiyun-msix-profile-probe.txt'
-            Set-Content -LiteralPath $marker -Value 'isolated-ci-legacy-profile' -Encoding ascii
-            Write-Host 'Unpackaged profile marker staged for packaged-app comparison.'
-          } finally {
-            taskkill /PID $legacyProcess.Id /T /F | Out-Null
-          }
-
-      - name: Verify original package and install a temporary signed copy
-        timeout-minutes: 5
-        shell: pwsh
-        env:
-          EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
-          EXPECTED_PUBLISHER: CN=49D17C52-EB55-4439-9F79-0DFACFCB393C
-          EXPECTED_NAME: BinApp.547813EA77836
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $original = Get-ChildItem original -Filter *.msix -Recurse | Select-Object -First 1
-          if (-not $original) { throw 'MSIX artifact missing' }
-          $hash = (Get-FileHash $original.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne $env:EXPECTED_SHA256) { throw "Submitted artifact hash mismatch: $hash" }
-          Write-Host 'Original MSIX hash verified.'
-
-          $qaCopy = Join-Path $env:RUNNER_TEMP 'CaiyunNotes-qa-signed.msix'
-          Copy-Item -LiteralPath $original.FullName -Destination $qaCopy
-          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $env:EXPECTED_PUBLISHER `
-            -CertStoreLocation Cert:\CurrentUser\My -KeyExportPolicy Exportable
-          $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
-          Export-Certificate -Cert $cert -FilePath $certPath | Out-Null
-          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
-          Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
-          Write-Host 'Temporary QA certificate trusted on isolated runner.'
-          $sdkDir = 'C:\Program Files (x86)\Windows Kits\10\bin'
-          $signTool = Get-ChildItem $sdkDir -Recurse -Filter signtool.exe |
-            Where-Object { $_.FullName -match '\\x64\\' } |
-            Sort-Object FullName | Select-Object -Last 1
-          if (-not $signTool) { throw 'signtool.exe missing' }
-          & $signTool.FullName sign /fd sha256 /sha1 $cert.Thumbprint $qaCopy
-          if ($LASTEXITCODE -ne 0) { throw "SignTool failed: $LASTEXITCODE" }
-          Write-Host 'Temporary QA copy signed.'
-
-          Write-Host 'Installing temporary QA MSIX...'
-          Add-AppxPackage -Path $qaCopy -ErrorAction Stop
-          $package = Get-AppxPackage -Name $env:EXPECTED_NAME
-          if (-not $package) { throw 'Package was not registered after install' }
-          if ($package.Publisher -ne $env:EXPECTED_PUBLISHER) {
-            throw "Publisher mismatch: $($package.Publisher)"
-          }
-          if ($package.Version.ToString() -ne '10.2.9.0') {
-            throw "Version mismatch: $($package.Version)"
-          }
-          Write-Host "Installed package: $($package.PackageFullName)"
-          Write-Host 'Original MSIX remains unsigned and byte-for-byte unchanged.'
-
-      - name: Check packaged application starts
-        timeout-minutes: 2
-        shell: pwsh
-        env:
-          EXPECTED_NAME: BinApp.547813EA77836
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $package = Get-AppxPackage -Name $env:EXPECTED_NAME
-          if (-not $package) { throw 'Installed package missing before launch smoke' }
-          $exe = Join-Path $package.InstallLocation 'app\app.exe'
-          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
-            throw "Packaged executable missing: $exe"
-          }
-          Write-Host "Launching packaged executable: $exe"
-          $process = Start-Process -FilePath $exe -PassThru
-          Start-Sleep -Seconds 8
-          $process.Refresh()
-          if ($process.HasExited) {
-            throw "Packaged app exited within 8 seconds (exit code $($process.ExitCode))"
-          }
-          Write-Host "Packaged app remained running (PID $($process.Id))."
-          $process.Refresh()
-          Write-Host "Packaged app main window handle: $($process.MainWindowHandle)"
-          if ($process.MainWindowHandle -eq [IntPtr]::Zero) {
-            Write-Warning 'No main window handle was visible to the isolated CI runner; this does not establish that the desktop UI rendered.'
-          } else {
-            Add-Type -AssemblyName System.Drawing
-            Add-Type @'
-          using System;
-          using System.Runtime.InteropServices;
-          public static class CaiyunWindowCapture {
-            [StructLayout(LayoutKind.Sequential)]
-            public struct Rect { public int Left, Top, Right, Bottom; }
-            [DllImport("user32.dll")]
-            public static extern bool GetWindowRect(IntPtr handle, out Rect rect);
-            [DllImport("user32.dll")]
-            public static extern bool PrintWindow(IntPtr handle, IntPtr hdc, uint flags);
-          }
-          '@
-            $windowRect = New-Object CaiyunWindowCapture+Rect
-            if ([CaiyunWindowCapture]::GetWindowRect($process.MainWindowHandle, [ref]$windowRect)) {
-              $width = $windowRect.Right - $windowRect.Left
-              $height = $windowRect.Bottom - $windowRect.Top
-              if ($width -gt 0 -and $height -gt 0 -and $width -le 4096 -and $height -le 4096) {
-                $bitmap = New-Object System.Drawing.Bitmap($width, $height)
-                $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-                try {
-                  $deviceContext = $graphics.GetHdc()
-                  try {
-                    $captured = [CaiyunWindowCapture]::PrintWindow($process.MainWindowHandle, $deviceContext, 2)
-                  } finally {
-                    $graphics.ReleaseHdc($deviceContext)
-                  }
-                  if ($captured) {
-                    $screenshot = Join-Path $env:RUNNER_TEMP 'caiyun-msix-window.png'
-                    $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
-                    Write-Host "Captured isolated MSIX window: $screenshot"
-                  } else {
-                    Write-Warning 'PrintWindow did not capture the MSIX window.'
-                  }
-                } finally {
-                  $graphics.Dispose()
-                  $bitmap.Dispose()
-                }
-              }
-            }
-          }
-          $allProcesses = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine)
-          $descendantIds = @($process.Id)
-          do {
-            $previousCount = $descendantIds.Count
-            $children = @($allProcesses | Where-Object { $descendantIds -contains $_.ParentProcessId })
-            $descendantIds = @($descendantIds + @($children | ForEach-Object { $_.ProcessId }) | Select-Object -Unique)
-          } while ($descendantIds.Count -gt $previousCount)
-          $descendants = @($allProcesses | Where-Object { $descendantIds -contains $_.ProcessId })
-          $descendants | Select-Object ProcessId, ParentProcessId, Name | Format-Table -AutoSize | Out-String | Write-Host
-          $webviewProcesses = @($descendants | Where-Object { $_.Name -ieq 'msedgewebview2.exe' })
-          Write-Host "WebView2 descendant process count: $($webviewProcesses.Count)"
-          if ($webviewProcesses.Count -eq 0) {
-            throw 'Packaged app stayed alive but did not start a WebView2 process'
-          }
-          foreach ($webview in $webviewProcesses) {
-            if ($webview.CommandLine -match '--user-data-dir=(?:"([^"]+)"|(\S+))') {
-              $dataDir = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
-              Write-Host "WebView2 user data directory: $dataDir"
-              $privateDir = Join-Path $env:LOCALAPPDATA "Packages\$($package.PackageFamilyName)\LocalCache\Local\com.caiyun.notes\EBWebView"
-              Write-Host "Host-visible WebView2 directory exists: $(Test-Path -LiteralPath $dataDir)"
-              Write-Host "MSIX-private WebView2 directory exists: $(Test-Path -LiteralPath $privateDir)"
-              $legacyMarker = Join-Path $env:LOCALAPPDATA 'com.caiyun.notes\EBWebView\caiyun-msix-profile-probe.txt'
-              $privateMarker = Join-Path $privateDir 'caiyun-msix-profile-probe.txt'
-              Write-Host "Legacy profile marker remains on host: $(Test-Path -LiteralPath $legacyMarker)"
-              Write-Host "Legacy profile marker copied to MSIX-private profile: $(Test-Path -LiteralPath $privateMarker)"
-              break
-            }
-          }
-          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-          Write-Host 'This is a headless process smoke, not a GUI/login/WebView2 acceptance test.'
-
-      - name: Upload isolated window capture
-        if: always()
-        uses: actions/upload-artifact@v4
+          path: candidate
+      - uses: actions/download-artifact@v4
         with:
-          name: caiyun-msix-window-${{ github.run_id }}
-          path: ${{ runner.temp }}/caiyun-msix-window.png
-          if-no-files-found: ignore
-
-      - name: Remove temporary QA install
-        if: always()
+          name: caiyun-notes-msix-44109331842
+          run-id: 44109331842
+          github-token: ${{ github.token }}
+          path: previous
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install exact legacy NSIS and sign QA copies
         shell: pwsh
         run: |
-          Get-AppxPackage -Name 'BinApp.547813EA77836' | Remove-AppxPackage -ErrorAction Continue
-          $certPath = Join-Path $env:RUNNER_TEMP 'caiyun-qa.cer'
-          if (Test-Path $certPath) {
-            $thumbprint = (Get-PfxCertificate -FilePath $certPath).Thumbprint
-            Remove-Item "Cert:\LocalMachine\Root\$thumbprint" -ErrorAction SilentlyContinue
-            Remove-Item "Cert:\LocalMachine\TrustedPeople\$thumbprint" -ErrorAction SilentlyContinue
-            Remove-Item "Cert:\CurrentUser\My\$thumbprint" -ErrorAction SilentlyContinue
+          $ErrorActionPreference = 'Stop'
+          $oldExe = Join-Path $env:RUNNER_TEMP 'p20-setup.exe'
+          Invoke-WebRequest 'https://github.com/w3345137/caiyun-notes/releases/download/p20/_10.2.8_x64-setup.exe' -OutFile $oldExe
+          if ((Get-FileHash $oldExe).Hash.ToLowerInvariant() -ne '658bba8c12ecbc794977077f4360c63eb2c24f0a1e207e5a10498bab7eab970a') { throw 'p20 source hash mismatch' }
+          $setup = Start-Process -FilePath $oldExe -ArgumentList '/S' -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw 'NSIS install failed' }
+          $legacy = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\彩云笔记'
+          if ($legacy.DisplayVersion -ne '10.2.8' -or $legacy.MainBinaryName -ne 'app.exe') { throw 'Legacy registration mismatch' }
+          Write-Host ('Legacy installer registered ' + $legacy.DisplayVersion)
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $env:PUBLISHER -CertStoreLocation Cert:\CurrentUser\My
+          Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\caiyun.cer" | Out-Null
+          Import-Certificate -FilePath "$env:RUNNER_TEMP\caiyun.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          Import-Certificate -FilePath "$env:RUNNER_TEMP\caiyun.cer" -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          $sign = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
+            Where-Object FullName -Match '\\x64\\' | Sort-Object FullName | Select-Object -Last 1
+          foreach ($entry in @(@{ Name='previous'; Hash='6fa0bb4f60923e5503356776bf99f4242e044d6f1a4430547516a9c5aad911d3' }, @{ Name='candidate'; Hash=$env:CANDIDATE_SHA })) {
+            $file = Get-ChildItem $entry.Name -Filter '*.msix' -Recurse | Select-Object -First 1
+            if (-not $file -or (Get-FileHash $file.FullName).Hash.ToLowerInvariant() -ne $entry.Hash) { throw 'MSIX hash mismatch' }
+            $copy = Join-Path $env:RUNNER_TEMP ($entry.Name + '-signed.msix')
+            Copy-Item -LiteralPath $file.FullName -Destination $copy
+            & $sign.FullName sign /fd sha256 /sha1 $cert.Thumbprint $copy
+            if ($LASTEXITCODE -ne 0) { throw 'MSIX test signing failed' }
+          }
+      - name: Test fresh installation and upgrade from coexisting versions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $new = Join-Path $env:RUNNER_TEMP 'candidate-signed.msix'
+          $old = Join-Path $env:RUNNER_TEMP 'previous-signed.msix'
+          $legacyKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\彩云笔记'
+          Add-AppxPackage -Path $new
+          $fresh = Get-AppxPackage -Name $env:PACKAGE_NAME
+          if ($fresh.Version.ToString() -ne '10.2.16.0' -or -not (Test-Path $legacyKey)) { throw 'Fresh install mismatch' }
+          Write-Host "Fresh MSIX install beside p20: $($fresh.PackageFullName)"
+          Remove-AppxPackage -Package $fresh.PackageFullName
+          Add-AppxPackage -Path $old
+          $prior = Get-AppxPackage -Name $env:PACKAGE_NAME
+          if ($prior.Version.ToString() -ne '10.2.15.0' -or -not (Test-Path $legacyKey)) { throw 'Coexistence setup mismatch' }
+          Add-AppxPackage -Path $new
+          $updated = Get-AppxPackage -Name $env:PACKAGE_NAME
+          if ($updated.Version.ToString() -ne '10.2.16.0' -or $updated.PackageFamilyName -ne $prior.PackageFamilyName) { throw 'Store in-place upgrade mismatch' }
+          $manifest = Get-AppxPackageManifest -Package $updated.PackageFullName
+          $alias = $manifest.SelectSingleNode("//*[local-name()='Extension' and @Category='windows.desktopAppMigration']")
+          if (-not $alias -or $alias.SelectNodes(".//*[local-name()='DesktopApp']").Count -ne 4) { throw 'Shortcut migration declaration missing' }
+          Write-Host "Store in-place upgrade and migration manifest passed: $($updated.PackageFullName)"
+      - name: Exercise retirement in the real packaged WebView
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Get-AppxPackage -Name $env:PACKAGE_NAME
+          $legacyKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\彩云笔记'
+          $location = (Get-ItemProperty $legacyKey).InstallLocation.Trim('"')
+          $legacyExe = Join-Path $location 'app.exe'
+          $hash = (Get-FileHash $legacyExe).Hash
+          $appData = Join-Path $env:LOCALAPPDATA 'com.caiyun.notes'
+          New-Item -ItemType Directory -Path $appData -Force | Out-Null
+          $marker = Join-Path $appData 'ci-offline-data.txt'
+          Set-Content -LiteralPath $marker -Value 'isolated offline data'
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19222'
+          $process = Start-Process -FilePath (Join-Path $package.InstallLocation 'app\app.exe') -PassThru
+          try {
+            node scripts/verify-legacy-handoff-runtime.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged retirement IPC failed' }
+            if (Test-Path $legacyKey) { throw 'Old registration still present in the Windows user registry' }
+            if (Test-Path -LiteralPath $location) { throw 'Old program path still active' }
+            $backupExe = Join-Path ($location + '.legacy-program-10.2.8') 'app.exe'
+            if ((Get-FileHash $backupExe).Hash -ne $hash -or (Get-Content $marker -Raw).Trim() -ne 'isolated offline data') { throw 'Program backup or local data did not survive retirement' }
+            $process.Refresh()
+            if ($process.HasExited) { throw 'Store app stopped during retirement' }
+            Write-Host 'Legacy program retired; store app, archived program and offline data survived'
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
           }
