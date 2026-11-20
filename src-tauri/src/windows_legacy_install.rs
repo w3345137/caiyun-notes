@@ -4,19 +4,12 @@ use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use windows::core::{w, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, ERROR_SUCCESS, HANDLE};
+use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::Storage::Packaging::Appx::GetCurrentPackageFamilyName;
-use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
-};
 use windows::Win32::System::Registry::{
     RegCloseKey, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, REG_SAM_FLAGS, RRF_RT_REG_SZ,
 };
 use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
-use windows::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-};
-
 const LEGACY_UNINSTALL_KEY: PCWSTR =
     w!("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\彩云笔记");
 const STORE_FAMILY: &str = "BinApp.547813EA77836_hex6nfb75njyr";
@@ -36,14 +29,6 @@ fn supports_targeted_virtualization() -> bool {
     };
     // On older systems the scoped manifest exclusions are ignored.
     (unsafe { RtlGetVersion(&mut version) }) == 0 && version.dwBuildNumber >= 22_000
-}
-
-struct OwnedHandle(HANDLE);
-
-impl Drop for OwnedHandle {
-    fn drop(&mut self) {
-        let _ = unsafe { CloseHandle(self.0) };
-    }
 }
 
 struct LegacyRegistration(HKEY);
@@ -196,54 +181,6 @@ fn is_verified_program_dir(dir: &Path, expected: &[(&str, &str)]) -> bool {
         })
 }
 
-fn legacy_running(exe: &Path) -> windows::core::Result<bool> {
-    let snapshot = OwnedHandle(unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)? });
-    let mut entry = PROCESSENTRY32W {
-        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
-        ..Default::default()
-    };
-    unsafe { Process32FirstW(snapshot.0, &mut entry)? };
-    loop {
-        let name_len = entry
-            .szExeFile
-            .iter()
-            .position(|value| *value == 0)
-            .unwrap_or(entry.szExeFile.len());
-        if entry.th32ProcessID != std::process::id()
-            && String::from_utf16_lossy(&entry.szExeFile[..name_len])
-                .eq_ignore_ascii_case("app.exe")
-        {
-            let process = OwnedHandle(unsafe {
-                OpenProcess(
-                    PROCESS_QUERY_LIMITED_INFORMATION,
-                    false,
-                    entry.th32ProcessID,
-                )?
-            });
-            let mut buf = [0_u16; 1024];
-            let mut len = buf.len() as u32;
-            unsafe {
-                QueryFullProcessImageNameW(
-                    process.0,
-                    PROCESS_NAME_WIN32,
-                    PWSTR(buf.as_mut_ptr()),
-                    &mut len,
-                )?;
-            }
-            if String::from_utf16_lossy(&buf[..len as usize])
-                .eq_ignore_ascii_case(&exe.to_string_lossy())
-            {
-                return Ok(true);
-            }
-        }
-        match unsafe { Process32NextW(snapshot.0, &mut entry) } {
-            Ok(()) => {}
-            Err(error) if error.code() == ERROR_NO_MORE_FILES.to_hresult() => return Ok(false),
-            Err(error) => return Err(error),
-        }
-    }
-}
-
 #[tauri::command]
 pub fn has_legacy_windows_install() -> bool {
     is_packaged_caiyun()
@@ -277,11 +214,6 @@ fn retire_registered_legacy() -> Result<bool, String> {
     if !matches_legacy_registration(&dir, &version) {
         return Ok(false);
     }
-    let old_app_running = legacy_running(&exe)
-        .map_err(|error| format!("Legacy process check failed: {}", error.code()))?;
-    if old_app_running {
-        return Ok(false);
-    }
     let registration = LegacyRegistration::open_for_delete()?;
     // MSIX may create the excluded directory at install. Place the
     // recoverable program under it so an empty directory is not a collision.
@@ -296,6 +228,16 @@ fn retire_registered_legacy() -> Result<bool, String> {
     // The old NSIS uninstaller can terminate any app.exe by process name.
     // Retire only the verified program directory and its registration. The
     // sibling com.caiyun.notes data folders and migrated pins are independent.
+    let target = if dir.exists() {
+        exe
+    } else {
+        backup.join("app.exe")
+    };
+    let _program_guard = match super::windows_legacy_program_lock::lock_program(&target) {
+        Ok(file) => file,
+        Err(error) if matches!(error.raw_os_error(), Some(32 | 33)) => return Ok(false),
+        Err(error) => return Err(format!("Legacy executable lock failed: {error}")),
+    };
     if dir.exists() {
         if backup.exists() {
             return Err("Legacy program and backup both exist".into());
@@ -311,11 +253,6 @@ fn retire_registered_legacy() -> Result<bool, String> {
     let retired = (|| {
         if !is_verified_program_dir(&backup, files) {
             return Err("Legacy program backup could not be verified after the move".into());
-        }
-        if legacy_running(&exe)
-            .map_err(|error| format!("Legacy process recheck failed: {}", error.code()))?
-        {
-            return Ok(false);
         }
         if !matches_legacy_registration(&dir, &version) {
             return Err("Legacy installation registration changed during retirement".into());

@@ -10,6 +10,8 @@ mod macos_notifications;
 #[cfg(target_os = "windows")]
 mod windows_notifications;
 #[cfg(all(target_os = "windows", feature = "msstore-distribution"))]
+mod windows_legacy_program_lock;
+#[cfg(all(target_os = "windows", feature = "msstore-distribution"))]
 mod windows_legacy_install;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod app_notifications;
