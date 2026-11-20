@@ -75,7 +75,7 @@ jobs:
           $legacyKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\彩云笔记'
           Add-AppxPackage -Path $new
           $fresh = Get-AppxPackage -Name $env:PACKAGE_NAME
-          if ($fresh.Version.ToString() -ne '10.2.16.0' -or -not (Test-Path $legacyKey)) { throw 'Fresh install mismatch' }
+          if ($fresh.Version.ToString() -ne '10.2.17.0' -or -not (Test-Path $legacyKey)) { throw 'Fresh install mismatch' }
           Write-Host "Fresh MSIX install beside p20: $($fresh.PackageFullName)"
           Remove-AppxPackage -Package $fresh.PackageFullName
           Add-AppxPackage -Path $old
@@ -83,7 +83,7 @@ jobs:
           if ($prior.Version.ToString() -ne '10.2.15.0' -or -not (Test-Path $legacyKey)) { throw 'Coexistence setup mismatch' }
           Add-AppxPackage -Path $new
           $updated = Get-AppxPackage -Name $env:PACKAGE_NAME
-          if ($updated.Version.ToString() -ne '10.2.16.0' -or $updated.PackageFamilyName -ne $prior.PackageFamilyName) { throw 'Store in-place upgrade mismatch' }
+          if ($updated.Version.ToString() -ne '10.2.17.0' -or $updated.PackageFamilyName -ne $prior.PackageFamilyName) { throw 'Store in-place upgrade mismatch' }
           $manifest = Get-AppxPackageManifest -Package $updated.PackageFullName
           $alias = $manifest.SelectSingleNode("//*[local-name()='Extension' and @Category='windows.desktopAppMigration']")
           if (-not $alias -or $alias.SelectNodes(".//*[local-name()='DesktopApp']").Count -ne 4) { throw 'Shortcut migration declaration missing' }
