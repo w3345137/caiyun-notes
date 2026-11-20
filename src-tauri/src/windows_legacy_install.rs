@@ -233,8 +233,8 @@ fn retire_registered_legacy() -> Result<bool, String> {
     } else {
         backup.join("app.exe")
     };
-    let _program_guard = match super::windows_legacy_program_lock::lock_program(&target) {
-        Ok(file) => file,
+    match super::windows_legacy_program_lock::lock_program(&target) {
+        Ok(guard) => drop(guard),
         Err(error) if matches!(error.raw_os_error(), Some(32 | 33)) => return Ok(false),
         Err(error) => return Err(format!("Legacy executable lock failed: {error}")),
     };
@@ -251,6 +251,10 @@ fn retire_registered_legacy() -> Result<bool, String> {
         return Err("Legacy program and verified backup are unavailable".into());
     }
     let retired = (|| {
+        // Windows forbids moving a directory while a child handle is open.
+        // Recheck the moved image and guard it until registration is removed.
+        let _guard = super::windows_legacy_program_lock::lock_program(&backup.join("app.exe"))
+            .map_err(|error| format!("Legacy backup executable lock failed: {error}"))?;
         if !is_verified_program_dir(&backup, files) {
             return Err("Legacy program backup could not be verified after the move".into());
         }

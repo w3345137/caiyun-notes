@@ -3,8 +3,8 @@ use std::io;
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::Path;
 
-// Windows rejects write access to a mapped executable. Keep that access
-// through the move and registry change so a new process cannot start midway.
+// Windows rejects write access to a mapped executable. A held handle
+// prevents the image from being launched during registry changes.
 // FILE_SHARE_READ permits hashing. FILE_SHARE_DELETE permits our rename.
 pub(crate) fn lock_program(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).share_mode(1 | 4).open(path)
@@ -39,12 +39,11 @@ mod tests {
         other.kill().unwrap();
         other.wait().unwrap();
         assert!(result.0.is_err());
-        let guard = result.1.unwrap();
-        fs::rename(&legacy, dir.join("backup.exe")).unwrap();
-        assert!(Command::new(dir.join("backup.exe"))
-            .arg("-?")
-            .output()
-            .is_err());
+        drop(result.1.unwrap());
+        fs::rename(dir.join("legacy"), dir.join("archive")).unwrap();
+        let moved = dir.join("archive/app.exe");
+        let guard = lock_program(&moved).unwrap();
+        assert!(Command::new(&moved).arg("-?").output().is_err());
         drop(guard);
         fs::remove_dir_all(dir).unwrap();
     }
