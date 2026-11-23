@@ -1,0 +1,87 @@
+name: Build and test Windows EXE
+
+on:
+  push:
+    branches: [codex/windows-exe-10.2.17-test]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - name: Validate embedded version and build the NSIS installer
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $tauri = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $frontend = Get-Content dist/app-dist-manifest.json -Raw | ConvertFrom-Json
+          if ($package.version -ne '10.2.17' -or $tauri.version -ne $package.version -or $frontend.appVersion -ne $package.version) {
+            throw 'The shell and bundled frontend must both be version 10.2.17.'
+          }
+          Get-Item dist/index.html -ErrorAction Stop | Out-Null
+
+          # This package is distributed as a test artifact, not as an updater.
+          $config = Join-Path $env:RUNNER_TEMP 'caiyun-test-bundle.json'
+          '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content $config -Encoding utf8
+          npm run tauri -- build --target x86_64-pc-windows-msvc --bundles nsis --config $config
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $installers = @(Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis' -Filter '*_10.2.17_x64-setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected one Windows x64 NSIS installer.' }
+          New-Item -ItemType Directory build/test-exe -Force | Out-Null
+          Copy-Item -LiteralPath $installers[0].FullName build/test-exe/CaiyunNotes_10.2.17_x64-test-setup.exe
+      - name: Install via NSIS and launch the installed app
+        shell: pwsh
+        run: |
+          $installer = Get-Item build/test-exe/CaiyunNotes_10.2.17_x64-test-setup.exe
+          $installPath = Join-Path $env:RUNNER_TEMP 'CaiyunNotesTestInstall'
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList "/S /D=$installPath" -PassThru -Wait
+          if ($setup.ExitCode -ne 0) { throw "NSIS exited with code $($setup.ExitCode)." }
+
+          $apps = @(Get-ChildItem $installPath -Filter '*.exe' -File | Where-Object { $_.Name -ne 'uninstall.exe' })
+          if ($apps.Count -ne 1) { throw 'Expected one installed application executable.' }
+          $app = $apps[0]
+          if ($app.VersionInfo.FileVersion -notmatch '^10\.2\.17(?:\.0)?$') {
+            throw "Unexpected installed file version: $($app.VersionInfo.FileVersion)"
+          }
+          $process = Start-Process -FilePath $app.FullName -WorkingDirectory $installPath -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(40)
+            do {
+              Start-Sleep -Seconds 2
+              $process.Refresh()
+              if ($process.HasExited) { throw "The installed app exited with code $($process.ExitCode)." }
+              $webview = Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe' AND ParentProcessId = $($process.Id)"
+            } until ($webview -or (Get-Date) -ge $deadline)
+            if (-not $webview) { throw 'The installed app did not start its WebView2 process.' }
+            Start-Sleep -Seconds 5
+            $process.Refresh()
+            if ($process.HasExited) { throw "The installed app exited with code $($process.ExitCode)." }
+            "Installed version: $($app.VersionInfo.FileVersion)"
+            "WebView2 started under the installed executable."
+            "Installer signature status: $((Get-AuthenticodeSignature $installer.FullName).Status)"
+            $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($installer.Name)" | Set-Content build/test-exe/SHA256SUMS.txt -Encoding ascii
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: caiyun-notes-windows-10.2.17-test-exe
+          path: build/test-exe/
+          if-no-files-found: error
