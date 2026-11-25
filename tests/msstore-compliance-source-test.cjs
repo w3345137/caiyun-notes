@@ -9,6 +9,12 @@ const disabled = fs.readFileSync(path.join(root, 'src-tauri/src/frontend_bundle_
 const storeConfig = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.msstore.conf.json'), 'utf8'));
 // Source suites may run after a production or Mac App Store build. Only scan a
 // Microsoft Store artifact when its directory was explicitly supplied.
+const manifest = fs.readFileSync(path.join(root, 'src-tauri/msix/AppxManifest.xml'), 'utf8');
+const workflow = fs.readFileSync(path.join(root, '.github/workflows/build-msstore.yml'), 'utf8');
+const capabilities = fs.readFileSync(path.join(root, 'src-tauri/build.rs'), 'utf8');
+assert.doesNotMatch(manifest, /unvirtualizedResources|WriteVirtualization|ExcludedDirectory|ExcludedKey/);
+assert.doesNotMatch(lib + capabilities, /(?:has|retire)_legacy_windows_install|windows-store-legacy-handoff/);
+assert.match(workflow, /npm run build:msstore:no-hotupdate --/);
 const distRoot = process.env.MSSTORE_FRONTEND_DIST || null;
 
 assert.match(buildStore, /distributionFeature = `\$\{channel\}-distribution`/,
@@ -30,6 +36,8 @@ const forbiddenFrontendMarkers = [
   'Windows x64',
   'macOS Apple Silicon',
   'updates/latest.json',
+  'retire_legacy_windows_install',
+  'has_legacy_windows_install',
 ];
 const frontendFiles = [];
 const collectFiles = (directory) => {

@@ -5,10 +5,10 @@
 ## 版本边界
 
 - Web / 服务版本：`v2.8`
-- 桌面发布标签：`p25`
-- Tauri SemVer：`10.2.13`
+- 桌面发布标签：`p30`
+- Tauri SemVer：`10.2.18`
 
-p25 使用内置前端入口，并为行程规划提供受限的内嵌地图子 WebView。App 启动时先从本机加载 UI 和缓存，再通过 HTTPS / WSS 连接 `https://notes.binapp.top`。官网直装版壳更新从国内 OSS 分发，支持持久化断点续传、整包签名校验和稳定设备分批发布；Microsoft Store 构建不包含原生自更新及第三方安装包下载入口，原生壳更新只通过 Microsoft Store 分发；前端使用共用的签名更新包，并检查最低兼容壳版本。macOS 红色关闭按钮与 Windows ×/Alt+F4 会隐藏主窗口；macOS 可从 Dock 恢复并通过 Cmd+Q 退出，Windows 可从系统托盘恢复或退出。真正退出前，桌面壳会等待页面、CRDT 日志和本地队列刷入本地库；Windows 再次启动时会恢复已有窗口而不是创建第二个进程。远程网页不获得通用 Tauri 文件、Store、剪贴板、窗口关闭或进程退出权限。
+p30 使用内置前端入口，并为行程规划提供受限的内嵌地图子 WebView。App 启动时先从本机加载 UI 和缓存，再通过 HTTPS / WSS 连接 `https://notes.binapp.top`。官网直装版壳更新从国内 OSS 分发，支持持久化断点续传、整包签名校验和稳定设备分批发布；Microsoft Store 构建不包含原生自更新及第三方安装包下载入口，原生壳更新只通过 Microsoft Store 分发；此 Windows 商店候选的前端随原生安装包更新。macOS 红色关闭按钮与 Windows ×/Alt+F4 会隐藏主窗口；macOS 可从 Dock 恢复并通过 Cmd+Q 退出，Windows 可从系统托盘恢复或退出。真正退出前，桌面壳会等待页面、CRDT 日志和本地队列刷入本地库；Windows 再次启动时会恢复已有窗口而不是创建第二个进程。远程网页不获得通用 Tauri 文件、Store、剪贴板、窗口关闭或进程退出权限。
 
 ## 发布流程
 

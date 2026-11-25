@@ -48,8 +48,6 @@ fn main() {
             "ios_mail_stop_push",
             "ios_mail_take_actions",
             "app_notification_bridge",
-            "has_legacy_windows_install",
-            "retire_legacy_windows_install",
             "restart_app",
             "qwen_models",
             "qwen_verify",
@@ -91,22 +89,6 @@ fn store_capabilities_pattern() -> Result<&'static str, Box<dyn Error>> {
             });
         }
         fs::write(&target, serde_json::to_string_pretty(&capability)?)?;
-    }
-    if env::var_os("CARGO_FEATURE_MSSTORE_DISTRIBUTION").is_some()
-        && env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
-    {
-        let capability = serde_json::json!({
-            "identifier": "windows-store-legacy-handoff",
-            "description": "Local Microsoft Store window can retire the verified legacy installation",
-            "local": true,
-            "windows": ["main"],
-            "platforms": ["windows"],
-            "permissions": ["allow-has-legacy-windows-install", "allow-retire-legacy-windows-install"],
-        });
-        fs::write(
-            store_dir.join("windows-store-legacy-handoff.json"),
-            serde_json::to_string_pretty(&capability)?,
-        )?;
     }
     let pattern = format!("{}/**/*", store_dir.to_string_lossy().replace('\\', "/"));
     Ok(Box::leak(pattern.into_boxed_str()))

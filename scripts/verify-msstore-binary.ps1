@@ -12,16 +12,18 @@ if (-not (Test-Path -LiteralPath $fullExePath -PathType Leaf)) {
 $bytes = [System.IO.File]::ReadAllBytes($fullExePath)
 $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
 $forbidden = @(
-  'updates/latest.json'
+  'updates/latest.json',
+  'updates/windows/latest.json',
+  'app-frontend/latest.json',
+  'app-frontend/msstore/latest.json',
+  'windows-store-legacy-handoff',
+  'retire_legacy_windows_install',
+  'has_legacy_windows_install'
 )
 foreach ($needle in $forbidden) {
   if ($ascii.Contains($needle)) {
     throw "Microsoft Store EXE 仍包含禁止的运行时代码下载路径: $needle"
   }
-}
-
-if (-not $ascii.Contains('app-frontend/latest.json')) {
-  throw "Microsoft Store EXE 缺少签名前端更新清单路径"
 }
 
 Write-Host "Microsoft Store binary channel scan passed: $fullExePath"
