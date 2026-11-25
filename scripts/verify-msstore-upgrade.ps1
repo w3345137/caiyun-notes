@@ -105,11 +105,24 @@ if ($env:SCENARIO -eq 'profile-persistence') {
     # Use the runner's existing console session. Both records are synthetic and
     # scoped to the runner's test profile. Use the same WebView URL as the app.
     $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19227'
+    $browserPolicy = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+    New-Item -Path $browserPolicy -Force | Out-Null
+    # The package broker can use a different environment. Scope the test
+    # override to the exact packaged application identity.
+    New-ItemProperty -Path $browserPolicy -Name "$family!CaiyunNotes" -PropertyType String -Value $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -Force | Out-Null
     $legacyDraft = [guid]::NewGuid().ToString()
     $storeDraft = [guid]::NewGuid().ToString()
     function Invoke-DraftCheck($binary, $action, $key) {
+        $channel = if ($binary -like '*WindowsApps*') { 'Store' } else { 'website' }
+        Write-Host "Starting $action draft check in $channel"
         $process = Start-Process -FilePath $binary -PassThru
         try {
+            for ($j = 0; $j -lt 20; $j++) {
+                $wv = Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe' AND ParentProcessId=$($process.Id)" | Select-Object -First 1
+                if ($wv) { break }
+                Start-Sleep -Milliseconds 250
+            }
+            Write-Host ("Has WebView process: {0}, has QA debug flag: {1}" -f [bool]$wv, ($wv.CommandLine -match 'remote-debugging-port=19227'))
             node ./scripts/verify-windows-draft.mjs $action 19227 $key
             if ($LASTEXITCODE -ne 0) { throw "$action draft check failed" }
             node ./scripts/verify-windows-draft.mjs quit 19227 $key
@@ -136,6 +149,7 @@ Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, p
 if ($env:SCENARIO -eq 'profile-persistence') {
     Invoke-DraftCheck (Join-Path $new.InstallLocation 'app/app.exe') read $storeDraft
     Invoke-DraftCheck $legacyExe read $legacyDraft
+    Remove-ItemProperty -Path $browserPolicy -Name "$family!CaiyunNotes"
     Write-Host 'PASS: the upgraded Store app read its original draft, and the coexisting official website app read its untouched draft.'
     exit 0
 }
