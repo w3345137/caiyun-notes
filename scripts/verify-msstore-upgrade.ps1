@@ -125,6 +125,22 @@ interface IApplicationActivationManager {
 public static class CaiyunStoreActivation {
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll", SetLastError=true)] static extern bool PostMessage(IntPtr window, uint msg, IntPtr wparam, IntPtr lparam);
+    delegate bool EnumProc(IntPtr hwnd, IntPtr param);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr arg);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd,System.Text.StringBuilder buffer,int size);
+    public static IntPtr EditorWindow(int pid) {
+        IntPtr result = IntPtr.Zero;
+        EnumWindows((hwnd,param) => {
+            uint owner; GetWindowThreadProcessId(hwnd,out owner);
+            if(owner != pid || !IsWindowVisible(hwnd)) return true;
+            var name = new System.Text.StringBuilder(256);
+            GetClassName(hwnd,name,256);
+            if(name.ToString() != "Window Class") return true;
+            result = hwnd; return false;
+        },IntPtr.Zero);
+        return result;
+    }
     public static void CloseWindow(IntPtr window) {
         if (window == IntPtr.Zero || !PostMessage(window, 0x10, IntPtr.Zero, IntPtr.Zero))
             throw new InvalidOperationException("Could not request a normal window close");
@@ -206,9 +222,14 @@ $app.WaitForExit()
     Write-Host "QA WebView runtime received requested test port: $($webviewProcess.CommandLine -match 'remote-debugging-port=19227')"
     if (!$entryOnly) { Invoke-DraftTest 'write' }
     $oldProcess.Refresh()
-    $oldWindow = $oldProcess.MainWindowHandle
+    for ($i = 0; $i -lt 45; $i++) {
+        $oldWindow = [CaiyunStoreActivation]::EditorWindow($oldProcess.Id)
+        if ($oldWindow -ne [IntPtr]::Zero) { break }
+        Start-Sleep -Milliseconds 400
+    }
+    Start-Sleep -Seconds 3
     [CaiyunStoreActivation]::CloseWindow($oldWindow)
-    Start-Sleep -Seconds 1
+    for ($i = 0; $i -lt 35 -and [CaiyunStoreActivation]::IsWindowVisible($oldWindow); $i++) { Start-Sleep -Milliseconds 300 }
     if ($oldProcess.HasExited -or [CaiyunStoreActivation]::IsWindowVisible($oldWindow)) {
         throw 'Closing old window did not leave the old client in its tray'
     }
