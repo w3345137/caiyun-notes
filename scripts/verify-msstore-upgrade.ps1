@@ -72,7 +72,9 @@ $install = Start-Process -FilePath $exe -ArgumentList '/S' -PassThru -Wait
 if ($install.ExitCode -ne 0) { throw 'Legacy EXE installation failed' }
 $registration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\彩云笔记'
 $legacy = Get-ItemProperty -LiteralPath $registration
-$legacyExe = Join-Path $legacy.InstallLocation 'app.exe'
+$legacyDir = ([string]$legacy.InstallLocation).Trim('"').TrimEnd('\')
+if ($legacyDir -ine (Join-Path $env:LOCALAPPDATA '彩云笔记')) { throw 'Unexpected legacy install location' }
+$legacyExe = Join-Path $legacyDir 'app.exe'
 $legacySha = (Get-FileHash -LiteralPath $legacyExe).Hash
 $legacyProfile = Get-LaunchedProfile $legacyExe
 if (!(Test-Path -LiteralPath $legacyProfile -PathType Container)) { throw 'Missing legacy WebView2 profile' }
@@ -99,7 +101,7 @@ Write-Host "Both channels report the same WebView2 profile path: $($legacyProfil
 Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, package local-state preservation and intact legacy EXE.'
 
 # Exercise the existing official uninstaller only after both test apps have exited.
-$uninstaller = Join-Path $legacy.InstallLocation 'uninstall.exe'
+$uninstaller = Join-Path $legacyDir 'uninstall.exe'
 if (([string]$legacy.UninstallString).Trim('"') -ine $uninstaller) {
     throw 'Legacy uninstall registration does not match the installed fixture'
 }
