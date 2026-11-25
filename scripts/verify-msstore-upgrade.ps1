@@ -30,8 +30,7 @@ function Install-QaPackage($file, $version) {
     $package
 }
 
-function Test-Launch($package) {
-    $binary = Join-Path $package.InstallLocation 'app\app.exe'
+function Get-LaunchedProfile($binary) {
     $process = Start-Process -FilePath $binary -PassThru
     try {
         Start-Sleep -Seconds 10
@@ -75,20 +74,26 @@ $registration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\å½©äº
 $legacy = Get-ItemProperty -LiteralPath $registration
 $legacyExe = Join-Path $legacy.InstallLocation 'app.exe'
 $legacySha = (Get-FileHash -LiteralPath $legacyExe).Hash
+$legacyProfile = Get-LaunchedProfile $legacyExe
+if (!(Test-Path -LiteralPath $legacyProfile -PathType Container)) { throw 'Missing legacy WebView2 profile' }
+$legacyMarker = Join-Path $legacyProfile 'isolated-legacy-upgrade-fixture.txt'
+Set-Content -LiteralPath $legacyMarker -Value 'keep-legacy-profile'
 
 $old = Install-QaPackage $baseline '10.2.15.0'
-$oldProfile = Test-Launch $old
+$oldProfile = Get-LaunchedProfile (Join-Path $old.InstallLocation 'app\app.exe')
 $localState = Join-Path $env:LOCALAPPDATA "Packages\$family\LocalState"
 New-Item -Path $localState -ItemType Directory -Force | Out-Null
 $marker = Join-Path $localState 'isolated-package-upgrade-fixture.txt'
 Set-Content -LiteralPath $marker -Value 'keep-local-state'
 
 $new = Install-QaPackage $candidate '10.2.18.0'
-$newProfile = Test-Launch $new
+$newProfile = Get-LaunchedProfile (Join-Path $new.InstallLocation 'app\app.exe')
 if ($newProfile -ne $oldProfile) { throw 'WebView2 profile changed on Store upgrade' }
 if ((Get-Content -LiteralPath $marker) -ne 'keep-local-state') { throw 'Package local state did not survive upgrade' }
 $current = Get-ItemProperty -LiteralPath $registration
 if ($current.UninstallString -ne $legacy.UninstallString -or (Get-FileHash -LiteralPath $legacyExe).Hash -ne $legacySha) {
     throw 'Store package unexpectedly changed the legacy EXE or uninstall registration'
 }
+if ((Get-Content -LiteralPath $legacyMarker) -ne 'keep-legacy-profile') { throw 'The unpackaged WebView2 profile changed' }
+Write-Host "Both channels report the same WebView2 profile path: $($legacyProfile -eq $newProfile)"
 Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, package local-state preservation and intact legacy EXE.'
