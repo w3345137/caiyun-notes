@@ -110,6 +110,8 @@ if ($env:SCENARIO -eq 'profile-persistence') {
     # The package broker can use a different environment. Scope the test
     # override to the exact packaged application identity.
     New-ItemProperty -Path $browserPolicy -Name "$family!CaiyunNotes" -PropertyType String -Value $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -Force | Out-Null
+    # The normal runner has only the two isolated Caiyun test app.exe binaries.
+    New-ItemProperty -Path $browserPolicy -Name 'app.exe' -PropertyType String -Value $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -Force | Out-Null
     $legacyDraft = [guid]::NewGuid().ToString()
     $storeDraft = [guid]::NewGuid().ToString()
     function Invoke-DraftCheck($binary, $action, $key) {
@@ -149,7 +151,7 @@ Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, p
 if ($env:SCENARIO -eq 'profile-persistence') {
     Invoke-DraftCheck (Join-Path $new.InstallLocation 'app/app.exe') read $storeDraft
     Invoke-DraftCheck $legacyExe read $legacyDraft
-    Remove-ItemProperty -Path $browserPolicy -Name "$family!CaiyunNotes"
+    Remove-ItemProperty -Path $browserPolicy -Name @("$( $family )!CaiyunNotes", "app.exe")
     Write-Host 'PASS: the upgraded Store app read its original draft, and the coexisting official website app read its untouched draft.'
     exit 0
 }
