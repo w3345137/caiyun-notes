@@ -69,7 +69,9 @@ static BOOL CALLBACK find_visible_window(HWND window, LPARAM data) {
 }
 
 int caiyun_open_installed_store(void) {
-    if (!has_target()) return 0;
+    UINT32 own_package_length = 0;
+    if (GetCurrentPackageFullName(&own_package_length, NULL) != APPMODEL_ERROR_NO_PACKAGE || !has_target())
+        return 0;
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
     if (FAILED(hr)) return 0;
     IApplicationActivationManager *manager = NULL;

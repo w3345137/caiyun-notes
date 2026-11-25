@@ -503,8 +503,9 @@ fn install_windows_tray(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
     #[cfg(all(target_os = "windows", feature = "self-update", not(feature = "msstore-distribution")))]
-    if std::env::args_os().len() == 1 {
+    if !cfg!(debug_assertions) && context.config().identifier == "com.caiyun.notes" && std::env::args_os().len() == 1 {
         extern "C" {
             fn caiyun_open_installed_store() -> std::ffi::c_int;
         }
@@ -675,7 +676,7 @@ pub fn run() {
             install_windows_tray(app)?;
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application");
 
     #[cfg(target_os = "ios")]
