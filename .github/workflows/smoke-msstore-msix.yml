@@ -15,6 +15,7 @@ on:
           - entries
           - website-installer
           - offline-draft
+          - profile-persistence
           - legacy-uninstall
 
 permissions:

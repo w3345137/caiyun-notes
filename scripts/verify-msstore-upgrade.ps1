@@ -101,6 +101,26 @@ New-Item -Path $localState -ItemType Directory -Force | Out-Null
 $marker = Join-Path $localState 'isolated-package-upgrade-fixture.txt'
 Set-Content -LiteralPath $marker -Value 'keep-local-state'
 
+if ($env:SCENARIO -eq 'profile-persistence') {
+    # Use the runner's existing console session. Both records are synthetic and
+    # scoped to the runner's test profile. Use the same WebView URL as the app.
+    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19227'
+    $legacyDraft = [guid]::NewGuid().ToString()
+    $storeDraft = [guid]::NewGuid().ToString()
+    function Invoke-DraftCheck($binary, $action, $key) {
+        $process = Start-Process -FilePath $binary -PassThru
+        try {
+            node ./scripts/verify-windows-draft.mjs $action 19227 $key
+            if ($LASTEXITCODE -ne 0) { throw "$action draft check failed" }
+            node ./scripts/verify-windows-draft.mjs quit 19227 $key
+            if ($LASTEXITCODE -ne 0 -or !$process.WaitForExit(30000)) { throw 'Controlled exit failed' }
+        } finally { if (!$process.HasExited) { taskkill /PID $process.Id /T /F | Out-Null } }
+    }
+    Invoke-DraftCheck $legacyExe write $legacyDraft
+    Invoke-DraftCheck (Join-Path $old.InstallLocation 'app/app.exe') write $storeDraft
+    Write-Host 'Wrote synthetic drafts in the official website and Store baseline WebViews and exited normally.'
+}
+
 $new = Install-QaPackage $candidate '10.2.18.0'
 $newProfile = Get-LaunchedProfile (Join-Path $new.InstallLocation 'app\app.exe')
 if ($newProfile -ne $oldProfile) { throw 'WebView2 profile changed on Store upgrade' }
@@ -112,6 +132,13 @@ if ($current.UninstallString -ne $legacy.UninstallString -or (Get-FileHash -Lite
 if ((Get-Content -LiteralPath $legacyMarker) -ne 'keep-legacy-profile') { throw 'The unpackaged WebView2 profile changed' }
 Write-Host "Both channels report the same WebView2 profile path: $($legacyProfile -eq $newProfile)"
 Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, package local-state preservation and intact legacy EXE.'
+
+if ($env:SCENARIO -eq 'profile-persistence') {
+    Invoke-DraftCheck (Join-Path $new.InstallLocation 'app/app.exe') read $storeDraft
+    Invoke-DraftCheck $legacyExe read $legacyDraft
+    Write-Host 'PASS: the upgraded Store app read its original draft, and the coexisting official website app read its untouched draft.'
+    exit 0
+}
 
 if ($env:SCENARIO -eq 'website-installer') {
     if ((Get-FileHash $candidate.FullName).Hash -ne 'FF83314873E04A7D66326ABB062A23E69A1E9BE291E062A2D118E790E16CE672') { throw 'Unexpected Store handoff candidate' }
