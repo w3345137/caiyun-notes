@@ -1,0 +1,1 @@
+import{u as r}from"./noteStore-DdopOaTm.js";function f(o){const t=Array.isArray(o==null?void 0:o.notes)?o.notes:[],n=Array.isArray(o==null?void 0:o.deletedNoteIds)?o.deletedNoteIds:[],d=r.getState();for(const e of t)e&&typeof e=="object"&&d.upsertNote(e);for(const e of n)typeof e=="string"&&e&&d.removeNoteFromStore(e);return{upserted:t.length,deleted:n.length}}export{f as u};
