@@ -6,6 +6,15 @@ try {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
     if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Test must run as a standard user' }
+    # Secondary-logon inherited the runner's textual environment. Resolve the
+    # profile from the actual token and never read or launch the runner's files.
+    $profileKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$($identity.User.Value)"
+    $env:USERPROFILE = (Get-ItemProperty -LiteralPath $profileKey).ProfileImagePath
+    $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\Local'
+    $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'
+    $env:TEMP = Join-Path $env:LOCALAPPDATA 'Temp'
+    $env:TMP = $env:TEMP
+    New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
     $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19227'
     $nonce = [guid]::NewGuid().ToString()
     function Check-Draft($mode) {

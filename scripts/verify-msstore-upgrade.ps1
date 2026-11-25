@@ -163,7 +163,7 @@ public static class CaiyunStoreActivation {
             if(owner != pid || !IsWindowVisible(hwnd)) return true;
             var name = new System.Text.StringBuilder(256);
             GetClassName(hwnd,name,256);
-            if(name.ToString() != "Window Class") return true;
+            if(name.ToString() != "Tauri Window") return true;
             result = hwnd; return false;
         },IntPtr.Zero);
         return result;
