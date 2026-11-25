@@ -503,6 +503,15 @@ fn install_windows_tray(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(target_os = "windows", feature = "self-update", not(feature = "msstore-distribution")))]
+    if std::env::args_os().len() == 1 {
+        extern "C" {
+            fn caiyun_open_installed_store() -> std::ffi::c_int;
+        }
+        if unsafe { caiyun_open_installed_store() } != 0 {
+            return;
+        }
+    }
     #[cfg(all(target_os = "windows", feature = "msstore-distribution"))]
     {
         extern "C" {

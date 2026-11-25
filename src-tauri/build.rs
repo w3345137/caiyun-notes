@@ -15,6 +15,16 @@ fn main() {
         println!("cargo:rustc-link-lib=shell32");
         println!("cargo:rustc-link-lib=user32");
     }
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && env::var_os("CARGO_FEATURE_SELF_UPDATE").is_some()
+        && env::var_os("CARGO_FEATURE_MSSTORE_DISTRIBUTION").is_none()
+    {
+        println!("cargo:rerun-if-changed=src/windows_direct_launch.c");
+        cc::Build::new().file("src/windows_direct_launch.c").compile("caiyun_direct_launch");
+        println!("cargo:rustc-link-lib=ole32");
+        println!("cargo:rustc-link-lib=uuid");
+        println!("cargo:rustc-link-lib=user32");
+    }
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         println!("cargo:rerun-if-changed=src/macos_notifications.m");
         println!("cargo:rustc-link-lib=framework=UserNotifications");

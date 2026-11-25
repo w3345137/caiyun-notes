@@ -81,7 +81,20 @@ if (!(Test-Path -LiteralPath $legacyProfile -PathType Container)) { throw 'Missi
 $legacyMarker = Join-Path $legacyProfile 'isolated-legacy-upgrade-fixture.txt'
 Set-Content -LiteralPath $legacyMarker -Value 'keep-legacy-profile'
 
+if ($env:LAUNCH_PROBE -eq 'true') {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+    $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    $devcmd = Join-Path $vs 'Common7/Tools/VsDevCmd.bat'
+    $probe = Join-Path $env:RUNNER_TEMP 'caiyun-direct-entry.exe'
+    $compile = 'call "{0}" -arch=x64 -host_arch=x64 >nul && cl /nologo /utf-8 /std:c11 src-tauri/src/windows_direct_launch.c tests/windows-handoff/direct-entry.c /Fe:"{1}" /link user32.lib ole32.lib uuid.lib kernel32.lib' -f $devcmd,$probe
+    cmd /c $compile | Out-Host
+    if ($LASTEXITCODE -ne 0 -or ![IO.File]::Exists($probe)) { throw 'Direct entry fixture compile failed' }
+    if ((& $probe) -ne 'DIRECT') { throw 'No Store installed: expected normal direct startup' }
+}
 $old = Install-QaPackage $baseline '10.2.15.0'
+if ($env:LAUNCH_PROBE -eq 'true' -and (& $probe) -ne 'DIRECT') {
+    throw 'Old Store package must not capture the direct entry'
+}
 $oldProfile = Get-LaunchedProfile (Join-Path $old.InstallLocation 'app\app.exe')
 $localState = Join-Path $env:LOCALAPPDATA "Packages\$family\LocalState"
 New-Item -Path $localState -ItemType Directory -Force | Out-Null
@@ -169,6 +182,12 @@ public static class CaiyunStoreActivation {
     Invoke-DraftTest 'read'
     Assert-CleanExit $fresh
     Write-Host 'PASS: exact newly installed package read the old synthetic offline draft.'
+    if ((& $probe) -ne 'STORE') { throw 'New direct entry failed to reach the eligible Store window' }
+    $redirected = @(Get-CimInstance Win32_Process -Filter "Name='app.exe'" | Where-Object ExecutablePath -eq $expectedExe)
+    if ($redirected.Count -ne 1) { throw 'Direct handoff did not leave exactly one packaged app' }
+    if ((& $probe) -ne 'STORE') { throw 'Relaunch failed with Store already running' }
+    taskkill /PID $redirected[0].ProcessId /T /F | Out-Null
+    Write-Host 'PASS: direct entry fallback on missing/old package and redirection on eligible package (cold and already running).'
     foreach ($link in $links) {
         Start-Process -FilePath $link.FullName
         Start-Sleep -Seconds 7
