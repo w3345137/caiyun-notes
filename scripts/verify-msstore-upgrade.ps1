@@ -113,6 +113,33 @@ if ((Get-Content -LiteralPath $legacyMarker) -ne 'keep-legacy-profile') { throw 
 Write-Host "Both channels report the same WebView2 profile path: $($legacyProfile -eq $newProfile)"
 Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, package local-state preservation and intact legacy EXE.'
 
+if ($env:STANDARD_DRAFT -eq 'true') {
+    # No real user data or credentials are used. Keep application launches and
+    # WebView automation at normal user integrity, including the package install.
+    $qaUser = 'CaiyunDraftQA'
+    $secret = ConvertTo-SecureString (([guid]::NewGuid().ToString('N')) + 'Zz!8') -AsPlainText -Force
+    $account = New-LocalUser -Name $qaUser -Password $secret
+    $usersGroup = Get-LocalGroup -SID 'S-1-5-32-545'
+    if (!(Get-LocalGroupMember $usersGroup | Where-Object SID -eq $account.SID)) { Add-LocalGroupMember -Group $usersGroup -Member $account }
+    $fixtureDir = Join-Path $env:PUBLIC ('CaiyunDraftTest-' + [guid]::NewGuid())
+    New-Item -ItemType Directory -Path $fixtureDir | Out-Null
+    Copy-Item -LiteralPath $exe -Destination "$fixtureDir\legacy.exe"
+    Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP $candidate.Name) -Destination "$fixtureDir\candidate.msix"
+    Copy-Item scripts/verify-windows-draft.mjs,scripts/verify-standard-user-draft.ps1 -Destination $fixtureDir
+    icacls $fixtureDir /grant ("*{0}:(OI)(CI)RX" -f $account.SID.Value) | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Could not grant the test user fixture read access' }
+    $cred = [PSCredential]::new("$env:COMPUTERNAME\$qaUser",$secret)
+    $log = Join-Path $env:RUNNER_TEMP 'standard-draft-out.log'
+    $errlog = Join-Path $env:RUNNER_TEMP 'standard-draft-err.log'
+    Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue
+    $arguments = '-NoProfile -File "{0}\verify-standard-user-draft.ps1" -FixtureDir "{0}"' -f $fixtureDir
+    $run = Start-Process (Get-Command pwsh).Source -ArgumentList $arguments -Credential $cred -LoadUserProfile -WorkingDirectory $fixtureDir -RedirectStandardOutput $log -RedirectStandardError $errlog -PassThru
+    if (!$run.WaitForExit(150000)) { throw 'Timed out waiting for standard-user draft test' }
+    Get-Content -LiteralPath $log,$errlog
+    if ($run.ExitCode -ne 0) { throw "Standard-user draft test exit $($run.ExitCode)" }
+    exit 0
+}
+
 if ($env:LAUNCH_PROBE -eq 'true') {
     Add-Type -TypeDefinition @'
 using System;

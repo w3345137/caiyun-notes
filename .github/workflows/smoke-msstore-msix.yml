@@ -18,6 +18,12 @@ on:
         type: boolean
         default: false
 
+      standard_draft:
+        description: Open the real distribution packages under a disposable standard Windows account
+        required: false
+        type: boolean
+        default: false
+
 permissions:
   actions: read
   contents: read
@@ -49,6 +55,7 @@ jobs:
       - name: Exercise Windows package installation and upgrade
         shell: pwsh
         env:
+          STANDARD_DRAFT: ${{ inputs.standard_draft }}
           ENTRY_ONLY: ${{ inputs.entry_only }}
           LAUNCH_PROBE: ${{ inputs.launch_probe }}
           GH_TOKEN: ${{ github.token }}
