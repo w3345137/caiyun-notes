@@ -475,6 +475,7 @@ Function .onInit
   ${GetOptions} $CMDLINE "/UPDATE" $UpdateMode
   ${IfNot} ${Errors}
     StrCpy $UpdateMode 1
+    SetSilent silent
   ${EndIf}
 
   !if "${DISPLAYLANGUAGESELECTOR}" == "true"
@@ -758,6 +759,12 @@ Section Install
 SectionEnd
 
 Function .onInstSuccess
+  ${If} $UpdateMode = 1
+    ${If} ${FileExists} "$APPDATA\${BUNDLEID}\website-update-quit-${VERSION}.json"
+      Delete "$APPDATA\${BUNDLEID}\website-update-quit-${VERSION}.json"
+      Return
+    ${EndIf}
+  ${EndIf}
   ; Check for `/R` flag only in silent and passive installers because
   ; GUI installer has a toggle for the user to (re)start the app
   ${If} $PassiveMode = 1

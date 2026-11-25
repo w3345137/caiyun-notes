@@ -25,14 +25,28 @@ $canary = Start-Process $canaryFile -ArgumentList '-t','127.0.0.1' -PassThru -Wi
 try {
     $lock = [IO.File]::Open($LegacyExe,'Open','Read','Read')
     try {
-        $blocked = Start-Process $setups[0].FullName -ArgumentList '/S','/UPDATE' -PassThru -Wait
+        $blocked = Start-Process $setups[0].FullName -ArgumentList '/P','/R','/UPDATE' -PassThru -Wait
         if ($blocked.ExitCode -ne 32) { throw "Expected a busy target exit, got $($blocked.ExitCode)" }
     } finally { $lock.Dispose() }
     if ((Get-FileHash $LegacyExe).Hash -ne $oldHash -or $canary.HasExited) { throw 'Busy target or unrelated program changed' }
-    $setup = Start-Process $setups[0].FullName -ArgumentList '/S','/UPDATE' -PassThru -Wait
+    $intentDir = New-Item -ItemType Directory -Path (Join-Path $env:APPDATA 'com.caiyun.notes') -Force
+    $intent = Join-Path $intentDir.FullName 'website-update-quit-10.2.18.json'
+    Set-Content -Path $intent -Value '{"normalQuit":true}'
+    $setup = Start-Process $setups[0].FullName -ArgumentList '/P','/R','/UPDATE' -PassThru -Wait
     if ($setup.ExitCode -ne 0 -or (Get-FileHash $LegacyExe).Hash -ne (Get-FileHash $Probe).Hash) { throw 'In-place upgrade failed' }
     $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\彩云笔记'
     if ((Get-ItemProperty $key).DisplayVersion -ne '10.2.18') { throw 'New NSIS registration missing' }
+    if (Test-Path $intent) { throw 'Normal-quit flag not consumed' }
+    Start-Sleep -Seconds 3
+    if (Get-CimInstance Win32_Process -Filter "Name='app.exe'" | Where-Object ExecutablePath -eq $StoreExe) { throw 'Normal quit relaunched app' }
+    $explicit = Start-Process $setups[0].FullName -ArgumentList '/P','/R','/UPDATE' -PassThru
+    $explicit.WaitForExit(60000) | Out-Null
+    if (!$explicit.HasExited -or $explicit.ExitCode) { throw 'Explicit restart update failed' }
+    Start-Sleep -Seconds 10
+    $restarted = @(Get-CimInstance Win32_Process -Filter "Name='app.exe'" | Where-Object ExecutablePath -eq $StoreExe)
+    if ($restarted.Count -ne 1) { throw 'Explicit restart missing Store window' }
+    if (!(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe' AND ParentProcessId=$($restarted[0].ProcessId)")) { throw 'Explicit restart missing WebView' }
+    taskkill /PID $restarted[0].ProcessId /T /F | Out-Null
     foreach ($link in $links) {
         Start-Process $link.FullName
         Start-Sleep -Seconds 10
