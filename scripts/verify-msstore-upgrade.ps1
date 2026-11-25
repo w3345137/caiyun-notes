@@ -81,7 +81,7 @@ if (!(Test-Path -LiteralPath $legacyProfile -PathType Container)) { throw 'Missi
 $legacyMarker = Join-Path $legacyProfile 'isolated-legacy-upgrade-fixture.txt'
 Set-Content -LiteralPath $legacyMarker -Value 'keep-legacy-profile'
 
-if ($env:LAUNCH_PROBE -eq 'true') {
+if ($env:SCENARIO -eq 'entries') {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
     $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     $devcmd = Join-Path $vs 'Common7/Tools/VsDevCmd.bat'
@@ -92,7 +92,7 @@ if ($env:LAUNCH_PROBE -eq 'true') {
     if ((& $probe) -ne 'DIRECT') { throw 'No Store installed: expected normal direct startup' }
 }
 $old = Install-QaPackage $baseline '10.2.15.0'
-if ($env:LAUNCH_PROBE -eq 'true' -and (& $probe) -ne 'DIRECT') {
+if ($env:SCENARIO -eq 'entries' -and (& $probe) -ne 'DIRECT') {
     throw 'Old Store package must not capture the direct entry'
 }
 $oldProfile = Get-LaunchedProfile (Join-Path $old.InstallLocation 'app\app.exe')
@@ -113,7 +113,7 @@ if ((Get-Content -LiteralPath $legacyMarker) -ne 'keep-legacy-profile') { throw 
 Write-Host "Both channels report the same WebView2 profile path: $($legacyProfile -eq $newProfile)"
 Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, package local-state preservation and intact legacy EXE.'
 
-if ($env:STANDARD_DRAFT -eq 'true') {
+if ($env:SCENARIO -eq 'offline-draft') {
     # No real user data or credentials are used. Keep application launches and
     # WebView automation at normal user integrity, including the package install.
     $qaUser = 'CaiyunDraftQA'
@@ -140,7 +140,7 @@ if ($env:STANDARD_DRAFT -eq 'true') {
     exit 0
 }
 
-if ($env:LAUNCH_PROBE -eq 'true') {
+if ($env:SCENARIO -eq 'entries') {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -190,13 +190,6 @@ public static class CaiyunStoreActivation {
         $shortcut = $shell.CreateShortcut($link.FullName)
         Write-Host "Legacy shortcut after update: $($link.FullName) -> $($shortcut.TargetPath)"
     }
-    # Only the directly-launched QA process inherits this loopback test port.
-    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19227'
-    $nonce = [guid]::NewGuid().ToString()
-    function Invoke-DraftTest($mode) {
-        node scripts/verify-windows-draft.mjs $mode 19227 $nonce
-        if ($LASTEXITCODE -ne 0) { throw "QA WebView draft test failed: $mode" }
-    }
     function Wait-WebView($process) {
         $deadline = (Get-Date).AddSeconds(35)
         do {
@@ -206,48 +199,8 @@ public static class CaiyunStoreActivation {
         } while ((Get-Date) -lt $deadline)
         throw 'Expected WebView did not start'
     }
-    function Assert-CleanExit($process) {
-        Invoke-DraftTest 'quit'
-        if (!$process.WaitForExit(30000)) { throw 'Normal exit did not complete' }
-    }
-    function Start-TestApp($exePath) {
-        # Hosted runners are elevated. WebView2 ignores environment test flags
-        # for elevated hosts. Launch the real client as the ordinary desktop user.
-        $name = 'CaiyunQa-' + [guid]::NewGuid()
-        $launcher = Join-Path $env:RUNNER_TEMP ($name + '.ps1')
-        $pidPath = Join-Path $env:RUNNER_TEMP ($name + '.pid')
-        $body = @'
-param($exePath,$pidPath)
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19227'
-$start = [Diagnostics.ProcessStartInfo]::new()
-$start.FileName = $exePath
-$start.UseShellExecute = $false
-$app = [Diagnostics.Process]::Start($start)
-[IO.File]::WriteAllText($pidPath,$app.Id.ToString())
-$app.WaitForExit()
-'@
-        Set-Content -LiteralPath $launcher -Value $body -Encoding utf8BOM
-        $arguments = '-NoProfile -File "{0}" "{1}" "{2}"' -f $launcher,$exePath,$pidPath
-        $action = New-ScheduledTaskAction -Execute (Get-Command pwsh).Source -Argument $arguments
-        $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
-        Register-ScheduledTask -TaskName $name -Action $action -Principal $principal | Out-Null
-        Start-ScheduledTask -TaskName $name
-        for ($i = 0; $i -lt 80; $i++) {
-            if ([IO.File]::Exists($pidPath)) {
-                $launched = Get-Process -Id ([int][IO.File]::ReadAllText($pidPath))
-                if ($launched.Path -ine $exePath) { throw 'Unexpected scheduled test process identity' }
-                return $launched
-            }
-            Start-Sleep -Milliseconds 250
-        }
-        throw 'Ordinary-user QA launch did not report a PID' 
-    }
-    $entryOnly = $env:ENTRY_ONLY -eq 'true'
-    $oldProcess = if ($entryOnly) { Start-Process -FilePath $legacyExe -PassThru } else { Start-TestApp $legacyExe }
+    $oldProcess = Start-Process -FilePath $legacyExe -PassThru
     Wait-WebView $oldProcess
-    $webviewProcess = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($oldProcess.Id) AND Name='msedgewebview2.exe'" | Select-Object -First 1
-    Write-Host "QA WebView runtime received requested test port: $($webviewProcess.CommandLine -match 'remote-debugging-port=19227')"
-    if (!$entryOnly) { Invoke-DraftTest 'write' }
     $oldProcess.Refresh()
     for ($i = 0; $i -lt 45; $i++) {
         $oldWindow = [CaiyunStoreActivation]::EditorWindow($oldProcess.Id)
@@ -266,7 +219,6 @@ $app.WaitForExit()
     if ($first.Path -ine $expectedExe -or $first.MainWindowTitle -ne '彩云笔记 · 等待旧版退出') { throw "Missing cancelable waiting dialog (title=$($first.MainWindowTitle))" }
     [CaiyunStoreActivation]::CloseWindow($first.MainWindowHandle)
     if (!$first.WaitForExit(10000) -or $oldProcess.HasExited) { throw 'Cancel must leave old process running' }
-    if (!$entryOnly) { Invoke-DraftTest 'read' }
     $activationPid = [CaiyunStoreActivation]::Launch($aumid)
     Start-Sleep -Seconds 3
     $waiting = Get-Process -Id $activationPid -ErrorAction Stop
@@ -274,23 +226,12 @@ $app.WaitForExit()
         (Get-CimInstance Win32_Process -Filter "ParentProcessId = $activationPid AND Name = 'msedgewebview2.exe'")) {
         throw "Expected a waiting native dialog and no second editor, observed title '$($waiting.MainWindowTitle)'"
     }
-    if ($entryOnly) {
-        # Fixture has no user account or edits. This tests detection of process
-        # exit only. The separate draft test uses the real controlled quit.
-        taskkill /PID $oldProcess.Id /T /F | Out-Null
-    } else { Assert-CleanExit $oldProcess }
+    # This fixture contains no user edits. The offline-draft scenario separately
+    # exercises normal controlled quit and checks its committed data.
+    taskkill /PID $oldProcess.Id /T /F | Out-Null
     Wait-WebView $waiting
-    Write-Host "PASS: same waiting Store process started WebView after legacy exited (entry-only=$entryOnly)."
-    # AUMID activation can be brokered without inheriting the calling process environment.
-    # Reopen the same installed package with the QA port to inspect its business data.
+    Write-Host 'PASS: same waiting Store process started its WebView after the legacy process exited.'
     taskkill /PID $waiting.Id /T /F | Out-Null
-    if (!$entryOnly) {
-        $fresh = Start-TestApp $expectedExe
-        Wait-WebView $fresh
-        Invoke-DraftTest 'read'
-        Assert-CleanExit $fresh
-        Write-Host 'PASS: exact newly installed package read the old synthetic offline draft.'
-    }
     if ((& $probe) -ne 'STORE') { throw 'New direct entry failed to reach the eligible Store window' }
     $redirected = @(Get-CimInstance Win32_Process -Filter "Name='app.exe'" | Where-Object ExecutablePath -eq $expectedExe)
     if ($redirected.Count -ne 1) { throw 'Direct handoff did not leave exactly one packaged app' }
@@ -333,6 +274,7 @@ $app.WaitForExit()
     exit 0
 }
 
+if ($env:SCENARIO -ne 'legacy-uninstall') { throw 'Unknown Windows acceptance scenario' }
 # Exercise the existing official uninstaller only after both test apps have exited.
 $uninstaller = Join-Path $legacyDir 'uninstall.exe'
 if (([string]$legacy.UninstallString).Trim('"') -ine $uninstaller) {

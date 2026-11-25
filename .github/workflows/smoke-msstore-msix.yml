@@ -6,23 +6,15 @@ on:
       build_run_id:
         required: true
         type: string
-      launch_probe:
-        description: Check activation through the Store entry while the legacy EXE is running
-        required: false
-        default: false
-        type: boolean
-
-      entry_only:
-        description: Verify native entries and tray handoff separately from the offline draft test
-        required: false
-        type: boolean
-        default: false
-
-      standard_draft:
-        description: Open the real distribution packages under a disposable standard Windows account
-        required: false
-        type: boolean
-        default: false
+      scenario:
+        description: Windows acceptance scenario
+        required: true
+        type: choice
+        default: entries
+        options:
+          - entries
+          - offline-draft
+          - legacy-uninstall
 
 permissions:
   actions: read
@@ -55,9 +47,7 @@ jobs:
       - name: Exercise Windows package installation and upgrade
         shell: pwsh
         env:
-          STANDARD_DRAFT: ${{ inputs.standard_draft }}
-          ENTRY_ONLY: ${{ inputs.entry_only }}
-          LAUNCH_PROBE: ${{ inputs.launch_probe }}
+          SCENARIO: ${{ inputs.scenario }}
           GH_TOKEN: ${{ github.token }}
           LEGACY_TAG: ${{ matrix.legacy.tag }}
           LEGACY_VERSION: ${{ matrix.legacy.version }}
