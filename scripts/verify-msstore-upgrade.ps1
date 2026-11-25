@@ -63,15 +63,15 @@ if ($manifest.Package.Identity.Version -ne '10.2.18.0' -or $manifest.Package.App
 }
 Write-Host "Candidate SHA-256: $((Get-FileHash -LiteralPath $candidate.FullName).Hash)"
 
-$exe = Join-Path $env:RUNNER_TEMP 'official-10.2.13.exe'
-Invoke-WebRequest 'https://github.com/w3345137/caiyun-notes/releases/download/p25/_10.2.13_x64-setup.exe' -OutFile $exe
-if ((Get-FileHash -LiteralPath $exe).Hash -ne '7dad87f4e18698973bcf4a12b382aed726c06b7fcd36527e57351f4dce201a3a') {
-    throw 'Unexpected official EXE fixture'
-}
+$assetName = "_${env:LEGACY_VERSION}_x64-setup.exe"
+$exe = Join-Path $env:RUNNER_TEMP $assetName
+gh release download $env:LEGACY_TAG -R w3345137/caiyun-notes --pattern $assetName --dir $env:RUNNER_TEMP
+if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $exe).Hash -ne $env:LEGACY_SHA256) { throw 'Unexpected legacy EXE fixture' }
 $install = Start-Process -FilePath $exe -ArgumentList '/S' -PassThru -Wait
 if ($install.ExitCode -ne 0) { throw 'Legacy EXE installation failed' }
 $registration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\彩云笔记'
 $legacy = Get-ItemProperty -LiteralPath $registration
+if ($legacy.DisplayVersion -ne $env:LEGACY_VERSION) { throw 'Unexpected registered EXE version' }
 $legacyDir = ([string]$legacy.InstallLocation).Trim('"').TrimEnd('\')
 if ($legacyDir -ine (Join-Path $env:LOCALAPPDATA '彩云笔记')) { throw 'Unexpected legacy install location' }
 $legacyExe = Join-Path $legacyDir 'app.exe'

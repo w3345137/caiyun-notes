@@ -13,6 +13,13 @@ permissions:
 
 jobs:
   verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        legacy:
+          - {tag: p20, version: '10.2.8', sha256: '658bba8c12ecbc794977077f4360c63eb2c24f0a1e207e5a10498bab7eab970a'}
+          - {tag: p24, version: '10.2.12', sha256: '97203e28ceb3aab30f586257dfc4ae2cfa6494e49581ad9b4005b58f002d09ad'}
+          - {tag: p25, version: '10.2.13', sha256: '7dad87f4e18698973bcf4a12b382aed726c06b7fcd36527e57351f4dce201a3a'}
     runs-on: windows-latest
     timeout-minutes: 12
     steps:
@@ -31,4 +38,9 @@ jobs:
           path: candidate
       - name: Exercise Windows package installation and upgrade
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LEGACY_TAG: ${{ matrix.legacy.tag }}
+          LEGACY_VERSION: ${{ matrix.legacy.version }}
+          LEGACY_SHA256: ${{ matrix.legacy.sha256 }}
         run: ./scripts/verify-msstore-upgrade.ps1
