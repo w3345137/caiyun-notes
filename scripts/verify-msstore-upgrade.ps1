@@ -128,30 +128,56 @@ public static class CaiyunStoreActivation {
         $shortcut = $shell.CreateShortcut($link.FullName)
         Write-Host "Legacy shortcut after update: $($link.FullName) -> $($shortcut.TargetPath)"
     }
-    function Observe-StoreActivation($withLegacy) {
-        $legacyProcess = $null
-        $launchedProcess = $null
-        try {
-            if ($withLegacy) {
-                $legacyProcess = Start-Process -FilePath $legacyExe -PassThru
-                Start-Sleep -Seconds 6
-                if ($legacyProcess.HasExited) { throw 'Legacy process did not stay open' }
-            }
-            $activationPid = [CaiyunStoreActivation]::Launch($aumid)
-            Start-Sleep -Seconds 8
-            $launchedProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $activationPid"
-            $storeRunning = $launchedProcess -and $launchedProcess.ExecutablePath -eq $expectedExe
-            Write-Host "Windows AUMID activation with legacy EXE running=$withLegacy reached Store process=$storeRunning"
-            if (!$withLegacy -and !$storeRunning) { throw 'AUMID did not launch the exact Store executable after legacy exit' }
-        } finally {
-            if ($launchedProcess -and $launchedProcess.ExecutablePath -eq $expectedExe) {
-                taskkill /PID $launchedProcess.ProcessId /T /F | Out-Null
-            }
-            if ($legacyProcess -and !$legacyProcess.HasExited) { taskkill /PID $legacyProcess.Id /T /F | Out-Null }
-        }
+    # Only the directly-launched QA process inherits this loopback test port.
+    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19227'
+    $nonce = [guid]::NewGuid().ToString()
+    function Invoke-DraftTest($mode) {
+        node scripts/verify-windows-draft.mjs $mode 19227 $nonce
+        if ($LASTEXITCODE -ne 0) { throw "QA WebView draft test failed: $mode" }
     }
-    Observe-StoreActivation $true
-    Observe-StoreActivation $false
+    function Wait-WebView($process) {
+        $deadline = (Get-Date).AddSeconds(35)
+        do {
+            if ($process.HasExited) { throw 'App exited before WebView startup' }
+            if (Get-CimInstance Win32_Process -Filter "ParentProcessId = $($process.Id) AND Name = 'msedgewebview2.exe'") { return }
+            Start-Sleep -Milliseconds 400
+        } while ((Get-Date) -lt $deadline)
+        throw 'Expected WebView did not start'
+    }
+    function Assert-CleanExit($process) {
+        Invoke-DraftTest 'quit'
+        if (!$process.WaitForExit(30000)) { throw 'Normal exit did not complete' }
+    }
+    $oldProcess = Start-Process -FilePath $legacyExe -PassThru
+    Wait-WebView $oldProcess
+    Invoke-DraftTest 'write'
+    $activationPid = [CaiyunStoreActivation]::Launch($aumid)
+    Start-Sleep -Seconds 3
+    $waiting = Get-Process -Id $activationPid -ErrorAction Stop
+    if ($waiting.Path -ine $expectedExe -or $waiting.MainWindowTitle -ne '彩云笔记 · 等待旧版退出' -or
+        (Get-CimInstance Win32_Process -Filter "ParentProcessId = $activationPid AND Name = 'msedgewebview2.exe'")) {
+        throw "Expected a waiting native dialog and no second editor, observed title '$($waiting.MainWindowTitle)'"
+    }
+    Assert-CleanExit $oldProcess
+    Wait-WebView $waiting
+    Write-Host 'PASS: quitting legacy normally resumed the same waiting Store process with its WebView.'
+    # AUMID activation can be brokered without inheriting the calling process environment.
+    # Reopen the same installed package with the QA port to inspect its business data.
+    taskkill /PID $waiting.Id /T /F | Out-Null
+    $fresh = Start-Process -FilePath $expectedExe -PassThru
+    Wait-WebView $fresh
+    Invoke-DraftTest 'read'
+    Assert-CleanExit $fresh
+    Write-Host 'PASS: exact newly installed package read the old synthetic offline draft.'
+    foreach ($link in $links) {
+        Start-Process -FilePath $link.FullName
+        Start-Sleep -Seconds 7
+        $owners = @(Get-CimInstance Win32_Process -Filter "Name = 'app.exe'" |
+            Where-Object { $_.ExecutablePath -in @($legacyExe, $expectedExe) })
+        if ($owners.Count -ne 1) { throw "Ambiguous shortcut outcome: $($link.FullName), count=$($owners.Count)" }
+        Write-Host "Shell-open shortcut $($link.FullName) opened Store=$($owners[0].ExecutablePath -eq $expectedExe)"
+        taskkill /PID $owners[0].ProcessId /T /F | Out-Null
+    }
     exit 0
 }
 
