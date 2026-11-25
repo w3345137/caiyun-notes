@@ -81,7 +81,7 @@ if (!(Test-Path -LiteralPath $legacyProfile -PathType Container)) { throw 'Missi
 $legacyMarker = Join-Path $legacyProfile 'isolated-legacy-upgrade-fixture.txt'
 Set-Content -LiteralPath $legacyMarker -Value 'keep-legacy-profile'
 
-if ($env:SCENARIO -eq 'entries') {
+if ($env:SCENARIO -in @('entries','website-installer')) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
     $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     $devcmd = Join-Path $vs 'Common7/Tools/VsDevCmd.bat'
@@ -112,6 +112,12 @@ if ($current.UninstallString -ne $legacy.UninstallString -or (Get-FileHash -Lite
 if ((Get-Content -LiteralPath $legacyMarker) -ne 'keep-legacy-profile') { throw 'The unpackaged WebView2 profile changed' }
 Write-Host "Both channels report the same WebView2 profile path: $($legacyProfile -eq $newProfile)"
 Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, package local-state preservation and intact legacy EXE.'
+
+if ($env:SCENARIO -eq 'website-installer') {
+    if ((Get-FileHash $candidate.FullName).Hash -ne 'FF83314873E04A7D66326ABB062A23E69A1E9BE291E062A2D118E790E16CE672') { throw 'Unexpected Store handoff candidate' }
+    & ./scripts/verify-website-installer.ps1 -Probe $probe -LegacyExe $legacyExe -StoreExe (Join-Path $new.InstallLocation 'app/app.exe') -Marker $legacyMarker
+    exit 0
+}
 
 if ($env:SCENARIO -eq 'offline-draft') {
     # No real user data or credentials are used. Keep application launches and
