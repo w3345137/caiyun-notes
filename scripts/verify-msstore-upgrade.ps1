@@ -40,6 +40,13 @@ function Test-Launch($package) {
         $webview = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($process.Id)" |
             Where-Object Name -eq 'msedgewebview2.exe')
         if ($webview.Count -eq 0) { throw 'Packaged app did not start WebView2' }
+        $profile = $webview | ForEach-Object {
+            if ($_.CommandLine -match '--user-data-dir=(?:"([^"]+)"|([^\s"]+))') {
+                if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+            }
+        } | Select-Object -First 1
+        if (!$profile) { throw 'WebView2 profile path not found' }
+        $profile
     } finally {
         if (!$process.HasExited) { taskkill /PID $process.Id /T /F | Out-Null }
     }
@@ -70,17 +77,18 @@ $legacyExe = Join-Path $legacy.InstallLocation 'app.exe'
 $legacySha = (Get-FileHash -LiteralPath $legacyExe).Hash
 
 $old = Install-QaPackage $baseline '10.2.15.0'
-Test-Launch $old
+$oldProfile = Test-Launch $old
 $localState = Join-Path $env:LOCALAPPDATA "Packages\$family\LocalState"
 New-Item -Path $localState -ItemType Directory -Force | Out-Null
 $marker = Join-Path $localState 'isolated-package-upgrade-fixture.txt'
 Set-Content -LiteralPath $marker -Value 'keep-local-state'
 
 $new = Install-QaPackage $candidate '10.2.18.0'
-Test-Launch $new
+$newProfile = Test-Launch $new
+if ($newProfile -ne $oldProfile) { throw 'WebView2 profile changed on Store upgrade' }
 if ((Get-Content -LiteralPath $marker) -ne 'keep-local-state') { throw 'Package local state did not survive upgrade' }
 $current = Get-ItemProperty -LiteralPath $registration
 if ($current.UninstallString -ne $legacy.UninstallString -or (Get-FileHash -LiteralPath $legacyExe).Hash -ne $legacySha) {
     throw 'Store package unexpectedly changed the legacy EXE or uninstall registration'
 }
-Write-Host 'PASS: same-family upgrade, WebView2 startup, package local-state preservation and intact legacy EXE.'
+Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, package local-state preservation and intact legacy EXE.'
