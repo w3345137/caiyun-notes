@@ -31,10 +31,34 @@ try {
     $old = Start-Process -FilePath (Join-Path $env:LOCALAPPDATA '彩云笔记\app.exe') -PassThru
     Check-Draft 'write'
     Stop-Normally $old
+    Write-Output 'PASS: the historical official EXE wrote the pending draft and its controlled exit finished.'
     Add-AppxPackage -Path "$FixtureDir\candidate.msix"
     $new = Get-AppxPackage -Name BinApp.547813EA77836
     if ($new.Version -ne [version]'10.2.18.0' -or $new.PackageFamilyName -ne 'BinApp.547813EA77836_hex6nfb75njyr') { throw 'Unexpected package identity' }
-    $fresh = Start-Process -FilePath (Join-Path $new.InstallLocation 'app\app.exe') -PassThru
+    # Normal users launch this registered app by AUMID. Its broker does not
+    # inherit our process-local test settings. Scope the documented WebView2
+    # QA options to this app in the fresh test user's profile.
+    $aumid = "$($new.PackageFamilyName)!CaiyunNotes"
+    $argsKey = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+    New-Item -Path $argsKey -Force | Out-Null
+    foreach ($id in @($aumid,'app.exe')) {
+        New-ItemProperty -Path $argsKey -Name $id -Value $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -PropertyType String -Force | Out-Null
+    }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("2e941141-7f97-4756-ba1d-9decde894a3d")]
+interface IDraftActivation {
+    int ActivateApplication([MarshalAs(UnmanagedType.LPWStr)] string id, [MarshalAs(UnmanagedType.LPWStr)] string args, uint flags);
+}
+public static class DraftActivation {
+    public static int Start(string id) {
+        var service = Type.GetTypeFromCLSID(new Guid("45ba127d-10a8-46ea-8ab7-56ea9078943c"));
+        return ((IDraftActivation)Activator.CreateInstance(service)).ActivateApplication(id,null,2);
+    }
+}
+'@
+    $fresh = Get-Process -Id ([DraftActivation]::Start($aumid))
     Check-Draft 'read'
     Stop-Normally $fresh
     Write-Output 'PASS: a standard-user official legacy app wrote a synthetic offline draft, quit normally, and the installed Store candidate read the exact record.'
