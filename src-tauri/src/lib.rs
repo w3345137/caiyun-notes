@@ -503,6 +503,15 @@ fn install_windows_tray(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(target_os = "windows", feature = "msstore-distribution"))]
+    {
+        extern "C" {
+            fn caiyun_store_can_start() -> std::ffi::c_int;
+        }
+        if unsafe { caiyun_store_can_start() } == 0 {
+            return;
+        }
+    }
     let builder = tauri::Builder::default().register_uri_scheme_protocol("caiyun-plugin", |_ctx, request| plugin_host::runtime_response(request.uri().path()));
     #[cfg(desktop)]
     let builder = builder.register_uri_scheme_protocol("caiyun-map-probe", |_ctx, request| {
