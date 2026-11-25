@@ -100,6 +100,61 @@ if ((Get-Content -LiteralPath $legacyMarker) -ne 'keep-legacy-profile') { throw 
 Write-Host "Both channels report the same WebView2 profile path: $($legacyProfile -eq $newProfile)"
 Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, package local-state preservation and intact legacy EXE.'
 
+if ($env:LAUNCH_PROBE -eq 'true') {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("2e941141-7f97-4756-ba1d-9decde894a3d")]
+interface IApplicationActivationManager {
+    int ActivateApplication([MarshalAs(UnmanagedType.LPWStr)] string appUserModelId, [MarshalAs(UnmanagedType.LPWStr)] string arguments, uint options);
+}
+public static class CaiyunStoreActivation {
+    public static int Launch(string appUserModelId) {
+        var clsid = new Guid("45ba127d-10a8-46ea-8ab7-56ea9078943c");
+        var manager = (IApplicationActivationManager)Activator.CreateInstance(Type.GetTypeFromCLSID(clsid));
+        return manager.ActivateApplication(appUserModelId, null, 2);
+    }
+}
+'@
+    $aumid = "$family!CaiyunNotes"
+    $expectedExe = Join-Path $new.InstallLocation 'app\app.exe'
+    $shortcutFolders = @([Environment]::GetFolderPath('DesktopDirectory'), [Environment]::GetFolderPath('Programs'))
+    $links = foreach ($folder in $shortcutFolders) {
+        Get-ChildItem -LiteralPath $folder -Recurse -Filter '彩云笔记.lnk'
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    foreach ($link in $links) {
+        $shortcut = $shell.CreateShortcut($link.FullName)
+        Write-Host "Legacy shortcut after update: $($link.FullName) -> $($shortcut.TargetPath)"
+    }
+    function Observe-StoreActivation($withLegacy) {
+        $legacyProcess = $null
+        $launchedProcess = $null
+        try {
+            if ($withLegacy) {
+                $legacyProcess = Start-Process -FilePath $legacyExe -PassThru
+                Start-Sleep -Seconds 6
+                if ($legacyProcess.HasExited) { throw 'Legacy process did not stay open' }
+            }
+            $activationPid = [CaiyunStoreActivation]::Launch($aumid)
+            Start-Sleep -Seconds 8
+            $launchedProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $activationPid"
+            $storeRunning = $launchedProcess -and $launchedProcess.ExecutablePath -eq $expectedExe
+            Write-Host "Windows AUMID activation with legacy EXE running=$withLegacy reached Store process=$storeRunning"
+            if (!$withLegacy -and !$storeRunning) { throw 'AUMID did not launch the exact Store executable after legacy exit' }
+        } finally {
+            if ($launchedProcess -and $launchedProcess.ExecutablePath -eq $expectedExe) {
+                taskkill /PID $launchedProcess.ProcessId /T /F | Out-Null
+            }
+            if ($legacyProcess -and !$legacyProcess.HasExited) { taskkill /PID $legacyProcess.Id /T /F | Out-Null }
+        }
+    }
+    Observe-StoreActivation $true
+    Observe-StoreActivation $false
+    exit 0
+}
+
 # Exercise the existing official uninstaller only after both test apps have exited.
 $uninstaller = Join-Path $legacyDir 'uninstall.exe'
 if (([string]$legacy.UninstallString).Trim('"') -ine $uninstaller) {
