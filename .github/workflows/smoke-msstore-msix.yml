@@ -12,6 +12,12 @@ on:
         default: false
         type: boolean
 
+      entry_only:
+        description: Verify native entries and tray handoff separately from the offline draft test
+        required: false
+        type: boolean
+        default: false
+
 permissions:
   actions: read
   contents: read
@@ -43,6 +49,7 @@ jobs:
       - name: Exercise Windows package installation and upgrade
         shell: pwsh
         env:
+          ENTRY_ONLY: ${{ inputs.entry_only }}
           LAUNCH_PROBE: ${{ inputs.launch_probe }}
           GH_TOKEN: ${{ github.token }}
           LEGACY_TAG: ${{ matrix.legacy.tag }}

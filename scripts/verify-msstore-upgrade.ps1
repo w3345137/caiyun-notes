@@ -199,11 +199,12 @@ $app.WaitForExit()
         }
         throw 'Ordinary-user QA launch did not report a PID' 
     }
-    $oldProcess = Start-TestApp $legacyExe
+    $entryOnly = $env:ENTRY_ONLY -eq 'true'
+    $oldProcess = if ($entryOnly) { Start-Process -FilePath $legacyExe -PassThru } else { Start-TestApp $legacyExe }
     Wait-WebView $oldProcess
     $webviewProcess = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($oldProcess.Id) AND Name='msedgewebview2.exe'" | Select-Object -First 1
     Write-Host "QA WebView runtime received requested test port: $($webviewProcess.CommandLine -match 'remote-debugging-port=19227')"
-    Invoke-DraftTest 'write'
+    if (!$entryOnly) { Invoke-DraftTest 'write' }
     $oldProcess.Refresh()
     $oldWindow = $oldProcess.MainWindowHandle
     [CaiyunStoreActivation]::CloseWindow($oldWindow)
@@ -217,7 +218,7 @@ $app.WaitForExit()
     if ($first.Path -ine $expectedExe -or $first.MainWindowTitle -ne '彩云笔记 · 等待旧版退出') { throw "Missing cancelable waiting dialog (title=$($first.MainWindowTitle))" }
     [CaiyunStoreActivation]::CloseWindow($first.MainWindowHandle)
     if (!$first.WaitForExit(10000) -or $oldProcess.HasExited) { throw 'Cancel must leave old process running' }
-    Invoke-DraftTest 'read'
+    if (!$entryOnly) { Invoke-DraftTest 'read' }
     $activationPid = [CaiyunStoreActivation]::Launch($aumid)
     Start-Sleep -Seconds 3
     $waiting = Get-Process -Id $activationPid -ErrorAction Stop
@@ -225,17 +226,23 @@ $app.WaitForExit()
         (Get-CimInstance Win32_Process -Filter "ParentProcessId = $activationPid AND Name = 'msedgewebview2.exe'")) {
         throw "Expected a waiting native dialog and no second editor, observed title '$($waiting.MainWindowTitle)'"
     }
-    Assert-CleanExit $oldProcess
+    if ($entryOnly) {
+        # Fixture has no user account or edits. This tests detection of process
+        # exit only. The separate draft test uses the real controlled quit.
+        taskkill /PID $oldProcess.Id /T /F | Out-Null
+    } else { Assert-CleanExit $oldProcess }
     Wait-WebView $waiting
-    Write-Host 'PASS: quitting legacy normally resumed the same waiting Store process with its WebView.'
+    Write-Host "PASS: same waiting Store process started WebView after legacy exited (entry-only=$entryOnly)."
     # AUMID activation can be brokered without inheriting the calling process environment.
     # Reopen the same installed package with the QA port to inspect its business data.
     taskkill /PID $waiting.Id /T /F | Out-Null
-    $fresh = Start-TestApp $expectedExe
-    Wait-WebView $fresh
-    Invoke-DraftTest 'read'
-    Assert-CleanExit $fresh
-    Write-Host 'PASS: exact newly installed package read the old synthetic offline draft.'
+    if (!$entryOnly) {
+        $fresh = Start-TestApp $expectedExe
+        Wait-WebView $fresh
+        Invoke-DraftTest 'read'
+        Assert-CleanExit $fresh
+        Write-Host 'PASS: exact newly installed package read the old synthetic offline draft.'
+    }
     if ((& $probe) -ne 'STORE') { throw 'New direct entry failed to reach the eligible Store window' }
     $redirected = @(Get-CimInstance Win32_Process -Filter "Name='app.exe'" | Where-Object ExecutablePath -eq $expectedExe)
     if ($redirected.Count -ne 1) { throw 'Direct handoff did not leave exactly one packaged app' }
