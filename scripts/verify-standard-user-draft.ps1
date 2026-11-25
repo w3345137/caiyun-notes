@@ -35,15 +35,10 @@ try {
     Add-AppxPackage -Path "$FixtureDir\candidate.msix"
     $new = Get-AppxPackage -Name BinApp.547813EA77836
     if ($new.Version -ne [version]'10.2.18.0' -or $new.PackageFamilyName -ne 'BinApp.547813EA77836_hex6nfb75njyr') { throw 'Unexpected package identity' }
-    # Normal users launch this registered app by AUMID. Its broker does not
-    # inherit our process-local test settings. Scope the documented WebView2
-    # QA options to this app in the fresh test user's profile.
+    # Brokered activation builds an environment for the target account.
+    # Only this disposable standard user's environment is configured.
     $aumid = "$($new.PackageFamilyName)!CaiyunNotes"
-    $argsKey = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
-    New-Item -Path $argsKey -Force | Out-Null
-    foreach ($id in @($aumid,'app.exe')) {
-        New-ItemProperty -Path $argsKey -Name $id -Value $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -PropertyType String -Force | Out-Null
-    }
+    [Environment]::SetEnvironmentVariable('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS',$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS,'User')
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -59,6 +54,7 @@ public static class DraftActivation {
 }
 '@
     $fresh = Get-Process -Id ([DraftActivation]::Start($aumid))
+    Write-Output 'Registered candidate activated for the standard user.'
     Check-Draft 'read'
     Stop-Normally $fresh
     Write-Output 'PASS: a standard-user official legacy app wrote a synthetic offline draft, quit normally, and the installed Store candidate read the exact record.'
