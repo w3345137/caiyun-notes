@@ -123,6 +123,12 @@ interface IApplicationActivationManager {
     int ActivateApplication([MarshalAs(UnmanagedType.LPWStr)] string appUserModelId, [MarshalAs(UnmanagedType.LPWStr)] string arguments, uint options);
 }
 public static class CaiyunStoreActivation {
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll", SetLastError=true)] static extern bool PostMessage(IntPtr window, uint msg, IntPtr wparam, IntPtr lparam);
+    public static void CloseWindow(IntPtr window) {
+        if (window == IntPtr.Zero || !PostMessage(window, 0x10, IntPtr.Zero, IntPtr.Zero))
+            throw new InvalidOperationException("Could not request a normal window close");
+    }
     public static int Launch(string appUserModelId) {
         var clsid = new Guid("45ba127d-10a8-46ea-8ab7-56ea9078943c");
         var manager = (IApplicationActivationManager)Activator.CreateInstance(Type.GetTypeFromCLSID(clsid));
@@ -164,6 +170,20 @@ public static class CaiyunStoreActivation {
     $oldProcess = Start-Process -FilePath $legacyExe -PassThru
     Wait-WebView $oldProcess
     Invoke-DraftTest 'write'
+    $oldProcess.Refresh()
+    $oldWindow = $oldProcess.MainWindowHandle
+    [CaiyunStoreActivation]::CloseWindow($oldWindow)
+    Start-Sleep -Seconds 1
+    if ($oldProcess.HasExited -or [CaiyunStoreActivation]::IsWindowVisible($oldWindow)) {
+        throw 'Closing old window did not leave the old client in its tray'
+    }
+    $first = Get-Process -Id ([CaiyunStoreActivation]::Launch($aumid))
+    Start-Sleep -Seconds 2
+    $first.Refresh()
+    if ($first.Path -ine $expectedExe -or $first.MainWindowTitle -ne '彩云笔记 · 等待旧版退出') { throw "Missing cancelable waiting dialog (title=$($first.MainWindowTitle))" }
+    [CaiyunStoreActivation]::CloseWindow($first.MainWindowHandle)
+    if (!$first.WaitForExit(10000) -or $oldProcess.HasExited) { throw 'Cancel must leave old process running' }
+    Invoke-DraftTest 'read'
     $activationPid = [CaiyunStoreActivation]::Launch($aumid)
     Start-Sleep -Seconds 3
     $waiting = Get-Process -Id $activationPid -ErrorAction Stop
