@@ -225,7 +225,25 @@ $uninstaller = Join-Path $legacyDir 'uninstall.exe'
 if (([string]$legacy.UninstallString).Trim('"') -ine $uninstaller) {
     throw 'Legacy uninstall registration does not match the installed fixture'
 }
-$remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+Write-Host "Legacy uninstaller SHA-256: $((Get-FileHash -LiteralPath $uninstaller).Hash)"
+# In this disposable job the only extra app.exe is our canary. A production
+# migration must preserve unrelated applications that use this common name.
+$canaryDir = Join-Path $env:RUNNER_TEMP 'caiyun-unrelated-process'
+New-Item -ItemType Directory -Path $canaryDir | Out-Null
+$canaryExe = Join-Path $canaryDir 'app.exe'
+Copy-Item (Join-Path $env:SystemRoot 'System32/ping.exe') $canaryExe
+$canary = Start-Process $canaryExe -ArgumentList '-t','127.0.0.1' -WindowStyle Hidden -PassThru
+try {
+    Start-Sleep -Milliseconds 500
+    if ($canary.HasExited) { throw 'Canary failed to start' }
+    $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru
+    if (!$remove.WaitForExit(45000)) { throw 'Official silent uninstall did not finish within 45 seconds with unrelated app.exe running' }
+    Start-Sleep -Seconds 2
+    if ($canary.HasExited) { throw 'BLOCK automatic uninstall: official NSIS stopped an unrelated app.exe' }
+    Write-Host 'PASS: unrelated test app.exe survived official NSIS uninstall.'
+} finally {
+    if (!$canary.HasExited) { $canary.Kill(); $canary.WaitForExit() }
+}
 if ($remove.ExitCode -ne 0 -or (Test-Path -LiteralPath $legacyExe) -or (Test-Path -LiteralPath $registration)) {
     throw 'The verified legacy uninstaller did not retire its own registration'
 }
