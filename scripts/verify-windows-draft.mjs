@@ -44,13 +44,15 @@ async function draftOperation(mode, key) {
 
 const stop = Date.now() + 30000;
 let target;
+let observed = 'no response';
 while (Date.now() < stop && !target) {
   const pages = await fetch('http://127.0.0.1:' + port + '/json/list')
-    .then(r => r.json()).catch(() => []);
-  target = pages.find(p => p.type === 'page' && /^https?:\/\/tauri\.localhost\//.test(p.url));
+    .then(r => r.json()).catch(error => { observed = error.cause?.code || error.message; return null; });
+  if (pages) observed = JSON.stringify(pages.map(p => [p.type, new URL(p.url, 'about:blank').origin]));
+  target = pages?.find(p => ['webview','page'].includes(p.type) && /^https?:\/\/tauri\.localhost\//.test(p.url));
   if (!target) await wait(300);
 }
-assert.ok(target, 'Did not find the installed app WebView');
+assert.ok(target, 'Did not find the installed app WebView: ' + observed);
 const socket = new WebSocket(target.webSocketDebuggerUrl);
 try {
   await new Promise((resolve,reject) => { socket.onopen = resolve; socket.onerror = reject; });

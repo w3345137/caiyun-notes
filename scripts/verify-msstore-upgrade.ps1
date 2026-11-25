@@ -167,8 +167,17 @@ public static class CaiyunStoreActivation {
         Invoke-DraftTest 'quit'
         if (!$process.WaitForExit(30000)) { throw 'Normal exit did not complete' }
     }
-    $oldProcess = Start-Process -FilePath $legacyExe -PassThru
+    function Start-TestApp($exePath) {
+        $start = [Diagnostics.ProcessStartInfo]::new()
+        $start.FileName = $exePath
+        $start.UseShellExecute = $false
+        $start.Environment['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = '--remote-debugging-port=19227'
+        [Diagnostics.Process]::Start($start)
+    }
+    $oldProcess = Start-TestApp $legacyExe
     Wait-WebView $oldProcess
+    $webviewProcess = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($oldProcess.Id) AND Name='msedgewebview2.exe'" | Select-Object -First 1
+    Write-Host "QA WebView runtime received requested test port: $($webviewProcess.CommandLine -match 'remote-debugging-port=19227')"
     Invoke-DraftTest 'write'
     $oldProcess.Refresh()
     $oldWindow = $oldProcess.MainWindowHandle
@@ -197,7 +206,7 @@ public static class CaiyunStoreActivation {
     # AUMID activation can be brokered without inheriting the calling process environment.
     # Reopen the same installed package with the QA port to inspect its business data.
     taskkill /PID $waiting.Id /T /F | Out-Null
-    $fresh = Start-Process -FilePath $expectedExe -PassThru
+    $fresh = Start-TestApp $expectedExe
     Wait-WebView $fresh
     Invoke-DraftTest 'read'
     Assert-CleanExit $fresh
