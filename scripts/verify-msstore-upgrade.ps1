@@ -168,11 +168,36 @@ public static class CaiyunStoreActivation {
         if (!$process.WaitForExit(30000)) { throw 'Normal exit did not complete' }
     }
     function Start-TestApp($exePath) {
-        $start = [Diagnostics.ProcessStartInfo]::new()
-        $start.FileName = $exePath
-        $start.UseShellExecute = $false
-        $start.Environment['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = '--remote-debugging-port=19227'
-        [Diagnostics.Process]::Start($start)
+        # Hosted runners are elevated. WebView2 ignores environment test flags
+        # for elevated hosts. Launch the real client as the ordinary desktop user.
+        $name = 'CaiyunQa-' + [guid]::NewGuid()
+        $launcher = Join-Path $env:RUNNER_TEMP ($name + '.ps1')
+        $pidPath = Join-Path $env:RUNNER_TEMP ($name + '.pid')
+        $body = @'
+param($exePath,$pidPath)
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19227'
+$start = [Diagnostics.ProcessStartInfo]::new()
+$start.FileName = $exePath
+$start.UseShellExecute = $false
+$app = [Diagnostics.Process]::Start($start)
+[IO.File]::WriteAllText($pidPath,$app.Id.ToString())
+$app.WaitForExit()
+'@
+        Set-Content -LiteralPath $launcher -Value $body -Encoding utf8BOM
+        $arguments = '-NoProfile -File "{0}" "{1}" "{2}"' -f $launcher,$exePath,$pidPath
+        $action = New-ScheduledTaskAction -Execute (Get-Command pwsh).Source -Argument $arguments
+        $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+        Register-ScheduledTask -TaskName $name -Action $action -Principal $principal | Out-Null
+        Start-ScheduledTask -TaskName $name
+        for ($i = 0; $i -lt 80; $i++) {
+            if ([IO.File]::Exists($pidPath)) {
+                $launched = Get-Process -Id ([int][IO.File]::ReadAllText($pidPath))
+                if ($launched.Path -ine $exePath) { throw 'Unexpected scheduled test process identity' }
+                return $launched
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        throw 'Ordinary-user QA launch did not report a PID' 
     }
     $oldProcess = Start-TestApp $legacyExe
     Wait-WebView $oldProcess
