@@ -97,3 +97,21 @@ if ($current.UninstallString -ne $legacy.UninstallString -or (Get-FileHash -Lite
 if ((Get-Content -LiteralPath $legacyMarker) -ne 'keep-legacy-profile') { throw 'The unpackaged WebView2 profile changed' }
 Write-Host "Both channels report the same WebView2 profile path: $($legacyProfile -eq $newProfile)"
 Write-Host 'PASS: same-family upgrade, WebView2 startup and identical profile, package local-state preservation and intact legacy EXE.'
+
+# Exercise the existing official uninstaller only after both test apps have exited.
+$uninstaller = Join-Path $legacy.InstallLocation 'uninstall.exe'
+if (([string]$legacy.UninstallString).Trim('"') -ine $uninstaller) {
+    throw 'Legacy uninstall registration does not match the installed fixture'
+}
+$remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+if ($remove.ExitCode -ne 0 -or (Test-Path -LiteralPath $legacyExe) -or (Test-Path -LiteralPath $registration)) {
+    throw 'The verified legacy uninstaller did not retire its own registration'
+}
+if ((Get-Content -LiteralPath $marker) -ne 'keep-local-state' -or (Get-Content -LiteralPath $legacyMarker) -ne 'keep-legacy-profile') {
+    throw 'Local data fixture did not survive the legacy uninstall'
+}
+$final = Get-AppxPackage -Name $name
+if ($final.Version.ToString() -ne '10.2.18.0' -or (Get-LaunchedProfile (Join-Path $final.InstallLocation 'app\app.exe')) -ne $newProfile) {
+    throw 'The Store package did not restart with its existing profile after removing the EXE'
+}
+Write-Host 'PASS: official legacy uninstaller removed its old installation with both clients closed and both data fixtures preserved.'
