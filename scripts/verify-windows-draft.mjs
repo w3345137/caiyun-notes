@@ -43,34 +43,43 @@ async function draftOperation(mode, key) {
 }
 
 const stop = Date.now() + 30000;
-let target;
 let observed = 'no response';
-while (Date.now() < stop && !target) {
+async function evaluate(target) {
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  try {
+    await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
+    const response = new Promise((resolve, reject) => {
+      socket.onmessage = e => {
+        const msg = JSON.parse(e.data);
+        if (msg.id === 1) msg.error ? reject(Error(msg.error.message)) : resolve(msg.result);
+      };
+      socket.onclose = () => reject(Error('Closed before test result'));
+    });
+    const expression = "document.readyState === 'complete' && window.__TAURI__?.core?.invoke ? (" +
+      draftOperation.toString() + ')(' + JSON.stringify(operation) + ',' + JSON.stringify(nonce) + ') : "wait"';
+    socket.send(JSON.stringify({id:1, method:'Runtime.evaluate', params:{expression, awaitPromise:true, returnByValue:true}}));
+    const timer = setTimeout(() => socket.close(), 5000);
+    try { return await response; } finally { clearTimeout(timer); }
+  } finally { socket.close(); }
+}
+
+let passed = false;
+while (Date.now() < stop) {
   const pages = await fetch('http://127.0.0.1:' + port + '/json/list')
     .then(r => r.json()).catch(error => { observed = error.cause?.code || error.message; return null; });
-  if (pages) observed = JSON.stringify(pages.map(p => [p.type, new URL(p.url, 'about:blank').origin]));
-  target = pages?.find(p => ['webview','page'].includes(p.type) && /^https?:\/\/tauri\.localhost\//.test(p.url));
-  if (!target) await wait(300);
+  const target = pages?.find(p => ['webview','page'].includes(p.type) && /^https?:\/\/tauri\.localhost\//.test(p.url));
+  if (target) {
+    const result = await evaluate(target).catch(error => { observed = error.message; return null; });
+    if (result) {
+      const error = result.exceptionDetails?.exception?.description;
+      if (error && !error.startsWith('SecurityError:')) throw Error(error);
+      observed = error || String(result.result?.value);
+      if (observed === operation) {
+        passed = true;
+        break;
+      }
+    }
+  }
+  await wait(300);
 }
-assert.ok(target, 'Did not find the installed app WebView: ' + observed);
-const socket = new WebSocket(target.webSocketDebuggerUrl);
-try {
-  await new Promise((resolve,reject) => { socket.onopen = resolve; socket.onerror = reject; });
-  const response = new Promise((resolve,reject) => {
-    socket.onmessage = e => {
-      const msg = JSON.parse(e.data);
-      if (msg.id === 1) msg.error ? reject(Error(msg.error.message)) : resolve(msg.result);
-    };
-    socket.onclose = () => reject(Error('Closed before test result'));
-  });
-  socket.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{
-    expression: '(' + draftOperation.toString() + ')(' + JSON.stringify(operation) + ',' + JSON.stringify(nonce) + ')',
-    awaitPromise:true,returnByValue:true
-  }}));
-  const timer = setTimeout(() => socket.close(), 15000);
-  try {
-    const result = await response;
-    assert.ok(!result.exceptionDetails, result.exceptionDetails?.exception?.description || 'WebView evaluation failed');
-    assert.equal(result.result.value, operation);
-  } finally { clearTimeout(timer); }
-} finally { socket.close(); }
+assert.ok(passed, 'Installed app WebView did not finish ' + operation + ': ' + observed);
