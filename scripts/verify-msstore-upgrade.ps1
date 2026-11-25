@@ -306,6 +306,30 @@ $app.WaitForExit()
         Write-Host "Shell-open shortcut $($link.FullName) opened Store=$($owners[0].ExecutablePath -eq $expectedExe)"
         taskkill /PID $owners[0].ProcessId /T /F | Out-Null
     }
+    if ($links.Count -lt 2) { throw 'Expected both original test shortcuts' }
+    # Emulate delivery of the new direct-entry code in this disposable NSIS
+    # installation. Keep the original binary for the unmodified comparison.
+    $original = Join-Path $env:RUNNER_TEMP 'original-installed-app.exe'
+    Move-Item -LiteralPath $legacyExe -Destination $original
+    try {
+        Copy-Item -LiteralPath $probe -Destination $legacyExe
+        foreach ($link in $links) {
+            Start-Process -FilePath $link.FullName
+            $owners = @()
+            for ($i = 0; $i -lt 40; $i++) {
+                $owners = @(Get-CimInstance Win32_Process -Filter "Name = 'app.exe'" |
+                    Where-Object ExecutablePath -eq $expectedExe)
+                if ($owners.Count -eq 1 -and (Get-CimInstance Win32_Process -Filter "ParentProcessId = $($owners[0].ProcessId) AND Name = 'msedgewebview2.exe'")) { break }
+                Start-Sleep -Milliseconds 300
+            }
+            if ($i -eq 40) { throw "Updated direct-entry fixture failed from $($link.FullName)" }
+            Write-Host "PASS: unchanged shortcut $($link.FullName) opened the Store WebView through the updated direct-entry fixture."
+            taskkill /PID $owners[0].ProcessId /T /F | Out-Null
+            Start-Sleep -Seconds 1
+        }
+    } finally {
+        Copy-Item -LiteralPath $original -Destination $legacyExe -Force
+    }
     exit 0
 }
 
