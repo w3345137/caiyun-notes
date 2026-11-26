@@ -4,6 +4,18 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && env::var_os("CARGO_FEATURE_SELF_UPDATE").is_some()
+        && env::var_os("CARGO_FEATURE_MSSTORE_DISTRIBUTION").is_none()
+    {
+        println!("cargo:rerun-if-changed=src/windows_direct_launch.c");
+        cc::Build::new().file("src/windows_direct_launch.c").compile("caiyun_direct_launch");
+        println!("cargo:rustc-link-lib=ole32");
+        println!("cargo:rustc-link-lib=uuid");
+        println!("cargo:rustc-link-lib=user32");
+    }
+
+
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         println!("cargo:rerun-if-changed=src/macos_notifications.m");
         println!("cargo:rustc-link-lib=framework=UserNotifications");
@@ -42,6 +54,7 @@ fn main() {
             "inspect_legacy_webkit_origin",
             "quarantine_legacy_webkit_origin",
             "download_and_install_resumable_update",
+            "acquire_windows_store_update",
             "get_app_distribution_channel",
             "save_download_file",
             "ios_mail_register_push",
@@ -71,6 +84,7 @@ fn store_capabilities_pattern() -> Result<&'static str, Box<dyn Error>> {
     for entry in fs::read_dir("capabilities")? {
         let entry = entry?;
         let path = entry.path();
+        if entry.file_name() == "windows-website-update.json" { continue; }
         let target = store_dir.join(entry.file_name());
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             fs::copy(&path, &target)?;

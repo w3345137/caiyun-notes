@@ -25,7 +25,7 @@ jobs:
             target: aarch64-apple-darwin
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform == 'windows-latest' && vars.WINDOWS_SIGNING_RUNNER || matrix.platform }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,8 +74,42 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --locked
           cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
 
-      - name: Prepare bundled offline speech runtime
-        run: node scripts/prepare-native-speech.mjs --target ${{ matrix.target }} --output speech-bundle-config.json
+      - name: Prepare native bundle configuration
+        shell: bash
+        run: |
+          if test -f scripts/prepare-native-speech.mjs; then
+            node scripts/prepare-native-speech.mjs --target "${{ matrix.target }}" --output speech-bundle-config.json
+          else
+            printf '%s\n' '{"bundle":{}}' > speech-bundle-config.json
+          fi
+
+      - name: Configure Windows publisher signing
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          SIGNER: ${{ vars.WINDOWS_SIGNER_THUMBPRINT }}
+          TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SIGNER -notmatch '^[0-9a-fA-F]{40}$') { throw 'Configure the Windows publisher certificate on the signing runner' }
+          $cert = Get-Item "Cert:/CurrentUser/My/$env:SIGNER"
+          if (!$cert.HasPrivateKey) { throw 'The signing runner cannot access the publisher key' }
+          if (([uri]$env:TIMESTAMP_URL).Scheme -ne 'https') { throw 'Configure an HTTPS RFC3161 timestamp service' }
+          $config = Get-Content speech-bundle-config.json -Raw | ConvertFrom-Json -AsHashtable
+          if (!$config.bundle.windows) { $config.bundle.windows = @{} }
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/signtool.exe" |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (!$signTool) { throw 'Windows SDK signtool is required' }
+          foreach ($base in $config.bundle.externalBin) {
+            $sidecar = "$base-x86_64-pc-windows-msvc.exe"
+            & $signTool.FullName sign /sha1 $env:SIGNER /fd SHA256 /tr $env:TIMESTAMP_URL /td SHA256 $sidecar
+            if ($LASTEXITCODE -ne 0) { throw "Sidecar signature failed for $sidecar" }
+          }
+          $config.bundle.windows.certificateThumbprint = $env:SIGNER
+          $config.bundle.windows.timestampUrl = $env:TIMESTAMP_URL
+          $config.bundle.windows.tsp = $true
+          $config.bundle.windows.digestAlgorithm = 'sha256'
+          $config | ConvertTo-Json -Depth 30 | Set-Content speech-bundle-config.json -Encoding utf8
 
       - name: Build signed draft artifacts
         uses: tauri-apps/tauri-action@v0
@@ -93,6 +127,20 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.target }} --config speech-bundle-config.json
 
+      - name: Verify Windows installer identity
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          SIGNER: ${{ vars.WINDOWS_SIGNER_THUMBPRINT }}
+        run: |
+          $files = @(Get-ChildItem src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe)
+          if ($files.Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          $sig = Get-AuthenticodeSignature -LiteralPath $files[0].FullName
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Thumbprint -ne $env:SIGNER -or !$sig.TimeStamperCertificate) {
+            throw 'Installer publisher signature or timestamp failed validation'
+          }
+          Get-FileHash -Algorithm SHA256 -LiteralPath $files[0].FullName
+
       - name: Verify macOS app bundle signature
         if: matrix.platform == 'macos-latest'
         shell: bash
@@ -107,8 +155,38 @@ jobs:
           tar -xzf "$ARCHIVE" -C "$EXTRACTED"
           codesign --verify --deep --strict --verbose=2 "$EXTRACTED/彩云笔记.app"
 
-  qualify-draft:
+  verify-windows:
+    strategy:
+      matrix:
+        scenario: [clean, '10.2.8', '10.2.13']
     needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Install and inspect the exact draft installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          SCENARIO: ${{ matrix.scenario }}
+          SIGNER: ${{ vars.WINDOWS_SIGNER_THUMBPRINT }}
+        run: |
+          gh release download $env:TAG --pattern '*x64-setup.exe' --dir candidate
+          if ($LASTEXITCODE -ne 0) { throw 'Download failed' }
+          $files = @(Get-ChildItem candidate/*x64-setup.exe)
+          if ($files.Count -ne 1) { throw 'Expected one x64 installer' }
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          & ./.github/scripts/verify-windows-exe.ps1 -Installer $files[0].FullName -PublisherThumbprint $env:SIGNER -ExpectedVersion $version -Scenario $env:SCENARIO |
+            Set-Content windows-certification.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-certification-${{ matrix.scenario }}
+          path: windows-certification.json
+
+  qualify-draft:
+    needs: [build, verify-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -136,7 +214,28 @@ jobs:
             base64 --decode "candidate/$signature" > /tmp/updater.sig
             minisign -Vm "candidate/$package" -p updater.pub -x /tmp/updater.sig
           done
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: windows-certification-*
+          path: windows-evidence
+      - name: Qualify background installation on both historical Windows versions
+        run: |
+          node - <<'JS'
+          const fs = require('node:fs');
+          const load = scenario => JSON.parse(fs.readFileSync(
+            `windows-evidence/windows-certification-${scenario}/windows-certification.json`, 'utf8').replace(/^\uFEFF/, ''));
+          const clean = load('clean');
+          clean.quietUpgradeScenarios = ['10.2.8', '10.2.13'].map(scenario => {
+            const upgrade = load(scenario);
+            if (upgrade.scenario !== scenario || upgrade.quietExitVerified !== true ||
+                ['version', 'installerSha256', 'publisherThumbprint'].some(key => upgrade[key] !== clean[key])) {
+              throw new Error(`Quiet upgrade evidence failed for ${scenario}`);
+            }
+            return scenario;
+          });
+          fs.writeFileSync('windows-certification.json', JSON.stringify(clean));
+          JS
       - name: Attach qualification report to draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ inputs.tag }}" candidate-report.json --clobber
+        run: gh release upload "${{ inputs.tag }}" candidate-report.json windows-certification.json --clobber

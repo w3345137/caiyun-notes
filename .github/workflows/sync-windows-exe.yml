@@ -1,0 +1,80 @@
+name: Sync Official Windows EXE
+
+on:
+  release:
+    types: [published]
+  workflow_run:
+    workflows: [Promote Qualified Release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-official-windows-exe
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - name: Verify official release installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNER: ${{ vars.WINDOWS_SIGNER_THUMBPRINT }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          python3 .github/scripts/prepare-windows-exe.py
+          cp .github/scripts/publish-windows-exe.py windows-exe-stage/publish.py
+      - name: Upload verified download metadata to Tencent Cloud staging
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: windows-exe-stage/release.json,windows-exe-stage/publish.py
+          target: /cloudnotes/updates-staging/windows-exe-${{ github.run_id }}-${{ github.run_attempt }}
+          strip_components: 1
+      - name: Activate download and remove staging
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -eu
+            stage=/cloudnotes/updates-staging/windows-exe-${{ github.run_id }}-${{ github.run_attempt }}
+            trap 'rm -f "$stage/release.json" "$stage/publish.py"; rmdir "$stage"' EXIT
+            nginx -T 2>&1 | grep -Fq 'include /etc/nginx/snippets/cloudnotes-windows-download*.conf;'
+            python3 "$stage/publish.py" "$stage" /cloudnotes/updates/windows /etc/nginx/snippets/cloudnotes-windows-download.conf
+      - name: Verify Tencent Cloud download
+        run: |
+          curl --location --max-redirs 2 --fail --silent --show-error --retry 3 --max-time 90 https://notes.binapp.top/updates/windows/latest.exe -o /tmp/caiyun-windows-latest.exe --write-out '%{url_effective}' > /tmp/caiyun-windows-download-url
+          curl --fail --silent --show-error --retry 3 https://notes.binapp.top/updates/windows/latest.json -o /tmp/caiyun-windows-feed.json
+          python3 - <<'PY'
+          import hashlib, json, pathlib, urllib.parse
+          release = json.loads(pathlib.Path('windows-exe-stage/release.json').read_bytes())
+          expected = release['sha256']
+          final_url = urllib.parse.urlsplit(pathlib.Path('/tmp/caiyun-windows-download-url').read_text())
+          if final_url.scheme != 'https' or final_url.netloc != 'caiyun-app-updates.oss-cn-shanghai.aliyuncs.com':
+              raise SystemExit('The public EXE is not served by object storage')
+          feed = json.loads(pathlib.Path('/tmp/caiyun-windows-feed.json').read_bytes())
+          for flag in ('windowsQuietUpdate', 'windowsStoreHandoff'):
+              if release.get(flag) != feed.get(flag):
+                  raise SystemExit(f'Update policy differs for {flag}')
+          item = feed['platforms']['windows-x86_64']
+          if (feed['version'] != release['version'] or item['signature'] != release['signature']
+              or item['url'] != f"https://notes.binapp.top{release['publicPath']}"):
+              raise SystemExit('The public updater feed does not identify the promoted Windows release')
+          actual = hashlib.sha256(pathlib.Path('/tmp/caiyun-windows-latest.exe').read_bytes()).hexdigest()
+          if actual != expected:
+              raise SystemExit('The public EXE does not match the verified GitHub release')
+          PY

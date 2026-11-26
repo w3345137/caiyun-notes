@@ -1,3 +1,5 @@
+#[cfg(all(target_os = "windows", feature = "self-update", not(feature = "msstore-distribution")))]
+mod windows_store_acquisition;
 mod plugin_host;
 mod speech;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -503,6 +505,18 @@ fn install_windows_tray(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    #[cfg(all(target_os = "windows", feature = "self-update", not(feature = "msstore-distribution")))]
+    if !cfg!(debug_assertions) && context.config().identifier == "com.caiyun.notes" && std::env::args_os().len() == 1 {
+        extern "C" {
+            fn caiyun_open_installed_store() -> std::ffi::c_int;
+        }
+        if unsafe { caiyun_open_installed_store() } != 0 {
+            return;
+        }
+    }
+
+
     let builder = tauri::Builder::default().register_uri_scheme_protocol("caiyun-plugin", |_ctx, request| plugin_host::runtime_response(request.uri().path()));
     #[cfg(desktop)]
     let builder = builder.register_uri_scheme_protocol("caiyun-map-probe", |_ctx, request| {
@@ -559,6 +573,8 @@ pub fn run() {
             inspect_legacy_webkit_origin,
             quarantine_legacy_webkit_origin,
             download_and_install_resumable_update,
+            #[cfg(all(target_os = "windows", feature = "self-update", not(feature = "msstore-distribution")))]
+            windows_store_acquisition::acquire_windows_store_update,
             get_app_distribution_channel,
             save_download_file,
             #[cfg(target_os = "ios")]
@@ -657,7 +673,7 @@ pub fn run() {
             install_windows_tray(app)?;
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application");
 
     #[cfg(target_os = "ios")]

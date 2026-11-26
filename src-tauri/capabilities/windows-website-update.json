@@ -1,0 +1,6 @@
+{
+  "identifier": "windows-website-update",
+  "platforms": ["windows"],
+  "webviews": ["main"],
+  "permissions": ["allow-acquire-windows-store-update"]
+}

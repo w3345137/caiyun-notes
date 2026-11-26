@@ -16,6 +16,10 @@ on:
         required: true
         default: '10'
         type: string
+      windows_handoff_sha256:
+        description: Exact EXE SHA-256 after Store handoff acceptance (blank for ordinary releases)
+        required: false
+        type: string
       minimum_version:
         description: Oldest shell that may continue without upgrading
         required: true
@@ -24,6 +28,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: promote-qualified-release
+  cancel-in-progress: false
 
 jobs:
   promote:
@@ -40,19 +48,35 @@ jobs:
       - name: Download and verify candidate hashes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SIGNER: ${{ vars.WINDOWS_SIGNER_THUMBPRINT }}
         run: |
           mkdir candidate
           gh release download "${{ inputs.tag }}" --dir candidate --clobber
           python3 - <<'PY'
-          import hashlib, json, pathlib
+          import hashlib, json, os, pathlib
           root = pathlib.Path('candidate')
           report = json.load(open(root / 'candidate-report.json'))
+          win = json.load(open(root / 'windows-certification.json', encoding='utf-8-sig'))
+          win_file = report['updater']['windows-x86_64']['package']
+          if (not os.environ['SIGNER'] or win['publisherThumbprint'].lower() != os.environ['SIGNER'].lower()
+                  or win['version'] != report['version'] or not win['files']
+                  or win['installerSha256'].lower() != report['expected_sha256'][win_file]
+                  or win_file != report['manual']['windows-x86_64']['package']):
+              raise SystemExit('Windows certification evidence does not match the candidate')
           for name, expected_sha256 in report['expected_sha256'].items():
               actual = hashlib.sha256((root / name).read_bytes()).hexdigest()
               if actual != expected_sha256: raise SystemExit(f'hash mismatch: {name}')
           for item in report['updater'].values():
               if not (root / item['signatureFile']).read_text().strip(): raise SystemExit('empty updater signature')
           PY
+      - name: Check standard-user Windows acceptance against the current Store release
+        if: inputs.windows_handoff_sha256 != ''
+        env:
+          APPROVED_SHA: ${{ inputs.windows_handoff_sha256 }}
+        run: |
+          curl --fail --silent --show-error --max-time 20 'https://notes.binapp.top/api/app-release-policy?__caiyun_channel=msstore&__caiyun_platform=windows' -o store-policy.json
+          store_version=$(jq -er 'select(.channel == "msstore" and .platform == "windows" and .versionSource == "public-store") | .latestVersion | select(test("^[0-9]+(\\.[0-9]+){2,3}$"))' store-policy.json)
+          python3 .github/scripts/verify-windows-handoff.py candidate "$APPROVED_SHA" "$store_version"
       - name: Cryptographically verify updater signatures
         run: |
           sudo apt-get update
@@ -64,6 +88,7 @@ jobs:
           done
       - name: Stage versioned update payload and manifests
         env:
+          WINDOWS_HANDOFF_SHA256: ${{ inputs.windows_handoff_sha256 }}
           TAG: ${{ inputs.tag }}
         run: |
           python3 - <<'PY'
@@ -90,8 +115,20 @@ jobs:
               add_download(item['signatureFile'], f"{base}/{item['publishName']}.sig")
           for platform, item in report['manual'].items():
               add_download(item['package'], f"{version}/{platform}/{item['publishName']}", report['expected_sha256'][item['package']])
+          cert = json.loads((candidate / 'windows-certification.json').read_text(encoding='utf-8-sig'))
+          handoff = {}
+          if cert.get('quietUpgradeScenarios') == ['10.2.8', '10.2.13']:
+              handoff['windowsQuietUpdate'] = 1
+          approved = os.environ.get('WINDOWS_HANDOFF_SHA256', '').strip().lower()
+          if approved:
+              if not handoff.get('windowsQuietUpdate'):
+                  raise SystemExit('Windows handoff requires verified quiet upgrades for both older installers')
+              package = report['updater']['windows-x86_64']['package']
+              if approved != report['expected_sha256'][package] or tuple(map(int, version.split('.'))) < (10, 2, 18):
+                  raise SystemExit('Store handoff approval does not identify this eligible EXE')
+              handoff['windowsStoreHandoff'] = 1
           def manifest(base):
-              return {'version': version, 'notes': f"彩云笔记 {os.environ['TAG']} 更新", 'pub_date': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'platforms': {
+              return {**handoff, 'version': version, 'notes': f"彩云笔记 {os.environ['TAG']} 更新", 'pub_date': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'platforms': {
                   platform: {'url': f"{base}/{version}/{platform}/{item['publishName']}", 'signature': (candidate / item['signatureFile']).read_text().strip()}
                   for platform, item in report['updater'].items()
               }}
@@ -171,6 +208,29 @@ jobs:
             /opt/node-v22/bin/node appUpdateOssOffload.js --updates-root /cloudnotes/updates --version "$VERSION"
             nginx -t
             systemctl reload nginx
+      - name: Require object storage for Windows installer traffic
+        run: |
+          url=$(python3 - <<'PY'
+          import json
+          report = json.load(open('candidate/candidate-report.json'))
+          win = report['updater']['windows-x86_64']
+          print(f"https://notes.binapp.top/updates/{report['version']}/windows-x86_64/{win['publishName']}")
+          PY
+          )
+          curl --fail --location --max-redirs 1 --silent --show-error --range 0-0 --max-filesize 1 --max-time 30 \
+            --output /dev/null --write-out '%{url_effective}\n%{http_code}\n' "$url" > windows-object-probe.txt
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          url, status = Path('windows-object-probe.txt').read_text().splitlines()
+          target = urlsplit(url)
+          if status != '206' or target.scheme != 'https' or target.netloc != 'caiyun-app-updates.oss-cn-shanghai.aliyuncs.com':
+              raise SystemExit('Windows installer must support Range through object storage')
+          version = json.loads(Path('candidate/candidate-report.json').read_text())['version']
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              print(f'VERIFIED_WINDOWS_VERSION={version}', file=output)
+          PY
       - name: Verify every versioned URL
         run: |
           while IFS=$'\t' read -r expected url; do
@@ -187,6 +247,27 @@ jobs:
               print(f"{h}\thttps://notes.binapp.top/updates/{r['version']}/{p}/{i['publishName']}")
           PY
           )
+      - name: Remove verified Windows copies from the business server
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          VERIFIED_WINDOWS_VERSION: ${{ env.VERIFIED_WINDOWS_VERSION }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: VERIFIED_WINDOWS_VERSION
+          script: |
+            python3 - <<'PY'
+            import json, os, pathlib, re
+            root = pathlib.Path('/cloudnotes')
+            report = json.loads((root / 'updates-staging/candidate-report.json').read_bytes())
+            version = os.environ['VERIFIED_WINDOWS_VERSION']
+            if version != report['version'] or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+                raise SystemExit('Invalid candidate version')
+            relative = pathlib.Path(version) / 'windows-x86_64' / f'_{version}_x64-setup.exe'
+            for folder in ('updates', 'updates-staging'):
+                (root / folder / relative).unlink(missing_ok=True)
+            PY
       - name: Promote Gitee latest manifest
         env:
           GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}

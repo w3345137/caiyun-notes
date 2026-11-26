@@ -1,0 +1,1 @@
+let s={phase:"idle",percent:null};const t=new Set,r=()=>s;function a(e){return t.add(e),()=>{t.delete(e)}}function i(e){if(!(s.phase===e.phase&&s.version===e.version&&s.percent===e.percent)){s=e;for(const n of t)n()}}export{i as p,a as s,r as w};

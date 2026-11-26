@@ -1,0 +1,16 @@
+{
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://notes.binapp.top/updates/windows/latest.json"
+      ]
+    }
+  },
+  "bundle": {
+    "windows": {
+      "nsis": {
+        "template": "windows/installer.nsi"
+      }
+    }
+  }
+}
