@@ -102,7 +102,9 @@ jobs:
                 $code = $LASTEXITCODE
                 "Candidate Store probe exit=$code" | Out-File "$base\result\log" -Append
                 if ($code -eq 0) { "Verified Store registration; EXE skipped" | Out-File "$base\result\log" -Append; break }
-                if ($code -ne 2) { throw "Unexpected acquisition failure $code" }
+                # The native bridge maps a non-zero process exit to Store unavailability.
+                $registered = Get-AppxPackage -Name BinApp.547813EA77836 | Where-Object { $_.Status -eq 'Ok' -and $_.SignatureKind -eq 'Store' -and [version]$_.Version -ge [version]'10.2.18.0' }
+                if ($registered) { throw 'Store is ready despite the probe failure; cannot test fallback' }
                 $setup = "$base\_10.2.19_x64-setup.exe"
               }
               $p = Start-Process $setup -ArgumentList $argsList -PassThru
