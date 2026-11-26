@@ -35,7 +35,12 @@ const MSSTORE_PREVIOUS_FRONTEND: &str = "20261116_201247-prod";
 const MSSTORE_MIGRATION_VERSION: Version = Version::new(10, 2, 16);
 const MSSTORE_PRE_MIGRATION_FRONTEND: &str = "20261119_105257-prod";
 
-fn store_frontend_predates_embedded_fix(shell_version: &Version, release_id: &str) -> bool {
+fn frontend_predates_embedded_fix(shell_version: &Version, release_id: &str) -> bool {
+    // Direct Windows bridge builds already embed the Store-first integration.
+    if cfg!(all(target_os = "windows", feature = "self-update", not(feature = "msstore-distribution")))
+        && *shell_version >= Version::new(10, 2, 20) && release_id <= "20261126_142236-prod" {
+        return true;
+    }
     cfg!(feature = "msstore-distribution")
         && ((*shell_version >= MSSTORE_EMBEDDED_FIX_VERSION && release_id <= MSSTORE_PREVIOUS_FRONTEND)
             || (*shell_version >= MSSTORE_MIGRATION_VERSION
@@ -516,8 +521,8 @@ impl FrontendBundleManager {
             return Err("前端发布清单版本不受支持".to_string());
         }
         validate_release_id(&payload.release_id)?;
-        if store_frontend_predates_embedded_fix(&self.shell_version, &payload.release_id) {
-            return Err("商店版继续使用较新的内置界面".into());
+        if frontend_predates_embedded_fix(&self.shell_version, &payload.release_id) {
+            return Err("继续使用较新的内置界面".into());
         }
         if payload.product_version != PRODUCT_VERSION {
             return Err("前端发布产品版本不匹配".to_string());
@@ -730,7 +735,7 @@ impl FrontendBundleManager {
             .map_err(|_| "界面更新清单格式无效".to_string())?;
         let payload = decode_signed_payload(&envelope, &self.verifying_key)?;
         self.validate_channel(&payload)?;
-        if store_frontend_predates_embedded_fix(&self.shell_version, &payload.release_id) {
+        if frontend_predates_embedded_fix(&self.shell_version, &payload.release_id) {
             return Ok(FrontendUpdateResult::up_to_date(self.newest_local_release_id()));
         }
         if payload.product_version != PRODUCT_VERSION {
