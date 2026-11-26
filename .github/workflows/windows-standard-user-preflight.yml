@@ -29,6 +29,8 @@ jobs:
           New-LocalUser -Name 'CaiyunQA' -Password (ConvertTo-SecureString $password -AsPlainText -Force) | Out-Null
           $dir = 'C:\CaiyunQA'
           New-Item -ItemType Directory "$dir\result" | Out-Null
+          Add-LocalGroupMember -SID 'S-1-5-32-545' -Member 'CaiyunQA'
+          icacls $dir /grant 'CaiyunQA:(OI)(CI)RX' | Out-Null
           icacls "$dir\result" /grant 'CaiyunQA:(OI)(CI)M' | Out-Null
           @'
           $ErrorActionPreference = 'Stop'
@@ -54,10 +56,11 @@ jobs:
             exit 0
           } catch { $_ | Out-File 'C:\CaiyunQA\result\log' -Append; exit 1 }
           '@ | Set-Content "$dir\verify.ps1" -Encoding utf8BOM
-          $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument '-NoProfile -NonInteractive -File C:\CaiyunQA\verify.ps1'
+          $action = New-ScheduledTaskAction -WorkingDirectory $dir -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument '-NoProfile -NonInteractive -File C:\CaiyunQA\verify.ps1'
           Register-ScheduledTask -TaskName CaiyunStandardQA -Action $action -User "$env:COMPUTERNAME\CaiyunQA" -Password $password -RunLevel Limited | Out-Null
           Start-ScheduledTask CaiyunStandardQA
           Start-Sleep 3
           while ((Get-ScheduledTask CaiyunStandardQA).State -eq 'Running') { Start-Sleep 2 }
+          Get-ScheduledTaskInfo CaiyunStandardQA | Select-Object LastRunTime,LastTaskResult | Format-List
           Get-Content "$dir\result\log"
           if ((Get-ScheduledTaskInfo CaiyunStandardQA).LastTaskResult -ne 0) { throw 'Standard-user baseline failed' }
