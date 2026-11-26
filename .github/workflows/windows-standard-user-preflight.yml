@@ -44,6 +44,12 @@ jobs:
             if ($user.Name -notlike '*\CaiyunQA' -or $adminSid -in $user.Groups.Value) { throw 'Not a standard user' }
             $base = 'C:\CaiyunQA'
             $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\彩云笔记'
+            foreach ($family in @(Get-Content "$base\inbox.json" -Raw | ConvertFrom-Json)) {
+              if ($family -and !(Get-AppxPackage | Where-Object PackageFamilyName -eq $family)) {
+                try { Add-AppxPackage -RegisterByFamilyName -MainPackage $family -ErrorAction Stop }
+                catch { "Inbox registration unavailable: $family" | Out-File "$base\result\inbox-log" -Append }
+              }
+            }
             $stores = @(Get-AppxPackage Microsoft.WindowsStore).Count
             $installers = @(Get-AppxPackage Microsoft.DesktopAppInstaller).Count
             "Standard user; Store registrations=$stores; AppInstaller registrations=$installers" | Out-File "$base\result\log"
@@ -72,6 +78,8 @@ jobs:
             exit 0
           } catch { $_ | Out-File 'C:\CaiyunQA\result\log' -Append; exit 1 }
           '@ | Set-Content "$dir\verify.ps1" -Encoding utf8BOM
+          $catalog = @(Get-AppxPackage -AllUsers | Where-Object { $_.Name -in @('Microsoft.WindowsStore','Microsoft.DesktopAppInstaller') -and $_.InstallLocation } | Select-Object -ExpandProperty PackageFamilyName -Unique)
+          ConvertTo-Json -InputObject @($catalog) | Set-Content "$dir\inbox.json"
           $credential = [pscredential]::new("$env:COMPUTERNAME\CaiyunQA",(ConvertTo-SecureString $password -AsPlainText -Force))
           $p = Start-Process -Credential $credential -LoadUserProfile -WorkingDirectory $dir -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList "-NoProfile -NonInteractive -File $dir\verify.ps1" -PassThru -Wait
           Get-Content "$dir\result\log"
