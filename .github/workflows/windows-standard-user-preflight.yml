@@ -1,0 +1,63 @@
+name: Windows standard account baseline
+on:
+  push:
+    branches: [qa/windows-standard-user-preflight]
+permissions: {}
+jobs:
+  baseline:
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - name: Fetch known historical installers
+        shell: pwsh
+        run: |
+          $dir = 'C:\CaiyunQA'
+          New-Item -ItemType Directory $dir | Out-Null
+          foreach ($item in @(
+            @('10.2.8','p20','658bba8c12ecbc794977077f4360c63eb2c24f0a1e207e5a10498bab7eab970a'),
+            @('10.2.13','p25','7dad87f4e18698973bcf4a12b382aed726c06b7fcd36527e57351f4dce201a3a'))) {
+            $version,$tag,$sha = $item
+            $path = "$dir\$version.exe"
+            Invoke-WebRequest "https://github.com/w3345137/caiyun-notes/releases/download/$tag/_${version}_x64-setup.exe" -OutFile $path
+            if ((Get-FileHash $path).Hash -ne $sha) { throw "Unexpected $version package" }
+            Write-Host "$version Authenticode $((Get-AuthenticodeSignature $path).Status)"
+          }
+      - name: Install and upgrade as a non-administrator
+        shell: pwsh
+        run: |
+          $password = 'Qa!' + [guid]::NewGuid().ToString('N')
+          New-LocalUser -Name 'CaiyunQA' -Password (ConvertTo-SecureString $password -AsPlainText -Force) | Out-Null
+          $dir = 'C:\CaiyunQA'
+          New-Item -ItemType Directory "$dir\result" | Out-Null
+          icacls "$dir\result" /grant 'CaiyunQA:(OI)(CI)M' | Out-Null
+          @'
+          $ErrorActionPreference = 'Stop'
+          try {
+            $user = [Security.Principal.WindowsIdentity]::GetCurrent()
+            $adminSid = 'S-1-5-32-544'
+            if ($user.Name -notlike '*\CaiyunQA' -or $adminSid -in $user.Groups.Value) { throw 'Not a standard user' }
+            $base = 'C:\CaiyunQA'
+            $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\彩云笔记'
+            $stores = @(Get-AppxPackage Microsoft.WindowsStore).Count
+            $installers = @(Get-AppxPackage Microsoft.DesktopAppInstaller).Count
+            "Standard user; Store registrations=$stores; AppInstaller registrations=$installers" | Out-File "$base\result\log"
+            foreach ($v in @('10.2.8','10.2.13')) {
+              $argsList = if ($v -eq '10.2.8') { '/S' } else { '/S /UPDATE' }
+              $p = Start-Process "$base\$v.exe" -ArgumentList $argsList -PassThru
+              if (!$p.WaitForExit(120000)) { throw "Install timeout $v" }
+              $installed = Get-ItemProperty $key
+              if ($p.ExitCode -ne 0 -or $installed.DisplayVersion -ne $v) { throw "Install failed $v" }
+              $exe = Join-Path $env:LOCALAPPDATA '彩云笔记\app.exe'
+              if (!(Test-Path $exe)) { throw 'Unexpected install path' }
+              "Installed $v in same current-user directory" | Out-File "$base\result\log" -Append
+            }
+            exit 0
+          } catch { $_ | Out-File 'C:\CaiyunQA\result\log' -Append; exit 1 }
+          '@ | Set-Content "$dir\verify.ps1" -Encoding utf8BOM
+          $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument '-NoProfile -NonInteractive -File C:\CaiyunQA\verify.ps1'
+          Register-ScheduledTask -TaskName CaiyunStandardQA -Action $action -User "$env:COMPUTERNAME\CaiyunQA" -Password $password -RunLevel Limited | Out-Null
+          Start-ScheduledTask CaiyunStandardQA
+          Start-Sleep 3
+          while ((Get-ScheduledTask CaiyunStandardQA).State -eq 'Running') { Start-Sleep 2 }
+          Get-Content "$dir\result\log"
+          if ((Get-ScheduledTaskInfo CaiyunStandardQA).LastTaskResult -ne 0) { throw 'Standard-user baseline failed' }
