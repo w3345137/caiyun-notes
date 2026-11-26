@@ -6,6 +6,8 @@ permissions:
   contents: read
 jobs:
   baseline:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
