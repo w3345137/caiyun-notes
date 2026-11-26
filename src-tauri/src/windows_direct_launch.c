@@ -17,9 +17,9 @@ static BOOL supported_package(const wchar_t *name) {
     PACKAGE_ID *id = malloc(size);
     if (!id) return FALSE;
     PACKAGE_VERSION minimum = {0};
-    minimum.Major = 10;
-    minimum.Minor = 2;
-    minimum.Build = 18;
+    minimum.Major = DIRECT_VERSION_MAJOR;
+    minimum.Minor = DIRECT_VERSION_MINOR;
+    minimum.Build = DIRECT_VERSION_PATCH;
     BOOL supported = PackageIdFromFullName(name, 0, &size, (BYTE *)id) == ERROR_SUCCESS
         && id->processorArchitecture == PROCESSOR_ARCHITECTURE_AMD64
         && (!id->resourceId || !id->resourceId[0]) && id->version.Version >= minimum.Version;

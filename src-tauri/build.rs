@@ -15,7 +15,12 @@ fn main() {
         && env::var_os("CARGO_FEATURE_MSSTORE_DISTRIBUTION").is_none()
     {
         println!("cargo:rerun-if-changed=src/windows_direct_launch.c");
-        cc::Build::new().file("src/windows_direct_launch.c").compile("caiyun_direct_launch");
+        cc::Build::new()
+            .file("src/windows_direct_launch.c")
+            .define("DIRECT_VERSION_MAJOR", env!("CARGO_PKG_VERSION_MAJOR"))
+            .define("DIRECT_VERSION_MINOR", env!("CARGO_PKG_VERSION_MINOR"))
+            .define("DIRECT_VERSION_PATCH", env!("CARGO_PKG_VERSION_PATCH"))
+            .compile("caiyun_direct_launch");
         println!("cargo:rustc-link-lib=ole32");
         println!("cargo:rustc-link-lib=uuid");
         println!("cargo:rustc-link-lib=user32");
