@@ -2,7 +2,8 @@ name: Windows standard account baseline
 on:
   push:
     branches: [qa/windows-standard-user-preflight]
-permissions: {}
+permissions:
+  contents: read
 jobs:
   baseline:
     strategy:
@@ -26,6 +27,36 @@ jobs:
             if ((Get-FileHash $path).Hash -ne $sha) { throw "Unexpected $version package" }
             Write-Host "$version Authenticode $((Get-AuthenticodeSignature $path).Status)"
           }
+      - name: Fetch the exact private draft candidate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download qa-windows-bridge-10.2.19-20261126101339 --repo w3345137/caiyun-notes --pattern '_10.2.19_x64-setup.exe' --dir 'C:\CaiyunQA'
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash 'C:\CaiyunQA\_10.2.19_x64-setup.exe').Hash -ne '956359fb6ef98f61c2896dcf77ee837d8686f26dc5268951aaabf7d02bc32e52') { throw 'Wrong candidate' }
+          @'
+          $ErrorActionPreference = 'Stop'
+          $minimum = [version]$env:CAIYUN_STORE_MINIMUM
+          function Get-VerifiedPackage {
+              Get-AppxPackage -Name 'BinApp.547813EA77836' | Where-Object {
+                  $_.PackageFamilyName -eq 'BinApp.547813EA77836_hex6nfb75njyr' -and
+                  $_.Status -eq 'Ok' -and $_.Architecture -eq 'X64' -and $_.SignatureKind -eq 'Store'
+              } | Sort-Object { [version]$_.Version } -Descending | Select-Object -First 1
+          }
+          $before = Get-VerifiedPackage
+          if ($before -and [version]$before.Version -ge $minimum) { exit 0 }
+          $installer = Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' | Where-Object {
+              $_.PackageFamilyName -eq 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' -and $_.Status -eq 'Ok'
+          } | Select-Object -First 1
+          if (!$installer) { exit 2 }
+          $winget = Join-Path $installer.InstallLocation 'winget.exe'
+          if (!(Test-Path -LiteralPath $winget -PathType Leaf)) { exit 2 }
+          $verb = if ($before) { 'upgrade' } else { 'install' }
+          & $winget $verb --id 9P2VQP7JKVLN --exact --source msstore --silent --disable-interactivity
+          $after = Get-VerifiedPackage
+          if ($after -and [version]$after.Version -ge $minimum) { exit 0 }
+          exit 2
+          '@ | Set-Content 'C:\CaiyunQA\acquire.ps1' -Encoding utf8BOM
       - name: Install and upgrade as a non-administrator
         shell: pwsh
         run: |
@@ -60,9 +91,19 @@ jobs:
               "Store acquisition exit=$LASTEXITCODE family=$($pkg.PackageFamilyName) version=$($pkg.Version) signing=$($pkg.SignatureKind)" | Out-File "$base\result\log" -Append
             }
             $initialDirectory = $null
-            foreach ($v in @('10.2.8','10.2.13')) {
+            foreach ($v in @('10.2.8','10.2.13','10.2.19')) {
               $argsList = if ($v -eq '10.2.8') { "/S /D=$base\result\app" } else { '/S /UPDATE' }
-              $p = Start-Process "$base\$v.exe" -ArgumentList $argsList -PassThru
+              $setup = "$base\$v.exe"
+              if ($v -eq '10.2.19') {
+                $env:CAIYUN_STORE_MINIMUM = '10.2.18.0'
+                & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NonInteractive -NoProfile -File "$base\acquire.ps1"
+                $code = $LASTEXITCODE
+                "Candidate Store probe exit=$code" | Out-File "$base\result\log" -Append
+                if ($code -eq 0) { "Verified Store registration; EXE skipped" | Out-File "$base\result\log" -Append; break }
+                if ($code -ne 2) { throw "Unexpected acquisition failure $code" }
+                $setup = "$base\_10.2.19_x64-setup.exe"
+              }
+              $p = Start-Process $setup -ArgumentList $argsList -PassThru
               if (!$p.WaitForExit(120000)) { throw "Install timeout $v" }
               $installed = Get-ItemProperty $key
               if ($p.ExitCode -ne 0 -or $installed.DisplayVersion -ne $v) { throw "Install failed $v" }
@@ -72,6 +113,7 @@ jobs:
                 throw "Installed binary missing; registry directory=$directory"
               }
               if ($initialDirectory -and $initialDirectory -ne $directory) { throw "Install location changed" }
+              if ($v -eq '10.2.19' -and (Get-Item (Join-Path $directory 'app.exe')).VersionInfo.ProductVersion -notlike '10.2.19*') { throw 'Unexpected installed app version' }
               $initialDirectory = $directory
               "Installed $v in same current-user directory" | Out-File "$base\result\log" -Append
             }
