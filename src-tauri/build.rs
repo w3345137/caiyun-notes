@@ -55,6 +55,7 @@ fn main() {
             "quarantine_legacy_webkit_origin",
             "download_and_install_resumable_update",
             "acquire_windows_store_update",
+            "update_current_store_package",
             "get_app_distribution_channel",
             "save_download_file",
             "ios_mail_register_push",

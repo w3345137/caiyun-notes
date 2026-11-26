@@ -1,0 +1,6 @@
+{
+  "identifier": "windows-store-self-update",
+  "platforms": ["windows"],
+  "webviews": ["main"],
+  "permissions": ["allow-update-current-store-package"]
+}

@@ -1,5 +1,7 @@
 #[cfg(all(target_os = "windows", feature = "self-update", not(feature = "msstore-distribution")))]
 mod windows_store_acquisition;
+#[cfg(all(target_os = "windows", feature = "msstore-distribution"))]
+mod windows_store_self_update;
 mod plugin_host;
 mod speech;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -575,6 +577,8 @@ pub fn run() {
             download_and_install_resumable_update,
             #[cfg(all(target_os = "windows", feature = "self-update", not(feature = "msstore-distribution")))]
             windows_store_acquisition::acquire_windows_store_update,
+            #[cfg(all(target_os = "windows", feature = "msstore-distribution"))]
+            windows_store_self_update::update_current_store_package,
             get_app_distribution_channel,
             save_download_file,
             #[cfg(target_os = "ios")]
