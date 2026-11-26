@@ -4,6 +4,12 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
+    // The MSIX packager consumes an unbundled executable. Match NSIS on
+    // clean Windows installations that have no separate VC++ redistributable.
+    if env::var("TARGET").as_deref() == Ok("x86_64-pc-windows-msvc") {
+        env::set_var("STATIC_VCRUNTIME", "true");
+    }
+
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
         && env::var_os("CARGO_FEATURE_SELF_UPDATE").is_some()
         && env::var_os("CARGO_FEATURE_MSSTORE_DISTRIBUTION").is_none()
