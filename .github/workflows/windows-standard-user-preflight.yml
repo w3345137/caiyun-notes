@@ -53,14 +53,20 @@ jobs:
               $pkg = Get-AppxPackage -Name BinApp.547813EA77836
               "Store acquisition exit=$LASTEXITCODE family=$($pkg.PackageFamilyName) version=$($pkg.Version) signing=$($pkg.SignatureKind)" | Out-File "$base\result\log" -Append
             }
+            $initialDirectory = $null
             foreach ($v in @('10.2.8','10.2.13')) {
               $argsList = if ($v -eq '10.2.8') { '/S' } else { '/S /UPDATE' }
               $p = Start-Process "$base\$v.exe" -ArgumentList $argsList -PassThru
               if (!$p.WaitForExit(120000)) { throw "Install timeout $v" }
               $installed = Get-ItemProperty $key
               if ($p.ExitCode -ne 0 -or $installed.DisplayVersion -ne $v) { throw "Install failed $v" }
-              $exe = Join-Path $env:LOCALAPPDATA '彩云笔记\app.exe'
-              if (!(Test-Path $exe)) { throw 'Unexpected install path' }
+              $directory = ([string]$installed.InstallLocation).Trim('"')
+              if (!$directory) { $directory = Split-Path (([string]$installed.UninstallString).Trim('"')) }
+              if (!(Test-Path -LiteralPath (Join-Path $directory 'app.exe'))) {
+                throw "Installed binary missing; registry directory=$directory"
+              }
+              if ($initialDirectory -and $initialDirectory -ne $directory) { throw "Install location changed" }
+              $initialDirectory = $directory
               "Installed $v in same current-user directory" | Out-File "$base\result\log" -Append
             }
             exit 0
