@@ -5,7 +5,11 @@ on:
 permissions: {}
 jobs:
   baseline:
-    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     steps:
       - name: Fetch known historical installers
@@ -43,6 +47,12 @@ jobs:
             $stores = @(Get-AppxPackage Microsoft.WindowsStore).Count
             $installers = @(Get-AppxPackage Microsoft.DesktopAppInstaller).Count
             "Standard user; Store registrations=$stores; AppInstaller registrations=$installers" | Out-File "$base\result\log"
+            if ($stores -and $installers) {
+              $winget = Join-Path (Get-AppxPackage Microsoft.DesktopAppInstaller | Select-Object -First 1).InstallLocation 'winget.exe'
+              & $winget install --id 9P2VQP7JKVLN --exact --source msstore --silent --disable-interactivity *> "$base\result\winget.txt"
+              $pkg = Get-AppxPackage -Name BinApp.547813EA77836
+              "Store acquisition exit=$LASTEXITCODE family=$($pkg.PackageFamilyName) version=$($pkg.Version) signing=$($pkg.SignatureKind)" | Out-File "$base\result\log" -Append
+            }
             foreach ($v in @('10.2.8','10.2.13')) {
               $argsList = if ($v -eq '10.2.8') { '/S' } else { '/S /UPDATE' }
               $p = Start-Process "$base\$v.exe" -ArgumentList $argsList -PassThru
@@ -56,11 +66,7 @@ jobs:
             exit 0
           } catch { $_ | Out-File 'C:\CaiyunQA\result\log' -Append; exit 1 }
           '@ | Set-Content "$dir\verify.ps1" -Encoding utf8BOM
-          $action = New-ScheduledTaskAction -WorkingDirectory $dir -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument '-NoProfile -NonInteractive -File C:\CaiyunQA\verify.ps1'
-          Register-ScheduledTask -TaskName CaiyunStandardQA -Action $action -User "$env:COMPUTERNAME\CaiyunQA" -Password $password -RunLevel Limited | Out-Null
-          Start-ScheduledTask CaiyunStandardQA
-          Start-Sleep 3
-          while ((Get-ScheduledTask CaiyunStandardQA).State -eq 'Running') { Start-Sleep 2 }
-          Get-ScheduledTaskInfo CaiyunStandardQA | Select-Object LastRunTime,LastTaskResult | Format-List
+          $credential = [pscredential]::new("$env:COMPUTERNAME\CaiyunQA",(ConvertTo-SecureString $password -AsPlainText -Force))
+          $p = Start-Process -Credential $credential -LoadUserProfile -WorkingDirectory $dir -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList "-NoProfile -NonInteractive -File $dir\verify.ps1" -PassThru -Wait
           Get-Content "$dir\result\log"
-          if ((Get-ScheduledTaskInfo CaiyunStandardQA).LastTaskResult -ne 0) { throw 'Standard-user baseline failed' }
+          if ($p.ExitCode -ne 0) { throw 'Standard-user baseline failed' }
