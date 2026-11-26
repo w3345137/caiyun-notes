@@ -55,14 +55,14 @@ jobs:
             }
             $initialDirectory = $null
             foreach ($v in @('10.2.8','10.2.13')) {
-              $argsList = if ($v -eq '10.2.8') { '/S' } else { '/S /UPDATE' }
+              $argsList = if ($v -eq '10.2.8') { "/S /D=$base\result\app" } else { '/S /UPDATE' }
               $p = Start-Process "$base\$v.exe" -ArgumentList $argsList -PassThru
               if (!$p.WaitForExit(120000)) { throw "Install timeout $v" }
               $installed = Get-ItemProperty $key
               if ($p.ExitCode -ne 0 -or $installed.DisplayVersion -ne $v) { throw "Install failed $v" }
               $directory = ([string]$installed.InstallLocation).Trim('"')
               if (!$directory) { $directory = Split-Path (([string]$installed.UninstallString).Trim('"')) }
-              if (!(Test-Path -LiteralPath (Join-Path $directory 'app.exe'))) {
+              if ($directory -ne "$base\result\app" -or !(Test-Path -LiteralPath (Join-Path $directory 'app.exe'))) {
                 throw "Installed binary missing; registry directory=$directory"
               }
               if ($initialDirectory -and $initialDirectory -ne $directory) { throw "Install location changed" }
