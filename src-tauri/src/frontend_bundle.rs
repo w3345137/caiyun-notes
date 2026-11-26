@@ -432,6 +432,11 @@ impl FrontendBundleManager {
                 .active
                 .write()
                 .map_err(|_| "前端活动版本锁定失败".to_string())? = Some(previous);
+        } else if state.active_release.is_some() || state.previous_release.is_some() {
+            state.active_release = None;
+            state.previous_release = None;
+            state.trial_release = None;
+            self.write_state_file(&state)?;
         }
         Ok(())
     }
@@ -1217,6 +1222,23 @@ mod tests {
                 .unwrap()
                 .contains("first")
         );
+    }
+
+    #[test]
+    fn embedded_fallback_clears_unusable_release_pointers() {
+        let temp = TempDir::new().unwrap();
+        let key = test_signing_key().verifying_key();
+        let manager =
+            FrontendBundleManager::new_for_test(temp.path().to_path_buf(), key, "10.2.0").unwrap();
+        manager.write_state_file(&FrontendStateFile {
+            active_release: Some("missing-active".into()),
+            previous_release: Some("missing-previous".into()),
+            ..Default::default()
+        }).unwrap();
+        let restarted =
+            FrontendBundleManager::new_for_test(temp.path().to_path_buf(), key, "10.2.0").unwrap();
+        assert_eq!(restarted.active_release_id(), None);
+        assert_eq!(restarted.read_state_file(), FrontendStateFile::default());
     }
 
     #[test]
